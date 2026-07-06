@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+#
+# workreminder — quickly capture a reminder into ~/work/data/reminders/.
+#
+# Engine tool for the work system. Lives at ~/work/engine/bin/workreminder (the
+# work-engine repo, on PATH). Companion completion:
+# ~/work/engine/bin/completions/workreminder.fish.
+#
+
+set -u
+
+WORK="${WORK_ROOT:-$HOME/work}"
+
+###
+### Output functions
+###
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NORMAL='\033[0m'
+VERBOSE=false
+DEBUG=false
+
+print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
+print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
+print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
+print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
+
+IFS='' read -r -d '' usage <<"EOF"
+
+workreminder: quickly capture a reminder into ~/work/data/reminders/
+
+Usage:
+   workreminder [ -h|--help ]
+   workreminder [ -d|--debug ] [ -i|--item <slug> ] [description...]
+
+Arguments:
+   -h|--help         Show what you are seeing right now
+   -v|--verbose      Show what is happening as it happens
+   -d|--debug        Show diagnostic detail (implies --verbose)
+   -i|--item <slug>  Attribute to a work item (related-item: [[slug]])
+   [description...]  Reminder description (prompted if omitted)
+
+Description:
+   Creates ~/work/data/reminders/<date>-<slug>.md with status: active.
+   A reminder is an atomic note you action or flip without sitting down
+   to work it — if it needs a full session, use workitem instead.
+
+Examples:
+   workreminder
+   workreminder Check nagios alert thresholds after deploy
+   workreminder -i nagios Follow up with team on alert runbook
+
+EOF
+
+trim()  { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
+
+###
+### Parse arguments
+###
+item=''
+desc_parts=()
+while [ $# -gt 0 ]; do
+    a=$1
+    case "$a" in
+        -v|--verbose) VERBOSE=true ;;
+        -d|--debug)   DEBUG=true; VERBOSE=true ;;
+        -h|--help|help)
+            printf '%s\n' "$usage"
+            exit 0 ;;
+        -i|--item)  shift; item=${1:-} ;;
+        --item=*)   item=${a#--item=} ;;
+        -*)         print_error "Unknown option: $a"; exit 1 ;;
+        *)          desc_parts+=("$a") ;;
+    esac
+    shift
+done
+
+###
+### Collect description
+###
+desc=''
+[ ${#desc_parts[@]} -gt 0 ] && desc="${desc_parts[*]}"
+desc="$(trim "$desc")"
+if [ -z "$desc" ]; then
+    read -r -p "reminder: " desc
+    desc="$(trim "$desc")"
+fi
+if [ -z "$desc" ]; then
+    print_error "Empty description — nothing created."; exit 1
+fi
+
+###
+### Item attribution
+###
+if [ -z "$item" ]; then
+    read -r -p "related item (slug, blank for none): " item
+    item="$(trim "$item")"
+fi
+if [ -n "$item" ] && [ ! -e "$WORK/data/items/$item.md" ] && [ ! -e "$WORK/data/items/$item/$item.md" ]; then
+    print_warning "'$item' isn't an active item; tagging anyway."
+fi
+
+###
+### Write the reminder
+###
+date_str=$(date +%Y-%m-%d)
+slug=$(kebab "$desc")
+file="$WORK/data/reminders/$date_str-$slug.md"
+print_verbose "Creating reminder: $file"
+
+if [ -e "$file" ]; then
+    print_error "$file already exists."; exit 1
+fi
+
+{
+    echo "---"
+    echo "created: $date_str"
+    echo "status: active"
+    echo "source: manual"
+    [ -n "$item" ] && echo "related-item: [[$item]]"
+    echo "---"
+    echo
+    echo "# $desc"
+} > "$file"
+
+print_success "Created → ${file/#$HOME/\~}"

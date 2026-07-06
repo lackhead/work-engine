@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+#
+# worktree — manage per-work-item git worktrees under ~/work.
+#
+# Engine tool for the work system. Lives at ~/work/engine/bin/worktree (the
+# work-engine repo); ~/work/engine/bin is on PATH, so it runs from any shell
+# and inside the sandbox container. Companion completions:
+# ~/work/engine/bin/completions/worktree.fish.
+#
+# Layout:  ~/work/repos/<repo>/              canonical clones (integration branch)
+#          ~/work/worktrees/<slug>/<repo>/   per-item checkouts
+#
+
+set -u
+
+# Vault root: honor $WORK_ROOT if set, else default to ~/work.
+work_root() { echo "${WORK_ROOT:-$HOME/work}"; }
+
+###
+### Output functions
+###
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NORMAL='\033[0m'
+VERBOSE=false
+DEBUG=false
+
+print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
+print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
+print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
+print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
+
+IFS='' read -r -d '' usage <<"EOF"
+
+worktree: manage per-work-item git worktrees under ~/work
+
+Usage:
+   worktree [ -h|--help ]
+   worktree [ -v|--verbose ] [ -d|--debug ] add     <slug> <repo> [branch] [--base <ref>]
+   worktree [ -v|--verbose ] [ -d|--debug ] rm      <slug> [repo]
+   worktree [ -v|--verbose ] [ -d|--debug ] list    [slug]
+   worktree [ -v|--verbose ] [ -d|--debug ] refresh [repo] [--if-stale]
+
+Arguments:
+   -h|--help     Show what you are seeing right now
+   -v|--verbose  Show what is happening as it happens
+   -d|--debug    Show diagnostic detail (implies --verbose)
+
+   <slug>        Work item basename (must be an active top-level item)
+   <repo>        Canonical clone under ~/work/repos/
+   [branch]      Branch name (defaults to <slug>); an existing local or
+                 remote-tracking branch is checked out, else a new branch
+                 is created off --base
+   --base <ref>  Base ref for a new branch (default: clone HEAD)
+   --if-stale    (refresh) Skip clones fetched within the last 48h
+
+Description:
+   Manages git worktrees under ~/work/worktrees/<slug>/<repo>/, each
+   checked out to its own branch off the canonical clone in ~/work/repos/.
+   Worktrees are created when an item goes active and removed when it
+   finishes; the branch and history are always left intact on removal.
+
+   refresh fast-forwards each canonical clone's integration branch from
+   upstream (--ff-only, so it never rewrites). Used by workon on launch
+   to keep drift counts honest.
+
+Examples:
+   worktree add nagios Ansible feature/nagios-pushover
+   worktree add my-item Internal                       # branch defaults to my-item
+   worktree list
+   worktree list nagios
+   worktree rm nagios
+   worktree refresh
+   worktree refresh Ansible --if-stale
+
+EOF
+
+###
+### Helpers
+###
+
+# Echo "<remote>/<branch>" iff exactly one remote has the branch, else nothing.
+remote_ref() {
+    local repo_dir=$1 branch=$2 matches
+    matches=$(git -C "$repo_dir" for-each-ref --format='%(refname:short)' "refs/remotes/*/$branch" 2>/dev/null)
+    [ -n "$matches" ] || return 0
+    [ "$(printf '%s\n' "$matches" | grep -c .)" -eq 1 ] && printf '%s\n' "$matches"
+}
+
+###
+### Subcommands
+###
+wt_add() {
+    local base='' a
+    local positional=()
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            --base)   shift; base=${1:-} ;;
+            --base=*) base=${a#--base=} ;;
+            -*)       print_error "Unknown option: $a"; return 1 ;;
+            *)        positional+=("$a") ;;
+        esac
+        shift
+    done
+
+    local slug=${positional[0]:-} repo=${positional[1]:-} branch=${positional[2]:-}
+    if [ -z "$slug" ] || [ -z "$repo" ]; then
+        print_error "Usage: worktree add <slug> <repo> [branch] [--base <ref>]"; return 1
+    fi
+    [ -n "$branch" ] || branch=$slug
+
+    local root; root=$(work_root)
+    print_verbose "Adding worktree: slug=$slug repo=$repo branch=$branch"
+    print_debug   "Work root: $root"
+
+    # Worktrees are only set up for active (top-level) work items.
+    if [ ! -f "$root/data/items/$slug.md" ] && [ ! -f "$root/data/items/$slug/$slug.md" ]; then
+        print_error "'$slug' is not an active work item under items/ — activate it first (it may be in backlog/ or archived/)."
+        return 1
+    fi
+
+    local repo_dir=$root/repos/$repo
+    if [ ! -d "$repo_dir" ]; then print_error "No canonical clone at repos/$repo"; return 1; fi
+    if ! git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
+        print_error "repos/$repo is not a git repo"; return 1
+    fi
+
+    local dest=$root/worktrees/$slug/$repo
+    if [ -e "$dest" ]; then print_error "Worktree path already exists: $dest"; return 1; fi
+    mkdir -p "$root/worktrees/$slug"
+
+    local ok=1 rref start
+    if git -C "$repo_dir" show-ref --verify --quiet "refs/heads/$branch"; then
+        print_status "Checking out existing local branch '$branch' of $repo"
+        git -C "$repo_dir" worktree add "$dest" "$branch" || ok=0
+    else
+        rref=$(remote_ref "$repo_dir" "$branch")
+        if [ -n "$rref" ]; then
+            print_status "Creating local branch '$branch' tracking '$rref' of $repo"
+            git -C "$repo_dir" worktree add -b "$branch" "$dest" "$rref" || ok=0
+        else
+            start=HEAD; [ -n "$base" ] && start=$base
+            print_status "Creating new branch '$branch' off '$start' of $repo"
+            git -C "$repo_dir" worktree add -b "$branch" "$dest" "$start" || ok=0
+        fi
+    fi
+
+    if [ "$ok" -eq 0 ]; then rmdir "$root/worktrees/$slug" 2>/dev/null; return 1; fi
+    rmdir "$root/worktrees/$slug" 2>/dev/null
+    print_success "Worktree ready at worktrees/$slug/$repo"
+}
+
+wt_rm() {
+    local slug=${1:-} repo=${2:-}
+    if [ -z "$slug" ]; then print_error "Usage: worktree rm <slug> [repo]"; return 1; fi
+
+    local root; root=$(work_root)
+    local slug_dir=$root/worktrees/$slug
+    if [ ! -d "$slug_dir" ]; then print_error "No worktrees for slug '$slug'"; return 1; fi
+
+    local targets=() d r
+    if [ -n "$repo" ]; then
+        if [ ! -d "$slug_dir/$repo" ]; then print_error "No worktree at worktrees/$slug/$repo"; return 1; fi
+        targets=("$repo")
+    else
+        for d in "$slug_dir"/*/; do [ -d "$d" ] && targets+=("$(basename "$d")"); done
+    fi
+    [ ${#targets[@]} -eq 0 ] && { print_error "No worktrees under slug '$slug'"; return 1; }
+
+    for r in "${targets[@]}"; do
+        print_status "Removing worktrees/$slug/$r"
+        if ! git -C "$root/repos/$r" worktree remove "$slug_dir/$r"; then
+            print_error "git refused to remove worktrees/$slug/$r (uncommitted changes or locked worktree — resolve, or 'git -C repos/$r worktree remove -f' manually)"
+            return 1
+        fi
+    done
+
+    # Finder can drop a .DS_Store into worktrees/<slug>/ if it's ever browsed,
+    # which would make rmdir see a non-empty dir and silently leave it behind.
+    rm -f "$slug_dir/.DS_Store" 2>/dev/null
+    rmdir "$slug_dir" 2>/dev/null
+    print_success "Done (branches and history left intact)"
+}
+
+wt_list() {
+    local want=${1:-}
+    local root; root=$(work_root)
+    local wt=$root/worktrees
+    if [ ! -d "$wt" ]; then echo "(no worktrees yet)"; return 0; fi
+
+    local found=0 slug_dir slug repo_dir repo branch st dirty
+    for slug_dir in "$wt"/*/; do
+        [ -d "$slug_dir" ] || continue
+        slug=$(basename "$slug_dir")
+        if [ -n "$want" ] && [ "$want" != "$slug" ]; then continue; fi
+        for repo_dir in "$slug_dir"*/; do
+            [ -d "$repo_dir" ] || continue
+            repo=$(basename "$repo_dir")
+            branch=$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD 2>/dev/null); [ -n "$branch" ] || branch='?'
+            st=$(git -C "$repo_dir" status --porcelain 2>/dev/null)
+            if [ -n "$st" ]; then dirty=dirty; else dirty=clean; fi
+            printf '%-28s %-10s %-32s %s\n' "$slug" "$repo" "$branch" "$dirty"
+            found=1
+        done
+    done
+
+    if [ "$found" -eq 0 ]; then
+        if [ -n "$want" ]; then echo "(no worktrees for '$want')"; else echo "(no worktrees)"; fi
+    fi
+}
+
+# True (0) if the clone should be fetched: never fetched, or its last fetch is
+# older than $2 minutes. Uses FETCH_HEAD's mtime, so there's no extra state to keep.
+clone_stale() {
+    local gd fh
+    gd=$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null) || return 0
+    fh="$gd/FETCH_HEAD"
+    [ -f "$fh" ] || return 0
+    [ -n "$(find "$fh" -mmin +"$2" 2>/dev/null)" ]
+}
+
+# Fast-forward canonical clones' integration branch to their upstream. Clones are
+# never worked in directly, so this is always a clean FF; --ff-only refuses (rather
+# than mangles) anything unexpected. No <repo> -> every clone under repos/. With
+# --if-stale, skip any clone fetched within the gate (default 48h, override with
+# WORKTREE_REFRESH_MAX_AGE_HOURS) — that's the mode workon uses on launch.
+wt_refresh() {
+    local if_stale=0 want='' a
+    local gate_h=${WORKTREE_REFRESH_MAX_AGE_HOURS:-48}
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            --if-stale) if_stale=1 ;;
+            -*)         print_error "Unknown option: $a"; return 1 ;;
+            *)          want=$a ;;
+        esac
+        shift
+    done
+    local gate_min=$(( gate_h * 60 ))
+    print_debug "refresh params: if_stale=$if_stale gate=${gate_h}h (${gate_min}min) target='${want:-all}'"
+
+    local root; root=$(work_root)
+    local repos="$root/repos"
+    [ -d "$repos" ] || { print_error "No repos/ directory at $repos"; return 1; }
+
+    local targets=() d
+    if [ -n "$want" ]; then
+        [ -d "$repos/$want" ] || { print_error "No canonical clone at repos/$want"; return 1; }
+        targets=("$want")
+    else
+        for d in "$repos"/*/; do [ -d "$d" ] && targets+=("$(basename "$d")"); done
+    fi
+    [ ${#targets[@]} -eq 0 ] && { echo "(no clones under repos/)"; return 0; }
+
+    local r repo_dir branch before after rc=0
+    for r in "${targets[@]}"; do
+        repo_dir="$repos/$r"
+        if ! git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
+            printf '  %-12s %s\n' "$r" "skipped (not a git repo)"; continue
+        fi
+        branch=$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+        if [ -z "$branch" ] || [ "$branch" = HEAD ]; then
+            printf '  %-12s %s\n' "$r" "skipped (detached HEAD)"; continue
+        fi
+        if [ "$if_stale" -eq 1 ]; then
+            if clone_stale "$repo_dir" "$gate_min"; then
+                print_debug "$r: FETCH_HEAD older than ${gate_h}h — will fetch"
+            else
+                print_debug "$r: FETCH_HEAD within ${gate_h}h — skipping"
+                printf '  %-12s %s\n' "$r" "fresh (fetched <${gate_h}h ago)"; continue
+            fi
+        fi
+        print_verbose "Fetching $r ($branch) ..."
+        if ! git -C "$repo_dir" fetch --prune --quiet origin 2>/dev/null; then
+            printf '  %-12s %s\n' "$r" "FETCH FAILED (offline?) — left as-is"; rc=1; continue
+        fi
+        before=$(git -C "$repo_dir" rev-parse --short HEAD 2>/dev/null)
+        if git -C "$repo_dir" merge --ff-only --quiet "origin/$branch" 2>/dev/null; then
+            after=$(git -C "$repo_dir" rev-parse --short HEAD 2>/dev/null)
+            if [ "$before" = "$after" ]; then
+                printf '  %-12s %s\n' "$r" "up to date ($branch @ $after)"
+            else
+                printf '  %-12s %s\n' "$r" "updated $before -> $after ($branch)"
+            fi
+        else
+            printf '  %-12s %s\n' "$r" "NOT fast-forward ($branch) — left as-is, reconcile by hand"; rc=1
+        fi
+    done
+    return "$rc"
+}
+
+###
+### Dispatch
+###
+# Parse global options before the subcommand so `worktree -v refresh` works.
+# -d implies -v.
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -v|--verbose) VERBOSE=true; shift ;;
+        -d|--debug)   DEBUG=true; VERBOSE=true; shift ;;
+        -h|--help|help) printf '%s\n' "$usage"; exit 0 ;;
+        *) break ;;
+    esac
+done
+
+sub="${1:-}"
+[ $# -gt 0 ] && shift
+case "$sub" in
+    add)            wt_add "$@" ;;
+    rm|remove)      wt_rm "$@" ;;
+    list|ls)        wt_list "$@" ;;
+    refresh|sync)   wt_refresh "$@" ;;
+    '')             printf '%s\n' "$usage" ;;
+    *)              print_error "Unknown subcommand: $sub (try --help)"; exit 1 ;;
+esac

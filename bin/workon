@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+#
+# workon — open a Claude Code session for a work item, in the right place.
+#
+# Engine tool for the work system. Lives at ~/work/engine/bin/workon (the
+# work-engine repo); ~/work/engine/bin is on PATH. Companion completions live
+# at ~/work/engine/bin/completions/workon.fish.
+#
+# Model: one worktree = one session. An item may have several worktrees (one
+# per repo it touches); each is its own session. Cross-repo coordination is
+# carried by the shared item folder (data/items/<slug>/), which every session
+# gets via --add-dir — not by pulling sibling worktrees into one session.
+#
+# NOTE (isolated-claude-workspace): the launch step at the bottom runs Claude
+# inside the persistent sandbox container via `docker exec` (Phase 1 wiring). All
+# the item/worktree resolution above is host-side and unchanged; only the final
+# launch — and the resume probe that feeds it — target the container.
+#
+
+set -u
+
+WORK="${WORK_ROOT:-$HOME/work}"
+
+###
+### Output functions
+###
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NORMAL='\033[0m'
+VERBOSE=false
+DEBUG=false
+
+print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
+print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
+print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
+print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
+
+IFS='' read -r -d '' usage <<"EOF"
+
+workon: open a Claude Code session for a work item, in the right place
+
+Usage:
+   workon [ -h|--help ]
+   workon [ -v|--verbose ] [ -d|--debug ] <slug> [repo]
+
+Arguments:
+   -h|--help     Show what you are seeing right now
+   -v|--verbose  Show what is happening as it happens
+   -d|--debug    Show diagnostic detail (implies --verbose)
+
+   <slug>        Work item basename (must be an active top-level item)
+   [repo]        Open that repo's worktree directly (skip the prompt when
+                 the item has multiple worktrees)
+
+Description:
+   Opens Claude Code in the item's worktree (prompting if it has more than
+   one), or its folder if it has none, with the item folder added for shared
+   cross-repo context. Flags branch drift behind the integration branch and
+   offers to sync. Resumes that directory's last session if one exists.
+
+   Sessions run inside the persistent sandbox container via docker exec.
+   Resume works because Claude Code keys transcripts by working directory
+   and the vault is bind-mounted at the same absolute path inside and out.
+
+Examples:
+   workon nagios
+   workon ad-upgrade Ansible
+   workon isolated-claude-workspace
+
+EOF
+
+###
+### Helpers
+###
+
+# Is the worktree mid-rebase or mid-merge? (robust for worktrees, where .git
+# is a file pointing at the per-worktree git dir).
+mid_sync() {
+    local g
+    g=$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+    [ -n "$g" ] || return 1
+    [ -d "$g/rebase-merge" ] || [ -d "$g/rebase-apply" ] || [ -e "$g/MERGE_HEAD" ]
+}
+
+###
+### Parse arguments
+###
+slug=''
+repo_arg=''
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -v|--verbose) VERBOSE=true ;;
+        -d|--debug)   DEBUG=true; VERBOSE=true ;;
+        -h|--help|help)
+            printf '%s\n' "$usage"
+            exit 0 ;;
+        -*)
+            print_error "Unknown option: $1"
+            exit 1 ;;
+        *)
+            if [ -z "$slug" ]; then slug=$1
+            elif [ -z "$repo_arg" ]; then repo_arg=$1
+            else print_error "Too many arguments."; exit 1
+            fi ;;
+    esac
+    shift
+done
+
+if [ -z "$slug" ]; then
+    printf '%s\n' "$usage"
+    exit 0
+fi
+
+###
+### Locate the item
+###
+root="$WORK"
+print_debug "Work root: $root"
+
+# Active (top-level) items only — not backlog/ or archived/.
+itemdir=''
+found=0
+if [ -f "$root/data/items/$slug/$slug.md" ]; then
+    itemdir="$root/data/items/$slug"; found=1
+elif [ -f "$root/data/items/$slug.md" ]; then
+    itemdir=''; found=1
+fi
+if [ "$found" -eq 0 ]; then
+    print_error "'$slug' is not an active work item (top-level items/)."
+    print_error "Activate it first (it may be in backlog/ or archived/)."
+    exit 1
+fi
+print_verbose "Item found: slug=$slug itemdir='${itemdir:-single-file}'"
+
+###
+### Pick the worktree
+###
+wtbase="$root/worktrees/$slug"
+wt_repos=()
+if [ -d "$wtbase" ]; then
+    for d in "$wtbase"/*/; do [ -d "$d" ] && wt_repos+=("$(basename "$d")"); done
+fi
+nrepos=${#wt_repos[@]}
+print_verbose "Worktrees: $nrepos found (${wt_repos[*]:-none})"
+
+chosen=''
+if [ -n "$repo_arg" ]; then
+    for r in ${wt_repos[@]+"${wt_repos[@]}"}; do [ "$r" = "$repo_arg" ] && chosen=$repo_arg; done
+    if [ -z "$chosen" ]; then
+        print_error "No worktree at worktrees/$slug/$repo_arg"
+        if [ "$nrepos" -gt 0 ]; then
+            present=$(printf '%s, ' "${wt_repos[@]}"); present=${present%, }
+            print_error "Present: $present"
+        fi
+        print_error "Create it with 'worktree add $slug $repo_arg <branch>'."
+        exit 1
+    fi
+elif [ "$nrepos" -eq 1 ]; then
+    chosen=${wt_repos[0]}
+elif [ "$nrepos" -gt 1 ]; then
+    echo "workon: '$slug' has $nrepos worktrees:"
+    i=1
+    for r in "${wt_repos[@]}"; do echo "  $i) $r"; i=$((i + 1)); done
+    read -r -p "  open which? [1-$nrepos or repo name]: " reply
+    if [ -z "$reply" ]; then print_error "Cancelled."; exit 1; fi
+    if printf '%s' "$reply" | grep -qE '^[0-9]+$'; then
+        if [ "$reply" -ge 1 ] && [ "$reply" -le "$nrepos" ]; then chosen=${wt_repos[$((reply - 1))]}; fi
+    else
+        for r in "${wt_repos[@]}"; do [ "$r" = "$reply" ] && chosen=$reply; done
+    fi
+    if [ -z "$chosen" ]; then print_error "'$reply' is not a valid choice."; exit 1; fi
+fi
+
+###
+### Start directory
+###
+start=''
+if [ -n "$chosen" ]; then
+    start="$wtbase/$chosen"
+elif [ -n "$itemdir" ]; then
+    start="$itemdir"
+    print_warning "No worktree for '$slug' — starting in the item folder."
+    print_warning "Run 'worktree add $slug <repo> <branch>' to set one up."
+else
+    print_error "'$slug' is a single-file item with no worktree — nothing to open in."
+    print_error "Promote it to a directory, or add a worktree."
+    exit 1
+fi
+print_verbose "Start directory: $start"
+
+###
+### Drift check
+###
+if [ -n "$chosen" ]; then
+    # Keep the branch-point honest before measuring drift: fast-forward the
+    # clone's integration branch if it hasn't been fetched in a while (48h gate,
+    # non-fatal when offline). Manual equivalent: `worktree refresh`.
+    print_verbose "Running worktree refresh --if-stale $chosen"
+    worktree refresh --if-stale "$chosen" || true
+
+    clone="$root/repos/$chosen"
+    intbr=$(git -C "$clone" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    wt=${start/#$HOME/\~}
+    if mid_sync "$start"; then
+        print_error "This worktree is mid-rebase/merge — finish or abort it first:"
+        print_error "  git -C $wt rebase --abort      # (or: merge --abort)"
+    elif [ -n "$intbr" ] && [ "$intbr" != HEAD ]; then
+        behind=$(git -C "$start" rev-list --count "HEAD..$intbr" 2>/dev/null)
+        if [ -n "$behind" ] && [ "$behind" -gt 0 ]; then
+            print_warning "This branch is $behind commit(s) behind $intbr (local clone — fetch for the latest)."
+            dirty=$(git -C "$start" status --porcelain 2>/dev/null)
+            if [ "$behind" -gt 25 ]; then
+                echo "  That's a big gap — a deliberate integration, not a quick sync (expect conflicts)."
+                echo "  Do it in the session with Claude's help, or by hand first:"
+                echo "      git -C $wt merge $intbr     # often simpler than rebase for a large gap"
+            elif [ -n "$dirty" ]; then
+                echo "  Uncommitted changes — commit or stash, then: git -C $wt rebase $intbr"
+            else
+                read -r -p "  Sync now? [r]ebase / [m]erge / [s]kip: " sync
+                sync=$(printf '%s' "$sync" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+                case "$sync" in
+                    r|rebase) git -C "$start" rebase "$intbr" ;;
+                    m|merge)  git -C "$start" merge --no-edit "$intbr" ;;
+                    *)        echo "  Skipped." ;;
+                esac
+                # Never launch into a half-finished sync.
+                if mid_sync "$start"; then
+                    git -C "$start" rebase --abort 2>/dev/null
+                    git -C "$start" merge --abort 2>/dev/null
+                    print_warning "Sync hit conflicts — rolled back, branch unchanged. Do it by hand: git -C $wt rebase $intbr"
+                fi
+            fi
+        fi
+    fi
+fi
+
+###
+### Flags for Claude
+###
+# bypassPermissions can only be *entered* by a session started with an enabling
+# flag — settings.json defaultMode alone cannot (Claude Code behavior). workon is
+# the blessed entry point into the isolated container, so it flips it here; a bare
+# `claude` (e.g. via `sandbox shell`) stays safe-by-default under the allow/ask/deny
+# lists. deny + ask rules are still enforced under bypass (see claude-settings.json).
+flags=(--permission-mode bypassPermissions)
+if [ -n "$itemdir" ] && [ "$itemdir" != "$start" ]; then
+    flags+=(--add-dir "$itemdir")
+fi
+
+###
+### Launch in the sandbox container
+###
+CONTAINER=work-sandbox
+
+# Make sure the box is up before we exec into it (auto-start on workon). Usually
+# a no-op — it runs --restart unless-stopped and Docker Desktop starts at login.
+print_verbose "Checking container: $CONTAINER"
+if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER"; then
+    print_status "Container not running — starting sandbox ..."
+    sandbox up || {
+        print_error "Sandbox isn't available — is Docker Desktop running?"
+        exit 1
+    }
+fi
+
+# Resume if a session already exists for this directory. Claude stores transcripts
+# under ~/.claude/projects/<encoded-cwd>/ (the cwd with '/' and '.' turned to '-').
+# The transcript store lives on the container's named volume, so probe inside the
+# box. The encoded path is identical because the cwd path is identical.
+enc=${start//\//-}; enc=${enc//./-}
+print_debug "Transcript path encoding: $enc"
+existing=$(docker exec "$CONTAINER" sh -c "ls '$HOME/.claude/projects/$enc'/*.jsonl 2>/dev/null" 2>/dev/null)
+print_debug "Existing transcripts: ${existing:-none}"
+
+pretty=${start/#$HOME/\~}
+suffix=''; [ -n "$chosen" ] && suffix="/$chosen"
+cd "$start" || { print_error "Cannot cd to $start"; exit 1; }
+
+# Label the terminal tab/window with the item slug. CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
+# keeps Claude from re-titling every turn; we pass it into the container explicitly.
+: "${CLAUDE_CODE_DISABLE_TERMINAL_TITLE:=1}"
+export CLAUDE_CODE_DISABLE_TERMINAL_TITLE
+printf '\033]1;%s\007\033]2;workon: %s%s\007' "$slug$suffix" "$slug" "$suffix"
+
+dexec=(docker exec -it --user clake -w "$start"
+       -e TERM -e CLAUDE_CODE_DISABLE_TERMINAL_TITLE "$CONTAINER")
+if [ -n "$existing" ]; then
+    print_status "Resuming $slug$suffix in $pretty"
+    exec "${dexec[@]}" claude --continue ${flags[@]+"${flags[@]}"}
+else
+    print_status "New session for $slug$suffix in $pretty"
+    exec "${dexec[@]}" claude ${flags[@]+"${flags[@]}"}
+fi

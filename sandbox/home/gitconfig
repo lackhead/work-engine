@@ -1,0 +1,9 @@
+# Git identity for the sandbox, mirroring the host's global identity. Per-repo
+# overrides in the mounted worktrees still win over this. Generic, not secret.
+[user]
+	name = Chad Lake
+	email = clake@lackhead.org
+[init]
+	defaultBranch = main
+[pull]
+	rebase = false

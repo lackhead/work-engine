@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+#
+# workjot — record an ad-hoc work note (a "jot") into the day's diary log.
+#
+# Engine tool for the work system. Lives at ~/work/engine/bin/workjot (the
+# work-engine repo, on PATH). Companion completion:
+# ~/work/engine/bin/completions/workjot.fish.
+#
+# Ad-hoc work that doesn't get a Claude Code session (a quick fix in a canonical
+# clone, a hallway debug) leaves no SessionEnd breadcrumb. workjot is the manual
+# counterpart: it appends a timestamped one-liner to
+#   ~/work/data/diary/YYYY/MM/DD/<date>.log.md
+# optionally tagged with a work item and enriched with the latest git commit.
+#
+
+set -u
+
+WORK="${WORK_ROOT:-$HOME/work}"
+
+###
+### Output functions
+###
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NORMAL='\033[0m'
+VERBOSE=false
+DEBUG=false
+
+print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
+print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
+print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
+print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
+
+IFS='' read -r -d '' usage <<"EOF"
+
+workjot: record an ad-hoc work note into the day's diary log
+
+Usage:
+   workjot [ -h|--help ]
+   workjot [ -d|--debug ] [ -r|--repo <repo> ] [note...]
+
+Arguments:
+   -h|--help         Show what you are seeing right now
+   -v|--verbose      Show what is happening as it happens
+   -d|--debug        Show diagnostic detail (implies --verbose)
+   -r|--repo <repo>  Read git facts from ~/work/repos/<repo>
+                     (default: the current directory, if it's a repo)
+   [note...]         Note text (prompted if omitted)
+
+Description:
+   Appends a timestamped one-liner to ~/work/data/diary/YYYY/MM/DD/<date>.log.md,
+   optionally tagged with a work item wikilink and the latest git commit from
+   the working repo. Creates the day log with a header on first write.
+
+   Use this for ad-hoc work that doesn't get a Claude Code session (a quick
+   fix, a hallway debug) — it's the manual counterpart to the SessionEnd
+   breadcrumb hook.
+
+Examples:
+   workjot
+   workjot Fixed the YAML linting issue in account-create
+   workjot -r Ansible Deployed the nagios config update
+
+EOF
+
+trim() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+
+###
+### Parse arguments
+###
+repo_opt=''
+note_parts=()
+while [ $# -gt 0 ]; do
+    a=$1
+    case "$a" in
+        -v|--verbose) VERBOSE=true ;;
+        -d|--debug)   DEBUG=true; VERBOSE=true ;;
+        -h|--help|help)
+            printf '%s\n' "$usage"
+            exit 0 ;;
+        -r|--repo)  shift; repo_opt=${1:-} ;;
+        --repo=*)   repo_opt=${a#--repo=} ;;
+        -*)         print_error "Unknown option: $a"; exit 1 ;;
+        *)          note_parts+=("$a") ;;
+    esac
+    shift
+done
+
+###
+### Git context
+###
+gitdir=''
+if [ -n "$repo_opt" ]; then
+    gitdir="$WORK/repos/$repo_opt"
+    if ! git -C "$gitdir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        print_error "repos/$repo_opt is not a git repo"; exit 1
+    fi
+    print_verbose "Git dir: $gitdir (explicit --repo)"
+else
+    # ~/work/data is itself a git repo (vault backup); a jot made from an item
+    # folder would otherwise resolve UP to the vault and offer its automated
+    # backup commit. Auto-detect only a real code repo (toplevel != the vault root).
+    top="$(git -C "$(pwd)" rev-parse --show-toplevel 2>/dev/null)"
+    if [ -n "$top" ] && [ "$top" != "$WORK/data" ]; then
+        gitdir="$(pwd)"
+        print_verbose "Git dir: $gitdir (cwd)"
+    fi
+fi
+
+# If there's a commit, show it and confirm before attaching it.
+commit=''
+if [ -n "$gitdir" ]; then
+    h=$(git -C "$gitdir" log -1 --format=%h 2>/dev/null)
+    if [ -n "$h" ]; then
+        subj=$(git -C "$gitdir" log -1 --format=%s 2>/dev/null)
+        br=$(git -C "$gitdir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+        rname=$(basename "$(git -C "$gitdir" rev-parse --show-toplevel 2>/dev/null)")
+        print_status "Latest commit in $rname@$br:"
+        echo "    $h  $subj"
+        read -r -p "  Record this commit with the jot? [Y/n] " yn
+        if [ -z "$yn" ] || printf '%s' "$yn" | grep -qiE '^y'; then
+            commit="$rname@$br $h \"$subj\""
+        fi
+    fi
+fi
+
+###
+### Note text
+###
+note=''
+[ ${#note_parts[@]} -gt 0 ] && note="${note_parts[*]}"
+note="$(trim "$note")"
+if [ -z "$note" ]; then
+    read -r -p "jot: " note
+    note="$(trim "$note")"
+fi
+if [ -z "$note" ]; then
+    print_error "Empty note — nothing recorded."; exit 1
+fi
+
+###
+### Item attribution
+###
+read -r -p "attribute to item (slug, blank for none): " item
+item="$(trim "$item")"
+tag=''
+if [ -n "$item" ]; then
+    if [ ! -e "$WORK/data/items/$item.md" ] && [ ! -e "$WORK/data/items/$item/$item.md" ]; then
+        print_warning "'$item' isn't an active item; tagging anyway."
+    fi
+    tag=" [[$item]]"
+fi
+
+###
+### Write the jot
+###
+day_dir="$WORK/data/diary/$(date +%Y)/$(date +%m)/$(date +%d)"
+mkdir -p "$day_dir"
+date_str=$(date +%Y-%m-%d)
+log="$day_dir/$date_str.log.md"
+print_verbose "Log file: $log"
+
+if [ ! -e "$log" ]; then
+    printf -- '---\ntype: jot-log\ndate: %s\n---\n\n# Jot log — %s\n\n' "$date_str" "$date_str" > "$log"
+fi
+
+line="- $(date +%H:%M) — $note$tag"
+[ -n "$commit" ] && line="$line ($commit)"
+printf '%s\n' "$line" >> "$log"
+
+print_success "Recorded → ${log/#$HOME/\~}"
+echo "  $line"

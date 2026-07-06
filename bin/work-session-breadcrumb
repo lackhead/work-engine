@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+#
+# work-session-breadcrumb — Claude Code SessionEnd hook.
+#
+# Install at ~/.claude/hooks/work-session-breadcrumb (chmod +x) and register
+# it in ~/.claude/settings.json (see the companion settings snippet).
+#
+# On session end it reads the SessionEnd JSON from stdin, and IF the session's
+# cwd is inside the ~/work system (a worktree or an item folder), writes a
+# factual "breadcrumb" into the diary:
+#
+#   ~/work/data/diary/YYYY/MM/DD/<date>.<slug>.session.NN.md
+#
+# It is a user-global hook, so it fires for EVERY Claude Code session; for any
+# session not under ~/work it exits silently without writing anything.
+#
+# Deliberately dumb: it records git/session facts only. Curated, human-framed
+# progress is written separately (the retrospective skill), never here.
+
+# Never let a hook failure be noisy or disruptive; SessionEnd ignores our exit
+# code anyway, but be tidy.
+set -u
+# Vault root: honor $WORK_ROOT if set, else default to ~/work. The default is
+# the permanent mechanism — the var only needs setting if a second instance
+# coexists on one machine. The hook runs under Claude Code's environment (not
+# your interactive shell), so it cannot assume $WORK_ROOT is exported — hence
+# the fallback.
+WORK="${WORK_ROOT:-$HOME/work}"
+
+# --- read stdin payload --------------------------------------------------
+PAYLOAD="$(cat 2>/dev/null)"
+[ -n "$PAYLOAD" ] || exit 0
+
+# Extract a top-level string field from the payload (jq if available, else sed).
+field() {
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s' "$PAYLOAD" | jq -r --arg k "$1" '.[$k] // empty' 2>/dev/null
+    else
+        printf '%s' "$PAYLOAD" \
+            | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+            | head -n1
+    fi
+}
+
+cwd="$(field cwd)"
+session_id="$(field session_id)"
+transcript="$(field transcript_path)"
+reason="$(field reason)"
+[ -n "$cwd" ] || exit 0
+
+# --- derive the slug (and repo, for worktree sessions) from the cwd ------
+slug=""
+repo=""
+case "$cwd" in
+    "$WORK/worktrees/"*)
+        rest="${cwd#"$WORK"/worktrees/}"     # <slug>/<repo>/...
+        slug="${rest%%/*}"
+        repo="${rest#*/}"; repo="${repo%%/*}"
+        [ "$repo" = "$rest" ] && repo=""     # no repo component present
+        ;;
+    "$WORK/data/items/backlog/"*) rest="${cwd#"$WORK"/data/items/backlog/}";  slug="${rest%%/*}" ;;
+    "$WORK/data/items/archived/"*) rest="${cwd#"$WORK"/data/items/archived/}"; slug="${rest%%/*}" ;;
+    "$WORK/data/items/"*)          rest="${cwd#"$WORK"/data/items/}";          slug="${rest%%/*}" ;;
+    *) exit 0 ;;
+esac
+[ -n "$slug" ] || exit 0
+
+# --- timestamps ----------------------------------------------------------
+# ISO 8601 with a colon in the TZ offset (matches the vault convention).
+iso_now() {
+    local t
+    t="$(date +%Y-%m-%dT%H:%M:%S%z)"
+    printf '%s' "$t" | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/'
+}
+end_ts="$(iso_now)"
+
+# Session window start = timestamp of the first transcript line, if readable.
+start_ts=""
+if [ -n "$transcript" ] && [ -r "$transcript" ]; then
+    if command -v jq >/dev/null 2>&1; then
+        start_ts="$(head -n1 "$transcript" 2>/dev/null | jq -r '.timestamp // empty' 2>/dev/null)"
+    else
+        start_ts="$(head -n1 "$transcript" 2>/dev/null \
+            | sed -n 's/.*"timestamp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+    fi
+fi
+
+# --- git facts (only when the cwd is a real code worktree) ---------------
+# ~/work/data is itself a git repo (vault backup), so a planning session in an
+# item folder resolves UP to the vault. Without this guard the breadcrumb would
+# record the vault's branch, its automated backup commits, and every file the
+# backup touched as if they were the session's work. Gather git facts only when
+# the cwd's repo is a real worktree — i.e. its toplevel is NOT the vault root.
+branch=""; dirty=""; commits=""; files=""
+toplevel="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$toplevel" ] && [ "$toplevel" != "$WORK/data" ]; then
+    branch="$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    if [ -n "$(git -C "$cwd" status --porcelain 2>/dev/null)" ]; then dirty="true"; else dirty="false"; fi
+    if [ -n "$start_ts" ]; then
+        commits="$(git -C "$cwd" log --since="$start_ts" --pretty=format:'%h %s' 2>/dev/null)"
+        files="$(git -C "$cwd" log --since="$start_ts" --name-only --pretty=format: 2>/dev/null \
+                 | sed '/^[[:space:]]*$/d' | sort -u)"
+    fi
+fi
+
+files_count=0
+[ -n "$files" ] && files_count="$(printf '%s\n' "$files" | grep -c .)"
+commit_count=0
+[ -n "$commits" ] && commit_count="$(printf '%s\n' "$commits" | grep -c .)"
+
+# --- choose the diary path + NN ------------------------------------------
+day_dir="$WORK/data/diary/$(date +%Y)/$(date +%m)/$(date +%d)"
+mkdir -p "$day_dir" 2>/dev/null || exit 0
+date_str="$(date +%Y-%m-%d)"
+n=1
+while [ -e "$day_dir/$date_str.$slug.session.$(printf '%02d' "$n").md" ]; do
+    n=$((n + 1))
+done
+nn="$(printf '%02d' "$n")"
+file="$day_dir/$date_str.$slug.session.$nn.md"
+
+# --- write the breadcrumb ------------------------------------------------
+{
+    echo "---"
+    echo "type: session-breadcrumb"
+    echo "slug: $slug"
+    [ -n "$session_id" ] && echo "session-id: $session_id"
+    echo "session-num: \"$nn\""
+    [ -n "$start_ts" ] && echo "start: $start_ts"
+    echo "end: $end_ts"
+    [ -n "$repo" ]   && echo "repo: $repo"
+    [ -n "$branch" ] && echo "branch: $branch"
+    [ -n "$dirty" ]  && echo "dirty: $dirty"
+    echo "commits: $commit_count"
+    echo "files-changed: $files_count"
+    [ -n "$reason" ] && echo "reason: $reason"
+    [ -n "$transcript" ] && echo "transcript: $transcript"
+    echo "---"
+    echo
+    echo "# Session — $slug"
+    echo
+
+    # One-line human-readable summary.
+    if [ -n "$repo" ] || [ -n "$branch" ]; then
+        printf 'Worktree session on `%s`' "$slug"
+        [ -n "$repo" ]   && printf ' (`%s`' "$repo" && { [ -n "$branch" ] && printf '@`%s`' "$branch"; } && printf ')'
+        printf ' — %s commit(s), %s file(s) changed' "$commit_count" "$files_count"
+        [ "$dirty" = "true" ] && printf ', uncommitted changes present'
+        echo "."
+    else
+        echo "Item-folder session on \`$slug\` (no worktree — planning/tracking)."
+    fi
+    echo
+
+    if [ "$commit_count" -gt 0 ]; then
+        echo "## Commits"
+        echo
+        printf '%s\n' "$commits" | sed 's/^/- /'
+        echo
+    fi
+    if [ "$files_count" -gt 0 ]; then
+        echo "## Files changed"
+        echo
+        printf '%s\n' "$files" | sed 's/^/- `/; s/$/`/'
+        echo
+    fi
+} > "$file" 2>/dev/null
+
+exit 0

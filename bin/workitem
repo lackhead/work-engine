@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+#
+# workitem — quickly create a work item under ~/work/data/items/.
+#
+# Engine tool for the work system. Lives at ~/work/engine/bin/workitem (the
+# work-engine repo, on PATH).
+#
+
+set -u
+
+WORK="${WORK_ROOT:-$HOME/work}"
+
+###
+### Output functions
+###
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NORMAL='\033[0m'
+VERBOSE=false
+DEBUG=false
+
+print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
+print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
+print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
+print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
+
+IFS='' read -r -d '' usage <<"EOF"
+
+workitem: quickly create a work item under ~/work/data/items/
+
+Usage:
+   workitem [ -h|--help ]
+   workitem [ -d|--debug ] [title...]
+
+Arguments:
+   -h|--help     Show what you are seeing right now
+   -v|--verbose  Show what is happening as it happens
+   -d|--debug    Show diagnostic detail (implies --verbose)
+   [title...]  Item title (prompted if omitted)
+
+Description:
+   Creates a single-file work item with YAML frontmatter. Prompts for
+   placement (active top-level vs. backlog), and optionally for to/due.
+   Promote to a directory later if and when the item earns a plan or
+   status log.
+
+Examples:
+   workitem
+   workitem Rework cache host info
+   workitem Update nagios push notifications
+
+EOF
+
+trim()  { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
+
+###
+### Parse arguments
+###
+title_parts=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -v|--verbose) VERBOSE=true ;;
+        -d|--debug)   DEBUG=true; VERBOSE=true ;;
+        -h|--help|help)
+            printf '%s\n' "$usage"
+            exit 0 ;;
+        -*) print_error "Unknown option: $1"; exit 1 ;;
+        *)  title_parts+=("$1") ;;
+    esac
+    shift
+done
+
+###
+### Collect title
+###
+title=''
+[ ${#title_parts[@]} -gt 0 ] && title="${title_parts[*]}"
+title="$(trim "$title")"
+if [ -z "$title" ]; then
+    read -r -p "title: " title
+    title="$(trim "$title")"
+fi
+if [ -z "$title" ]; then
+    print_error "Empty title — nothing created."; exit 1
+fi
+
+###
+### Prompts
+###
+read -r -p "active (top-level) or backlog (proposed)? [a/b] " zone
+status=active
+subdir=''
+if printf '%s' "$zone" | grep -qiE '^b'; then
+    status=proposed
+    subdir=backlog/
+fi
+
+read -r -p "to (person/team/self, blank to omit): " to
+to="$(trim "$to")"
+read -r -p "due (YYYY-MM-DD, blank for none): " due
+due="$(trim "$due")"
+duetype=''
+if [ -n "$due" ]; then
+    read -r -p "  due type [hard/soft]: " duetype
+    duetype="$(trim "$duetype")"
+fi
+
+###
+### Write the file
+###
+made=$(date +%Y-%m-%d)
+slug=$(kebab "$title")
+print_debug "Creating item: slug=$slug status=$status subdir='$subdir'"
+
+# Refuse if an item with this slug exists in any zone (file or directory).
+for z in '' backlog/ archived/; do
+    if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
+        print_error "An item named '$slug' already exists (items/$z)."; exit 1
+    fi
+done
+
+file="$WORK/data/items/$subdir$slug.md"
+{
+    echo "---"
+    echo "title: $title"
+    echo "status: $status"
+    echo "made: $made"
+    [ -n "$to" ] && echo "to: $to"
+    if [ -n "$due" ]; then
+        echo "due: $due"
+        [ -n "$duetype" ] && echo "due-type: $duetype"
+    fi
+    echo "---"
+    echo
+    echo "# $title"
+} > "$file"
+
+print_success "Created → ${file/#$HOME/\~}"
+print_status  "Single-file item; promote to a directory when it earns a plan/status log."

@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+#
+# workinit — idempotently materialize or verify an instance's ~/work skeleton.
+#
+# Engine tool for the work system. Lives at ~/work/engine/bin/workinit (the
+# work-engine repo, on PATH). Creates whatever's missing (data/ subdirectories,
+# the two symlinks into engine/); never deletes or overwrites existing content —
+# anything unexpected is flagged for manual fixing instead. Safe to re-run any
+# time, including just to verify nothing has drifted.
+#
+
+set -u
+
+WORK="${WORK_ROOT:-$HOME/work}"
+
+###
+### Output functions
+###
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NORMAL='\033[0m'
+VERBOSE=false
+DEBUG=false
+
+print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
+print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
+print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
+print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
+
+IFS='' read -r -d '' usage <<"EOF"
+
+workinit: idempotently materialize or verify an instance's ~/work skeleton
+
+Usage:
+   workinit [ -h|--help ]
+   workinit [ -v|--verbose ] [ -d|--debug ]
+
+Arguments:
+   -h|--help     Show what you are seeing right now
+   -v|--verbose  Show what is happening as it happens
+   -d|--debug    Show diagnostic detail (implies --verbose)
+
+Description:
+   Creates whatever's missing from the ~/work skeleton — the data/
+   subdirectories (items/, reminders/, docs/, diary/, retrospectives/,
+   .claude/) and the two symlinks into engine/ (data/CLAUDE.md,
+   data/.claude/skills). Requires engine/ to already be cloned; never clones
+   engine/ or data/ itself.
+
+   Never deletes or overwrites existing content. Anything unexpected (a
+   symlink pointing somewhere else, a real file/directory where a symlink is
+   expected) is left alone and flagged — resolve it by hand, then re-run.
+
+   Safe to re-run any time, including just to verify nothing has drifted:
+   a clean second run is the idempotency check.
+
+Examples:
+   workinit
+   workinit -v
+
+EOF
+
+###
+### Parse arguments
+###
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -v|--verbose) VERBOSE=true ;;
+        -d|--debug)   DEBUG=true; VERBOSE=true ;;
+        -h|--help|help)
+            printf '%s\n' "$usage"
+            exit 0 ;;
+        -*) print_error "Unknown option: $1"; exit 1 ;;
+        *)  print_error "Unknown argument: $1"; exit 1 ;;
+    esac
+    shift
+done
+
+flagged=0
+
+###
+### Preconditions — engine/ must already be cloned
+###
+if [ ! -f "$WORK/engine/schema/CLAUDE.md" ] || [ ! -d "$WORK/engine/skills" ]; then
+    print_error "No engine found at $WORK/engine (expected schema/CLAUDE.md and skills/)."
+    print_error "Clone the work-engine repo into $WORK/engine first."
+    exit 1
+fi
+print_debug "Engine found at $WORK/engine"
+
+###
+### Directories — mkdir -p is naturally idempotent
+###
+for d in repos worktrees \
+         data/items data/reminders data/docs data/diary data/retrospectives data/.claude; do
+    if [ -d "$WORK/$d" ]; then
+        print_verbose "Already present: $d/"
+    else
+        mkdir -p "$WORK/$d" && print_success "Created $d/"
+    fi
+done
+
+###
+### Symlinks — create if absent, verify if present, never overwrite
+###
+check_symlink() {
+    local link=$1 target=$2 current
+    if [ ! -e "$link" ] && [ ! -L "$link" ]; then
+        ln -s "$target" "$link" && print_success "Linked ${link#"$WORK"/} -> $target"
+        return
+    fi
+    if [ -L "$link" ]; then
+        current=$(readlink "$link")
+        if [ "$current" = "$target" ]; then
+            print_verbose "Already correct: ${link#"$WORK"/} -> $target"
+        else
+            print_warning "${link#"$WORK"/} is a symlink to '$current', expected '$target' — left alone."
+            flagged=$((flagged + 1))
+        fi
+    else
+        print_warning "${link#"$WORK"/} exists as a real file/directory, expected a symlink to '$target' — left alone."
+        flagged=$((flagged + 1))
+    fi
+}
+
+check_symlink "$WORK/data/CLAUDE.md" "../engine/schema/CLAUDE.md"
+check_symlink "$WORK/data/.claude/skills" "../../engine/skills"
+
+###
+### Diagnostics — informational, never fatal
+###
+case ":$PATH:" in
+    *":$WORK/engine/bin:"*) print_verbose "PATH: $WORK/engine/bin is on \$PATH" ;;
+    *)
+        print_warning "$WORK/engine/bin is not on \$PATH — workon/worktree/etc. won't resolve until dotfiles' shell config is deployed/reloaded."
+        flagged=$((flagged + 1))
+        ;;
+esac
+
+if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1; then
+    print_verbose "$WORK/data is a git repo"
+else
+    print_verbose "$WORK/data is not a git repo yet — fine for now; init one whenever you want offsite backups."
+fi
+
+###
+### Summary
+###
+if [ "$flagged" -eq 0 ]; then
+    print_success "workinit: clean."
+    exit 0
+else
+    print_warning "workinit: $flagged item(s) flagged for manual attention (see above)."
+    exit 2
+fi
