@@ -22,7 +22,8 @@ ARG HOME_DIR=/Users/clake
 # shell), jq (hook + statusline), fd/python3/less for day-to-day.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl git openssh-client \
-        fish jq fd-find python3 less procps rsync \
+        fish jq fd-find python3 python3-venv python3-pip pipx make shellcheck \
+        less procps rsync vim \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd
 
@@ -46,6 +47,21 @@ USER $USER_NAME
 RUN curl -fsSL https://claude.ai/install.sh | bash
 # To pin a version instead of latest stable:
 #   RUN curl -fsSL https://claude.ai/install.sh | bash -s <version>
+
+# Python CLI toolchain for the Ansible workflow, installed AS THE USER via pipx.
+# PEP 668 marks Debian's system Python externally-managed, so pipx is the
+# sanctioned path — each app gets its own venv with entry points on ~/.local/bin
+# (already on PATH). Image-authoritative: a `sandbox rebuild` updates them.
+#   - pre-commit builds its own per-hook venvs at RUN time (needs python3-venv,
+#     installed above); those live in ~/.cache/pre-commit, persisted via volume.
+#   - the `ansible` meta-package (not ansible-core) bundles the collections the
+#     repo's syntax checks resolve (ansible.windows/posix, community.general/mysql);
+#     --include-deps exposes ansible-core's binaries (ansible-playbook, -galaxy,
+#     -inventory, -vault) on PATH for direct use / the repo's Makefile.
+#   - ansible-lint for `make lint` and ad-hoc linting.
+RUN pipx install pre-commit \
+    && pipx install --include-deps ansible \
+    && pipx install ansible-lint
 
 # Minimal interactive shell config (greeting off + work-system completions);
 # generic, deliberately not a copy of the host's fish setup.

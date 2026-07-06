@@ -1,45 +1,6 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(make:*)",
-      "Bash(pre-commit:*)",
-      "Bash(yamllint *)",
-      "Bash(shellcheck *)",
-      "Bash(shfmt *)",
-      "Bash(cat:*)",
-      "Bash(head:*)",
-      "Bash(mkdir:*)",
-      "Bash(cd:*)",
-      "Bash(tail:*)",
-      "Bash(less:*)",
-      "Bash(grep:*)",
-      "Bash(rg:*)",
-      "Bash(find:*)",
-      "Bash(ls:*)",
-      "Bash(wc:*)",
-      "Bash(file:*)",
-      "Bash(stat:*)",
-      "Bash(diff:*)",
-      "Bash(tree:*)",
-      "Bash(ansible-playbook * --syntax-check)",
-      "Bash(ansible-playbook * --check)",
-      "Bash(ansible-inventory *)",
-      "Bash(ansible-lint *)",
-      "Bash(git:*)",
-      "Bash(curl *hooks.slack.com*)",
-      "Read(~/work/**)",
-      "Write(~/work/**)",
-      "Write(~/.config/fish/**)"
-    ],
     "deny": [
-      "Bash(python*:*)",
-      "Bash(perl:*)",
-      "Bash(ruby:*)",
-      "Bash(chmod:*)",
-      "Bash(chown:*)",
-      "Bash(crontab:*)",
-      "Bash(at:*)",
-      "Bash(batch:*)",
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
       "Read(~/.gnupg/**)",
@@ -48,8 +9,7 @@
       "Read(~/.git-credentials)"
     ],
     "ask": [
-      "Bash(git push:*)",
-      "WebFetch"
+      "Bash(git push:*)"
     ]
   },
   "statusLine": { "type": "command", "command": "bash ~/work/engine/bin/claude-statusline" },

@@ -109,6 +109,14 @@ ever serve.
     worktrees are team code, conceptually separate from the work-management
     content: cross-references to any repo or worktree path use backticked
     paths, never wikilinks.
+    *File modes in the sandbox:* inside the container git runs with
+    `core.fileMode = false`, because the macOS→Linux bind mount doesn't report
+    Unix exec bits reliably (left at the default, pre-commit sees phantom
+    executable files). A consequence for **any** git work in a worktree: a
+    plain `chmod +x` is invisible to git — set or clear an executable bit
+    **explicitly** with `git update-index --chmod=+x <file>` (or
+    `git add --chmod=+x <file>`); never rely on the container's file
+    permissions to carry into a commit.
 12. **Schemas evolve.** Per-directory `CLAUDE.md` files will be revised
     after real use. Persistence of content matters more than stability of
     schema — but silent schema drift is worse than either: revise the

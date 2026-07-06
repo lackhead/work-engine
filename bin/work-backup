@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+#
+# work-backup — commit any changes under ~/work/data (the vault) and push to
+# the offsite bare repo on sec.sci.utah.edu. Designed to run from launchd every
+# 4 hours; plain (no-color) output goes to ~/Library/Logs/work-backup.log via
+# the launchd plist.
+#
+# Exit 0 = success or nothing new to commit. Non-zero = failure.
+# Usage: work-backup
+
+set -u
+
+IFS='' read -r -d '' usage <<"EOF"
+
+work-backup: commit everything under ~/work/data and push it to the offsite backup
+
+Usage:
+   work-backup [ -h|--help ]
+
+Arguments:
+   -h|--help    Show this help and exit
+
+Description:
+   Stages all changes under ~/work/data (the vault — items, reminders, docs,
+   diary, retrospectives, index.md; never engine/ or repos/worktrees), commits
+   them, and pushes to the `origin` remote (work-backup:work-vault.git on
+   sec.sci.utah.edu). A no-op when nothing changed. Built to run unattended
+   from launchd every 4 hours; safe to run by hand anytime. Output is plain
+   (no color) so the launchd log stays readable. Honors $WORK_ROOT (default:
+   ~/work; the vault itself is always $WORK_ROOT/data).
+
+   When run from launchd, output is captured to ~/Library/Logs/work-backup.log.
+
+Examples:
+   work-backup        # commit + push if there is anything to back up
+
+EOF
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help|help) printf '%s\n' "$usage"; exit 0 ;;
+        -*) echo "work-backup: unknown option: $1 (try -h)" >&2; exit 1 ;;
+        *)  echo "work-backup: takes no arguments (try -h)" >&2; exit 1 ;;
+    esac
+    shift
+done
+
+WORK="${WORK_ROOT:-$HOME/work}/data"
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
+
+cd "$WORK" || { echo "$TIMESTAMP ERROR: cannot cd to $WORK"; exit 1; }
+
+git add -A
+
+if git diff --cached --quiet; then
+    echo "$TIMESTAMP up to date, nothing to commit"
+    exit 0
+fi
+
+git commit -m "backup: $TIMESTAMP" \
+    || { echo "$TIMESTAMP ERROR: git commit failed"; exit 1; }
+
+git push origin main \
+    || { echo "$TIMESTAMP ERROR: git push failed"; exit 1; }
+
+echo "$TIMESTAMP pushed to origin"

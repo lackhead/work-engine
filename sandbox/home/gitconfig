@@ -7,3 +7,14 @@
 	defaultBranch = main
 [pull]
 	rebase = false
+[core]
+	# The vault + repos are bind-mounted from macOS; Docker Desktop's mount
+	# presents Unix permission bits UNSTABLY (a file's exec bit can flip between
+	# two consecutive git calls). With the default fileMode=true, git and
+	# pre-commit see phantom executable bits on files committed 0644 — e.g.
+	# check-executables-have-shebangs flagged ~100 non-executable config files.
+	# Ignoring worktree mode is the standard fix for repos on filesystems that
+	# don't report exec bits reliably. Trade-off: a genuine exec-bit change must
+	# be staged explicitly (`git add --chmod=+x <file>`); it won't be
+	# auto-detected. Container-only — the host keeps fileMode=true on native APFS.
+	fileMode = false

@@ -8,99 +8,190 @@
 # session `docker exec`s in via workon). Design + decisions:
 # ~/work/data/items/archived/isolated-claude-workspace/.
 #
-#   sandbox build     build the image from ~/work/engine/sandbox/
-#   sandbox up        create-or-start the persistent container (builds if needed)
-#   sandbox down      stop the container (keeps it and the ~/.claude volume)
-#   sandbox status    show image / container / volume state
-#   sandbox shell     open an interactive fish shell inside the container
-#   sandbox rebuild   rebuild the image (--no-cache) and recreate the container
-#
-# The container bind-mounts ~/work at the same absolute path and keeps login +
-# transcripts on the `claude-home` named volume (survives recreate/rebuild). The
-# image bakes no secrets, so tearing the container down and recreating loses no work.
 
 set -u
 
 IMAGE=work-sandbox:latest
 CONTAINER=work-sandbox
 VOLUME=claude-home
+CACHE_VOLUME=claude-cache
 WORK="${WORK_ROOT:-$HOME/work}"
 RECIPE="$WORK/engine/sandbox"
+# Optional gitignored host file holding CLAUDE_CODE_OAUTH_TOKEN (a long-lived
+# token from `claude setup-token` on the host), injected into the container so
+# sessions authenticate without an in-container browser login. Kept OUT of ~/work
+# and the image; only this path is referenced, never the token itself.
+SANDBOX_ENV="${SANDBOX_ENV:-$HOME/.config/claude-sandbox.env}"
 
-die() { echo "sandbox: $*" >&2; exit 1; }
+###
+### Output functions
+###
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NORMAL='\033[0m'
+VERBOSE=false
+DEBUG=false
 
+print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
+print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
+print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
+print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
+
+IFS='' read -r -d '' usage <<"EOF"
+
+sandbox: lifecycle for the isolated Claude workspace container
+
+Usage:
+   sandbox [ -h|--help ]
+   sandbox [ -v|--verbose ] [ -d|--debug ] <command>
+
+Commands:
+   build      Build the image from ~/work/engine/sandbox/
+   up         Create or start the persistent container (builds if needed)
+   down       Stop the container (keeps it and the named volumes)
+   status     Show image / container / volume state
+   shell      Open an interactive fish shell inside the container
+   rebuild    Rebuild the image (--no-cache) and recreate the container
+
+Options:
+   -h|--help     Show what you are seeing right now
+   -v|--verbose  Show what is happening as it happens
+   -d|--debug    Show diagnostic detail (implies --verbose)
+
+Description:
+   Manages the single persistent Docker container that Claude Code sessions
+   run inside. workon exec's into the container; sandbox manages its lifecycle.
+   The container bind-mounts the ~/work tree at the same absolute path and keeps login
+   + transcripts on the claude-home named volume; regenerable caches (e.g.
+   pre-commit hook environments under ~/.cache) persist on the claude-cache
+   volume, so nothing is lost — and no hook re-downloads — when the container
+   is recreated. The image itself bakes no secrets.
+
+   A gitignored env-file at ~/.config/claude-sandbox.env (if present) is
+   injected at container creation via --env-file, making CLAUDE_CODE_OAUTH_TOKEN
+   available inside for passwordless auth. The SSH keys sandbox_github and
+   sandbox_deploy are bind-mounted read-only if present under ~/.ssh/.
+
+Examples:
+   sandbox up            # start or create the container
+   sandbox status        # check image / container / volume state
+   sandbox rebuild       # rebuild after a Dockerfile change
+   sandbox shell         # drop into a fish shell inside the box
+
+EOF
+
+###
+### Helpers
+###
 need_docker() {
-    command -v docker >/dev/null 2>&1 || die "docker not found on PATH."
-    docker info >/dev/null 2>&1 || die "can't reach the Docker daemon — is Docker Desktop running?"
+    command -v docker >/dev/null 2>&1 || { print_error "docker not found on PATH."; exit 1; }
+    docker info >/dev/null 2>&1 || { print_error "Can't reach the Docker daemon — is Docker Desktop running?"; exit 1; }
 }
 
 container_exists()  { docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER"; }
 container_running() { docker ps    --format '{{.Names}}' | grep -qx "$CONTAINER"; }
 
+###
+### Commands
+###
 build() {
     need_docker
-    [ -f "$RECIPE/Dockerfile" ] || die "no Dockerfile at $RECIPE."
-    echo "sandbox: building $IMAGE from $RECIPE ..."
+    [ -f "$RECIPE/Dockerfile" ] || { print_error "No Dockerfile at $RECIPE."; exit 1; }
+    print_status "Building $IMAGE from $RECIPE ..."
     docker build "$@" -t "$IMAGE" "$RECIPE"
 }
 
 run_container() {
     # Dedicated sandbox SSH keys, mounted read-only at the same path so the
     # baked ~/.ssh/config finds them. Conditional: the box runs fine before the
-    # keys exist (Phase 2 setup), and picks them up on the next `up`/`rebuild`
-    # once they're generated. The keys are never baked into the image.
+    # keys exist, and picks them up on the next `up`/`rebuild` once generated.
     local ssh_mounts=() k
     for k in sandbox_github sandbox_deploy; do
-        [ -f "$HOME/.ssh/$k" ] && ssh_mounts+=( -v "$HOME/.ssh/$k:$HOME/.ssh/$k:ro" )
+        if [ -f "$HOME/.ssh/$k" ]; then
+            ssh_mounts+=( -v "$HOME/.ssh/$k:$HOME/.ssh/$k:ro" )
+            print_verbose "Mounting SSH key: $HOME/.ssh/$k"
+        fi
     done
 
+    # Long-lived auth token injection (see SANDBOX_ENV at the top of this file).
+    local env_args=()
+    if [ -f "$SANDBOX_ENV" ]; then
+        env_args+=( --env-file "$SANDBOX_ENV" )
+        print_verbose "Injecting env-file: $SANDBOX_ENV"
+    else
+        print_verbose "No env-file at $SANDBOX_ENV — no oauth token injection"
+    fi
+
+    print_verbose "Creating container: name=$CONTAINER hostname=sandbox image=$IMAGE"
+    print_debug   "Mounts: work=$WORK claude-home=$HOME/.claude cache=$HOME/.cache ssh=${ssh_mounts[*]:-none}"
+
     # Same absolute path inside and out is the whole point — don't change the
-    # mount target. Login + transcripts persist on the named volume.
+    # mount target. --hostname makes shell prompts read `clake@sandbox`.
+    # claude-cache persists ~/.cache (pre-commit hook envs, etc.) across recreates.
     docker run -d \
         --name "$CONTAINER" \
+        --hostname sandbox \
         --restart unless-stopped \
         -v "$WORK:$WORK" \
         -v "$VOLUME:$HOME/.claude" \
+        -v "$CACHE_VOLUME:$HOME/.cache" \
         ${ssh_mounts[@]+"${ssh_mounts[@]}"} \
+        ${env_args[@]+"${env_args[@]}"} \
         "$IMAGE" >/dev/null
 }
 
 up() {
     need_docker
-    if container_running; then echo "sandbox: already up."; return 0; fi
+    if container_running; then
+        print_status "Container already up ($CONTAINER)."
+        return 0
+    fi
     if container_exists; then
-        echo "sandbox: starting existing container ..."
-        docker start "$CONTAINER" >/dev/null || die "failed to start $CONTAINER."
+        print_status "Starting existing container ..."
+        docker start "$CONTAINER" >/dev/null || { print_error "Failed to start $CONTAINER."; exit 1; }
     else
         docker image inspect "$IMAGE" >/dev/null 2>&1 || build
-        echo "sandbox: creating container ..."
-        run_container || die "failed to create $CONTAINER."
+        print_status "Creating container ..."
+        run_container || { print_error "Failed to create $CONTAINER."; exit 1; }
     fi
-    echo "sandbox: up ($CONTAINER)."
+    print_success "Container up ($CONTAINER)."
 }
 
 down() {
     need_docker
-    if container_running; then docker stop "$CONTAINER" >/dev/null; fi
-    echo "sandbox: down."
+    if container_running; then
+        docker stop "$CONTAINER" >/dev/null
+    fi
+    print_status "Container down."
 }
 
 status() {
     need_docker
     if docker image inspect "$IMAGE" >/dev/null 2>&1; then
-        echo "image:     $IMAGE (built)"
+        print_status "Image:     $IMAGE (built)"
     else
-        echo "image:     $IMAGE (not built — run 'sandbox build')"
+        print_warning "Image:     $IMAGE (not built — run 'sandbox build')"
     fi
     if container_exists; then
-        docker ps -a --filter "name=^${CONTAINER}\$" --format 'container: {{.Names}} — {{.Status}}'
+        local cstatus
+        cstatus=$(docker ps -a --filter "name=^${CONTAINER}\$" --format '{{.Status}}')
+        print_status "Container: $CONTAINER — $cstatus"
     else
-        echo "container: not created — run 'sandbox up'"
+        print_warning "Container: not created — run 'sandbox up'"
     fi
     if docker volume inspect "$VOLUME" >/dev/null 2>&1; then
-        echo "volume:    $VOLUME (present — login + transcripts)"
+        print_status "Volume:    $VOLUME (present — login + transcripts)"
     else
-        echo "volume:    $VOLUME (none yet — created on first 'up')"
+        print_warning "Volume:    $VOLUME (none yet — created on first 'up')"
+    fi
+    if docker volume inspect "$CACHE_VOLUME" >/dev/null 2>&1; then
+        print_status "Volume:    $CACHE_VOLUME (present — ~/.cache, e.g. pre-commit hook envs)"
+    else
+        print_warning "Volume:    $CACHE_VOLUME (none yet — created on first 'up')"
     fi
 }
 
@@ -114,12 +205,26 @@ rebuild() {
     need_docker
     build --no-cache "$@"
     if container_exists; then
-        echo "sandbox: recreating container on the new image ..."
+        print_status "Recreating container on the new image ..."
         docker rm -f "$CONTAINER" >/dev/null
-        run_container || die "failed to recreate $CONTAINER."
-        echo "sandbox: recreated."
+        run_container || { print_error "Failed to recreate $CONTAINER."; exit 1; }
+        print_success "Container recreated ($CONTAINER)."
     fi
 }
+
+###
+### Dispatch
+###
+# Parse global options before the subcommand so `sandbox -v up` works.
+# -d implies -v.
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -v|--verbose) VERBOSE=true; shift ;;
+        -d|--debug)   DEBUG=true; VERBOSE=true; shift ;;
+        -h|--help|help) printf '%s\n' "$usage"; exit 0 ;;
+        *) break ;;
+    esac
+done
 
 cmd="${1:-}"
 [ "$#" -gt 0 ] && shift
@@ -130,16 +235,6 @@ case "$cmd" in
     status)  status ;;
     shell)   shell ;;
     rebuild) rebuild "$@" ;;
-    ''|-h|--help|help)
-        cat <<'EOF'
-usage: sandbox <command>
-  build      build the image from ~/work/engine/sandbox/
-  up         create-or-start the persistent container (builds if needed)
-  down       stop the container (keeps it and the ~/.claude volume)
-  status     show image / container / volume state
-  shell      open an interactive fish shell inside the container
-  rebuild    rebuild the image (--no-cache) and recreate the container
-EOF
-        ;;
-    *) die "unknown command '$cmd' (try: sandbox help)" ;;
+    '')      printf '%s\n' "$usage" ;;
+    *)       print_error "Unknown command '$cmd' (try: sandbox help)"; exit 1 ;;
 esac
