@@ -189,26 +189,18 @@ branch-drift check, then `docker exec`s Claude into the container at the right
 directory — so the per-item terminal workflow is unchanged; only the Claude
 process now runs in the box.
 
-## Backup and recovery
+## Backup
 
-`~/work/data` is the one part of `~/work` with no other offsite copy (code
-repos push to their own remotes; `engine/` has its own GitHub remote;
-worktrees are regenerable). So `data/` is its own git repo that pushes to an
-on-prem bare repo on `sec.sci.utah.edu` — **on-prem, not GitHub**, to keep
-internal operational notes inside the group's boundary.
+All of this instance's data lives in `~/work/data` — a plain directory tree,
+backed up however you choose (git to a remote host, GitHub, Time Machine,
+rsync, whatever fits). The engine needs no backup of its own beyond its
+GitHub remote (`~/work/engine` is just a clone); `repos/`/`worktrees/` are
+regenerable team code.
 
-- **Scope is work-management content only.** `data/` contains just items,
-  reminders, docs, diary, retrospectives, and `index.md` (plus the two
-  symlinks into `engine/`) — nothing engine-related, nothing team-code.
-- **Pushed automatically** every 4 hours by a launchd job running `work-backup`.
-- **Scoped, git-only credential.** The backup authenticates with a dedicated,
-  passphrase-free key reached through a `work-backup` ssh alias; on the server
-  that key is restricted to git operations by a `git-shell` forced command, so a
-  lost-laptop key can push the vault but never open a shell on the group server.
-
-The full recovery procedure (fresh-machine bootstrap, ssh setup, the
-canonicalization gotcha) is its own document:
-`~/work/data/docs/vault-recovery.md`.
+This job instance backs `data/` up via git to an on-prem remote, pushed
+automatically by a launchd job. That's an *instance-specific* choice, not
+part of the engine, so it's documented with the vault rather than here:
+`~/work/data/docs/work-data-backup.md`.
 
 ## How it's all tracked — sibling repos, not one tree
 
@@ -250,7 +242,7 @@ work-tree is ever an ancestor of another's root.
 ## Conventions in brief
 
 - **Cross-references inside the tree** use Obsidian wikilinks
-  (`[[ad-upgrade]]`, `[[docs/vault-recovery]]`). Work items link by bare name so
+  (`[[ad-upgrade]]`, `[[docs/index]]`). Work items link by bare name so
   the link survives zone moves. External URLs use Markdown links; repos and code
   paths use backticked paths.
 - **Frontmatter** is the canonical home for structured metadata — lowercase
@@ -266,5 +258,6 @@ per-directory `CLAUDE.md` files own the specifics for their areas.
 - **To *use* the system day to day:** `~/work/engine/docs/work-system-usage.md`.
 - **The precise schema:** `~/work/engine/schema/CLAUDE.md` (root) and each
   area's `CLAUDE.md`.
-- **Recovery / fresh-machine setup:** `~/work/data/docs/vault-recovery.md`.
+- **Setting up a new host/instance:** `~/work/engine/docs/work-system-setup.md`.
+- **This instance's backup + recovery:** `~/work/data/docs/work-data-backup.md`.
 - **Writing engine tooling:** `~/work/engine/docs/bin-coding-standards.md`.

@@ -1,0 +1,106 @@
+---
+title: Work system — setup
+created: 2026-07-06
+tags: [work-system, setup, reference]
+---
+
+# Work system — setup
+
+How to get the work system running on a new host — a wiped machine, a fresh
+laptop, or a brand-new instance (e.g. a personal vault on a second machine).
+This is engine-generic: it doesn't care which vault you're pointing at or how
+that vault backs itself up. For *this* job instance's specific backup/restore
+details (the git remote, the launchd job), see
+`~/work/data/docs/work-data-backup.md`. For day-to-day usage once it's
+running, see `~/work/engine/docs/work-system-usage.md`.
+
+Estimated time: 15–20 minutes on a clean machine, plus however long restoring
+your data takes.
+
+## Prerequisites
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install git fish
+# Docker Desktop: https://www.docker.com/products/docker-desktop/
+```
+
+Dotfiles (shell config, `PATH` wiring for `~/work/engine/bin`) should already
+be deployed before starting below — `workon`/`worktree`/`sandbox` aren't
+resolvable by bare name until they are, and the global `SessionEnd` hook +
+statusline entries in `~/.claude/settings.json` come from there too.
+
+## 1. Clone the engine
+
+```bash
+git clone <work-engine-remote> ~/work/engine              # deployed copy
+git clone <work-engine-remote> ~/work/repos/work-engine    # edit clone
+```
+
+Two clones is deliberate: `~/work/engine` is what `PATH` points at and is
+never hand-edited — refresh it later with a plain `git pull`. Edits go
+through `~/work/repos/work-engine` and a `worktree add <slug> work-engine`,
+same as any other repo (see `~/work/engine/schema/CLAUDE.md` principle 10).
+
+## 2. Get your data
+
+Either restore an existing vault, or start a fresh one:
+
+```bash
+# Restoring an existing instance (this job's vault — see work-data-backup.md
+# for the actual remote/credentials):
+git clone <your-vault-remote> ~/work/data
+
+# Starting a brand-new instance: nothing to do here — workinit (next step)
+# creates an empty data/ tree. git-ifying it for backups is a later, optional
+# step whenever you're ready — see work-data-backup.md.
+```
+
+## 3. Materialize the skeleton
+
+```bash
+workinit -v
+```
+
+Creates `~/work/{repos,worktrees}` and `data/{items,reminders,docs,diary,
+retrospectives,.claude}` if missing, and the two symlinks
+(`data/CLAUDE.md`, `data/.claude/skills`) into `engine/`. Never overwrites
+unexpected state — it flags anything odd instead (exit code `2`) so you can
+resolve it by hand. Safe to re-run any time, including just to verify nothing
+has drifted (a clean second run is the idempotency check).
+
+## 4. Build the sandbox
+
+```bash
+sandbox build      # ~5–10 min the first time
+sandbox up
+```
+
+Confirm with `sandbox status`. The container auto-starts on future logins
+(`--restart unless-stopped` + Docker Desktop "start at login").
+
+## 5. Verify end to end
+
+```bash
+workon <any-active-item>    # drops into a containerized Claude session
+```
+
+From inside that session, confirm `dashboard` and `retrospective` show up as
+available skills, and that ending the session writes a breadcrumb into
+`data/diary/`. If you restored an existing vault, also run `dashboard` once
+to regenerate `index.md` against the current host.
+
+## Team-code repos
+
+Any code repos you work on through this system (Ansible, internal tooling,
+etc.) get cloned the same way as `work-engine`'s edit clone — into
+`~/work/repos/<repo>/` — and worked through `worktree add <slug> <repo>`.
+Not part of engine setup itself; clone them as you pick up items that touch
+them.
+
+## Where to go next
+
+- **Day-to-day usage:** `~/work/engine/docs/work-system-usage.md`.
+- **Why it's built this way:** `~/work/engine/docs/work-system-architecture.md`.
+- **This instance's backup + recovery specifics:**
+  `~/work/data/docs/work-data-backup.md`.

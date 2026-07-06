@@ -25,7 +25,8 @@ and "A typical day," then dip into the task sections as needed.
   Claude Code session in the right directory — inside an isolated container.
 - You **see where things stand** by running the `dashboard` skill; you **recap
   what you did** with the `retrospective` skill.
-- Everything is plain Markdown, auto-backed-up offsite every 4 hours.
+- Everything is plain Markdown, living under `~/work/data` — back it up
+  however you like (this instance does it automatically; see "Backups" below).
 
 A note on *where* commands run: `sandbox` and `workon` drive Docker, so they run
 on the **host**. The capture commands (`workjot` / `workreminder` / `workitem`),
@@ -213,21 +214,24 @@ it if it's down. You need it mainly when:
 Recreating the container loses nothing — login and transcripts live on the
 `claude-home` named volume, the vault is a bind-mount.
 
-## Backups and recovery
+## Backups
 
-Backups are **automatic**: a launchd job runs `work-backup` every 4 hours,
-committing any vault changes and pushing them offsite to `work-vault.git` on
-`sec.sci.utah.edu`. You don't have to do anything.
+`~/work/data` is the only thing that needs backing up (`engine/` is a clone
+of its own GitHub remote; `repos/`/`worktrees/` are regenerable) — back it up
+however suits you. This instance does it **automatically**: a launchd job
+runs `work-backup` every 4 hours, committing any vault changes and pushing
+them offsite. You don't have to do anything day to day.
 
 ```bash
 work-backup                              # force a commit + push right now
 tail -5 ~/Library/Logs/work-backup.log   # check the last runs
 ```
 
-To **recover** the vault on a new or wiped machine — and the full fresh-machine
-bootstrap (Docker, dotfiles, work-engine clone, `workinit`, ssh key, launchd,
-container) — follow `~/work/data/docs/vault-recovery.md`. It's written to be
-run start-to-finish and has been test-run.
+Full details of this instance's backup setup — the git remote, the launchd
+job, restoring on a new machine — are in
+`~/work/data/docs/work-data-backup.md`. For setting up a *new* instance from
+scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
+`~/work/engine/docs/work-system-setup.md`.
 
 ## Command cheat sheet
 
@@ -251,4 +255,5 @@ also take `-v/--verbose` and `-d/--debug`.
 - **Why it's built this way:** `~/work/engine/docs/work-system-architecture.md`.
 - **The precise rules for a content type:** that area's `CLAUDE.md` under
   `~/work/engine/schema/` (`items/`, `reminders/`, `docs/`, `diary/`).
-- **Recovery / new machine:** `~/work/data/docs/vault-recovery.md`.
+- **Setting up a new host/instance:** `~/work/engine/docs/work-system-setup.md`.
+- **This instance's backup + recovery:** `~/work/data/docs/work-data-backup.md`.
