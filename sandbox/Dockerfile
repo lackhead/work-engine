@@ -27,6 +27,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd
 
+# GitHub CLI, from GitHub's own apt repo rather than assuming Debian's default
+# sources carry it (they don't reliably, across releases) — same install shape
+# GitHub documents for Debian/Ubuntu.
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages/stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
 # Non-root user whose HOME is the host's HOME path. Required: Claude Code refuses
 # --dangerously-skip-permissions (Phase 2) as root. The vault and ~/.claude are
 # overlaid by mounts at runtime; we create the mount points here so a fresh
