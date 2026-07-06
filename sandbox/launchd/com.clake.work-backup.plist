@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.clake.work-backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/clake/work/engine/bin/work-backup</string>
+    </array>
+
+    <!-- Run every 4 hours. -->
+    <key>StartInterval</key>
+    <integer>14400</integer>
+
+    <!-- Don't run immediately on launchctl load — wait for the first interval.
+         Avoids failing if the remote isn't reachable at boot. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/clake/Library/Logs/work-backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/clake/Library/Logs/work-backup.log</string>
+</dict>
+</plist>
