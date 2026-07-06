@@ -283,7 +283,7 @@ kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-
 ## The vault is a git repo — don't treat it as a code repo
 
 `~/work/data` is itself a git repo (the offsite backup — see
-`~/work/data/docs/vault-recovery.md`). Any tool that runs `git` against a
+`~/work/data/docs/work-data-backup.md`). Any tool that runs `git` against a
 *current directory* — rather than an explicit `repos/<repo>` or worktree path
 — can silently resolve **up** to the vault when run from an item folder,
 `data/docs/`, or the vault root, because git walks upward to the nearest
