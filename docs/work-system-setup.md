@@ -19,11 +19,17 @@ your data takes.
 
 ## Prerequisites
 
+Assumes Homebrew is already installed.
+
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 brew install git fish
-# Docker Desktop: https://www.docker.com/products/docker-desktop/
+brew install --cask docker
+mkdir -p ~/work
 ```
+
+`~/work` is just the default — any directory works as long as `$WORK_ROOT`
+points at it (see `~/work/engine/schema/CLAUDE.md`). The rest of this doc
+assumes the default.
 
 Dotfiles (shell config, `PATH` wiring for `~/work/engine/bin`) should already
 be deployed before starting below — `workon`/`worktree`/`sandbox` aren't
@@ -33,14 +39,23 @@ statusline entries in `~/.claude/settings.json` come from there too.
 ## 1. Clone the engine
 
 ```bash
-git clone <work-engine-remote> ~/work/engine              # deployed copy
-git clone <work-engine-remote> ~/work/repos/work-engine    # edit clone
+git clone git@github.com:lackhead/work-engine ~/work/engine
 ```
 
-Two clones is deliberate: `~/work/engine` is what `PATH` points at and is
-never hand-edited — refresh it later with a plain `git pull`. Edits go
-through `~/work/repos/work-engine` and a `worktree add <slug> work-engine`,
-same as any other repo (see `~/work/engine/schema/CLAUDE.md` principle 10).
+This deployed copy is what `PATH` points at — never hand-edit it; refresh
+it later with a plain `git pull`.
+
+Working *on* the engine itself (not just using it) needs a second, editable
+clone — not required just to run the system:
+
+```bash
+git clone git@github.com:lackhead/work-engine ~/work/repos/work-engine
+```
+
+Edit through a worktree, same as any other repo (`worktree add <slug>
+work-engine`), never by hand-editing the deployed `~/work/engine/` copy —
+pull the merged result into it with a plain `git pull` (see
+`~/work/engine/schema/CLAUDE.md` principle 10).
 
 ## 2. Get your data
 
@@ -93,7 +108,7 @@ to regenerate `index.md` against the current host.
 ## Team-code repos
 
 Any code repos you work on through this system (Ansible, internal tooling,
-etc.) get cloned the same way as `work-engine`'s edit clone — into
+etc.) get cloned the same way as `work-engine`'s optional edit clone — into
 `~/work/repos/<repo>/` — and worked through `worktree add <slug> <repo>`.
 Not part of engine setup itself; clone them as you pick up items that touch
 them.
