@@ -219,6 +219,7 @@ sandbox up        # create or start the persistent container (builds if needed)
 sandbox status    # image / container / volume state
 sandbox shell     # drop into a fish shell inside the box
 sandbox down      # stop it (keeps the container + the claude-home volume)
+sandbox restart   # stop then start — no rebuild (e.g. a hung container)
 sandbox rebuild   # rebuild the image (--no-cache) and recreate the container
 ```
 
@@ -263,7 +264,7 @@ scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
 | `workitem archive <slug> [--completed\|--cancelled]` | Close out an item | vault |
 | `workon <slug> [repo]` | Open a Claude session for an item | host → container |
 | `worktree add/rm/list/refresh` | Manage per-item git worktrees | vault/repos |
-| `sandbox up/down/status/shell/rebuild` | Container lifecycle | host |
+| `sandbox up/down/restart/status/shell/rebuild` | Container lifecycle | host |
 | `work-backup` | Commit + push the vault offsite now | host |
 | `dashboard` (skill) | Rank in-flight work, regenerate `index.md` | vault |
 | `retrospective [window]` (skill) | Recap a window, propose status write-backs | vault |

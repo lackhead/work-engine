@@ -59,6 +59,7 @@ Commands:
    build      Build the image from ~/work/engine/sandbox/
    up         Create or start the persistent container (builds if needed)
    down       Stop the container (keeps it and the named volumes)
+   restart    Stop then start the container (no rebuild) — down + up
    status     Show image / container / volume state
    shell      Open an interactive fish shell inside the container
    rebuild    Rebuild the image (--no-cache) and recreate the container
@@ -88,6 +89,7 @@ Description:
 
 Examples:
    sandbox up            # start or create the container
+   sandbox restart       # stop + start, no rebuild (e.g. a hung container)
    sandbox status        # check image / container / volume state
    sandbox rebuild       # rebuild after a Dockerfile change
    sandbox shell         # drop into a fish shell inside the box
@@ -191,6 +193,12 @@ down() {
     print_status "Container down."
 }
 
+restart() {
+    need_docker
+    down
+    up
+}
+
 status() {
     need_docker
     if docker image inspect "$IMAGE" >/dev/null 2>&1; then
@@ -254,6 +262,7 @@ case "$cmd" in
     build)   build "$@" ;;
     up)      up ;;
     down)    down ;;
+    restart) restart ;;
     status)  status ;;
     shell)   shell ;;
     rebuild) rebuild "$@" ;;
