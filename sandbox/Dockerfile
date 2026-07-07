@@ -60,6 +60,10 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 #   RUN curl -fsSL https://claude.ai/install.sh | bash -s <version>
 
 # Python CLI toolchain for the Ansible workflow, installed AS THE USER via pipx.
+# Per-instance: a personal instance with no Ansible work sets
+# INSTALL_ANSIBLE_TOOLCHAIN=false (see ~/work/engine/bin/sandbox — reads
+# data/sandbox/build-args.env and passes it through as --build-arg). Default
+# true preserves existing behavior for instances that don't set it.
 # PEP 668 marks Debian's system Python externally-managed, so pipx is the
 # sanctioned path — each app gets its own venv with entry points on ~/.local/bin
 # (already on PATH). Image-authoritative: a `sandbox rebuild` updates them.
@@ -70,9 +74,12 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 #     --include-deps exposes ansible-core's binaries (ansible-playbook, -galaxy,
 #     -inventory, -vault) on PATH for direct use / the repo's Makefile.
 #   - ansible-lint for `make lint` and ad-hoc linting.
-RUN pipx install pre-commit \
-    && pipx install --include-deps ansible \
-    && pipx install ansible-lint
+ARG INSTALL_ANSIBLE_TOOLCHAIN=true
+RUN if [ "$INSTALL_ANSIBLE_TOOLCHAIN" = "true" ]; then \
+        pipx install pre-commit \
+        && pipx install --include-deps ansible \
+        && pipx install ansible-lint; \
+    fi
 
 # Minimal interactive shell config (greeting off + work-system completions);
 # generic, deliberately not a copy of the host's fish setup.

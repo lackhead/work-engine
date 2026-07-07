@@ -116,6 +116,21 @@ login inside the container instead.
 
 ## 5. Build the sandbox
 
+If this instance needs different packages than the shared Dockerfile's
+defaults — e.g. a personal instance with no Ansible work — set that
+*before* building, in `data/sandbox/build-args.env` (one `KEY=value` per
+line; tracked in the vault, since it's an instance preference, not a
+secret):
+
+```
+INSTALL_ANSIBLE_TOOLCHAIN=false
+```
+
+`sandbox build` picks this up automatically and passes it through as
+Docker build-args. Everything else — Claude, `gh`, the base shell tooling —
+stays common to every instance; only genuinely per-instance differences
+belong here.
+
 ```bash
 sandbox build      # ~5–10 min the first time
 sandbox up

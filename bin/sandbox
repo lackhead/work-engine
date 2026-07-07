@@ -22,6 +22,12 @@ RECIPE="$WORK/engine/sandbox"
 # sessions authenticate without an in-container browser login. Kept OUT of ~/work
 # and the image; only this path is referenced, never the token itself.
 SANDBOX_ENV="${SANDBOX_ENV:-$HOME/.config/claude-sandbox.env}"
+# Optional per-instance Docker build-arg overrides (e.g.
+# INSTALL_ANSIBLE_TOOLCHAIN=false for a personal instance with no Ansible
+# work) — one KEY=value per line, blank lines and #-comments ignored. Lives
+# in data/ (tracked, no secrets here) since it's instance-specific, not
+# engine content — a personal and a work instance each carry their own.
+BUILD_ARGS_FILE="${BUILD_ARGS_FILE:-$WORK/data/sandbox/build-args.env}"
 
 ###
 ### Output functions
@@ -76,6 +82,10 @@ Description:
    available inside for passwordless auth. The SSH keys sandbox_github and
    sandbox_deploy are bind-mounted read-only if present under ~/.ssh/.
 
+   data/sandbox/build-args.env (if present) supplies per-instance Docker
+   build-args — e.g. INSTALL_ANSIBLE_TOOLCHAIN=false for a personal instance
+   that doesn't need the Ansible toolchain — one KEY=value per line.
+
 Examples:
    sandbox up            # start or create the container
    sandbox status        # check image / container / volume state
@@ -101,8 +111,20 @@ container_running() { docker ps    --format '{{.Names}}' | grep -qx "$CONTAINER"
 build() {
     need_docker
     [ -f "$RECIPE/Dockerfile" ] || { print_error "No Dockerfile at $RECIPE."; exit 1; }
+
+    local build_args=() line
+    if [ -f "$BUILD_ARGS_FILE" ]; then
+        print_verbose "Reading build args from $BUILD_ARGS_FILE"
+        while IFS= read -r line || [ -n "$line" ]; do
+            case "$line" in
+                ''|'#'*) continue ;;
+                *) build_args+=(--build-arg "$line"); print_debug "build-arg: $line" ;;
+            esac
+        done < "$BUILD_ARGS_FILE"
+    fi
+
     print_status "Building $IMAGE from $RECIPE ..."
-    docker build "$@" -t "$IMAGE" "$RECIPE"
+    docker build ${build_args[@]+"${build_args[@]}"} "$@" -t "$IMAGE" "$RECIPE"
 }
 
 run_container() {
