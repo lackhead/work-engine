@@ -115,7 +115,8 @@ tracked" below). These are the verbs of the system:
 - **`workjot`** — append a timestamped one-liner to today's jot log (ad-hoc work
   that never gets a session).
 - **`workreminder`** — capture a reminder.
-- **`workitem`** — create a work item.
+- **`workitem`** — create, list, and archive work items (subcommands
+  `create`/`list`/`archive`).
 - **`workon`** — open a Claude Code session for an item, in the right place (its
   worktree, or its folder), resume-aware.
 - **`worktree`** — create/list/remove the per-item git worktrees.

@@ -44,7 +44,7 @@ Every `work*` command takes `-h/--help`, `-v/--verbose`, and `-d/--debug`.
 3. **Quick thing outside a session?** `workjot "bumped the alert threshold,
    restarted nagios"` — captured to today's log without ceremony.
 4. **Something to not lose?** `workreminder "check the threshold held overnight"`.
-5. **New piece of work?** `workitem Rework the cache host info`.
+5. **New piece of work?** `workitem create Rework the cache host info`.
 6. **What should I be doing?** Run the `dashboard` skill — it ranks in-flight
    work and rewrites [[index]].
 7. **End of day / standup:** run the `retrospective` skill (`today`,
@@ -87,18 +87,36 @@ workreminder -i nagios Follow up with the team on the alert runbook
 `-i <slug>` attributes it to a work item. If a "reminder" actually needs a
 working session, make it an item instead.
 
-### `workitem` — create a work item
+### `workitem` — create, list, and archive work items
 
-Creates a single-file item under `items/`. Prompts for placement (active
-top-level vs. `backlog/`) and optionally `to:` / `due:`.
+Every item is a directory (front door `<slug>/<slug>.md`); `plan.md` and
+`status/` are added later, only when the item earns them.
 
 ```bash
-workitem                                # interactive
-workitem Update nagios push notifications
+workitem create                                # interactive
+workitem create Update nagios push notifications
 ```
 
-Items start as a single file. Grow one into a directory (with `plan.md` and
-`status/`) only when it earns a plan or a status log — see [[items/CLAUDE]].
+Prompts for a one/two-sentence description, placement (active top-level vs.
+`backlog/`), and optionally `to:` / `due:`. See [[items/CLAUDE]].
+
+`workitem list` is a quick terminal-native glance — slug, status, due,
+last-updated — no LLM session needed:
+
+```bash
+workitem list                    # top-level (active + blocked)
+workitem list --backlog
+workitem list --all --status blocked
+```
+
+`workitem archive <slug>` closes one out — sets `status:`
+(`completed`/`cancelled`, prompted if not passed as a flag) and the
+`completed:` date, moves it to `items/archived/`, and removes its
+worktree(s) if any:
+
+```bash
+workitem archive nagios --completed
+```
 
 ## Working on an item
 
@@ -180,8 +198,9 @@ These are deliberate edits, not commands (the schema is in [[items/CLAUDE]]):
 - **Pause:** move `items/<x>` → `items/backlog/`, set `status: deferred`.
 - **Block/unblock:** just flip `status:` between `active` and `blocked` — *no
   move* (both live at top level), so the most frequent transition is free.
-- **Finish:** set `status: completed` (or `cancelled`) and the `completed:`
-  date, move to `items/archived/`, and `worktree rm <slug>`.
+- **Finish:** `workitem archive <slug> [--completed|--cancelled]` — sets
+  `status:` and the `completed:` date, moves to `items/archived/`, and
+  removes its worktree(s) if any, all in one step.
 
 Reminders archive as a single coupled move: set `status:` to `addressed` or
 `dismissed` *and* move the file to `reminders/archived/` together. Documents
@@ -239,7 +258,9 @@ scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
 |---------|------|---------|
 | `workjot <note>` | Log ad-hoc work to today's jot log | vault |
 | `workreminder <desc>` | Capture a follow-up reminder | vault |
-| `workitem <title>` | Create a work item | vault |
+| `workitem create [title...]` | Create a work item | vault |
+| `workitem list [--backlog\|--archived\|--all] [--status <v>]` | Quick glance at items | vault |
+| `workitem archive <slug> [--completed\|--cancelled]` | Close out an item | vault |
 | `workon <slug> [repo]` | Open a Claude session for an item | host → container |
 | `worktree add/rm/list/refresh` | Manage per-item git worktrees | vault/repos |
 | `sandbox up/down/status/shell/rebuild` | Container lifecycle | host |

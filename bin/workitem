@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# workitem — quickly create a work item under ~/work/data/items/.
+# workitem — create, list, and archive work items under ~/work/data/items/.
 #
 # Engine tool for the work system. Lives at ~/work/engine/bin/workitem (the
-# work-engine repo, on PATH).
+# work-engine repo, on PATH). Companion completion:
+# ~/work/engine/bin/completions/workitem.fish.
 #
 
 set -u
@@ -30,124 +31,275 @@ print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workitem: quickly create a work item under ~/work/data/items/
+workitem: create, list, and archive work items under ~/work/data/items/
 
 Usage:
    workitem [ -h|--help ]
-   workitem [ -d|--debug ] [title...]
+   workitem [ -v|--verbose ] [ -d|--debug ] create  [title...]
+   workitem [ -v|--verbose ] [ -d|--debug ] list    [--backlog|--archived|--all] [--status <value>]
+   workitem [ -v|--verbose ] [ -d|--debug ] archive <slug> [--completed|--cancelled]
 
 Arguments:
    -h|--help     Show what you are seeing right now
    -v|--verbose  Show what is happening as it happens
    -d|--debug    Show diagnostic detail (implies --verbose)
-   [title...]  Item title (prompted if omitted)
 
 Description:
-   Creates a work item directory (items/<slug>/<slug>.md, the front door)
-   with YAML frontmatter. Prompts for a one- or two-sentence description to
-   seed the body, placement (active top-level vs. backlog), and optionally
-   for to/due. Add plan.md/status/ later if and when the item earns them.
+   create   Prompts for title, a one/two-sentence description, placement
+            (active top-level vs. backlog), and optionally to/due. Creates
+            items/<slug>/<slug>.md, the front door. Add plan.md/status/
+            later if and when the item earns them.
+
+   list     Quick terminal-native glance: slug, status, due, last-updated —
+            no LLM session needed. Defaults to top-level (active + blocked).
+            --backlog / --archived switch zones; --all shows every zone with
+            a zone column; --status <value> filters to one status value.
+
+   archive  Sets status to completed/cancelled (prompted if not given as a
+            flag) plus the completed: date, moves the item to
+            items/archived/<slug>/, and removes its worktree(s) if any.
+            Looks for <slug> under items/ and items/backlog/.
 
 Examples:
-   workitem
-   workitem Rework cache host info
-   workitem Update nagios push notifications
+   workitem create Rework cache host info
+   workitem list
+   workitem list --backlog
+   workitem list --all --status blocked
+   workitem archive nagios --completed
 
 EOF
 
 trim()  { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
 kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
 
+# Portable last-modified date (BSD/macOS stat and GNU/Linux stat use
+# incompatible flags — branch on uname rather than probing flags, since
+# GNU's -f means something else entirely and won't reliably fail).
+file_mtime_date() {
+    case "$(uname -s)" in
+        Darwin|*BSD) stat -f '%Sm' -t '%Y-%m-%d' "$1" 2>/dev/null ;;
+        *)           stat -c '%y' "$1" 2>/dev/null | cut -d' ' -f1 ;;
+    esac
+}
+
 ###
-### Parse arguments
+### Subcommands
 ###
-title_parts=()
+wi_create() {
+    local title_parts=() title desc to due duetype made slug itemdir file
+    title_parts=("$@")
+
+    title=''
+    [ ${#title_parts[@]} -gt 0 ] && title="${title_parts[*]}"
+    title="$(trim "$title")"
+    if [ -z "$title" ]; then
+        read -r -p "title: " title
+        title="$(trim "$title")"
+    fi
+    if [ -z "$title" ]; then
+        print_error "Empty title — nothing created."; return 1
+    fi
+
+    read -r -p "description (a sentence or two, blank to omit): " desc
+    desc="$(trim "$desc")"
+
+    read -r -p "active (top-level) or backlog (proposed)? [a/b] " zone
+    local status=active subdir=''
+    if printf '%s' "$zone" | grep -qiE '^b'; then
+        status=proposed
+        subdir=backlog/
+    fi
+
+    read -r -p "to (person/team/self, blank to omit): " to
+    to="$(trim "$to")"
+    read -r -p "due (YYYY-MM-DD, blank for none): " due
+    due="$(trim "$due")"
+    duetype=''
+    if [ -n "$due" ]; then
+        read -r -p "  due type [hard/soft]: " duetype
+        duetype="$(trim "$duetype")"
+    fi
+
+    made=$(date +%Y-%m-%d)
+    slug=$(kebab "$title")
+    print_debug "Creating item: slug=$slug status=$status subdir='$subdir'"
+
+    # Refuse if an item with this slug exists in any zone (file or directory —
+    # the latter check catches legacy single-file items too, just in case).
+    local z
+    for z in '' backlog/ archived/; do
+        if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
+            print_error "An item named '$slug' already exists (items/$z)."; return 1
+        fi
+    done
+
+    itemdir="$WORK/data/items/$subdir$slug"
+    file="$itemdir/$slug.md"
+    mkdir -p "$itemdir"
+    {
+        echo "---"
+        echo "title: $title"
+        echo "status: $status"
+        echo "made: $made"
+        [ -n "$to" ] && echo "to: $to"
+        if [ -n "$due" ]; then
+            echo "due: $due"
+            [ -n "$duetype" ] && echo "due-type: $duetype"
+        fi
+        echo "---"
+        echo
+        echo "# $title"
+        if [ -n "$desc" ]; then
+            echo
+            echo "$desc"
+        fi
+    } > "$file"
+
+    print_success "Created → ${file/#$HOME/\~}"
+}
+
+wi_list() {
+    local zones=() show_zone_col=false status_filter='' a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            --backlog)  zones+=(backlog) ;;
+            --archived) zones+=(archived) ;;
+            --all)      zones=(top backlog archived); show_zone_col=true ;;
+            --status)   shift; status_filter=${1:-} ;;
+            --status=*) status_filter=${a#--status=} ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)  print_error "Unexpected argument: $a"; return 1 ;;
+        esac
+        shift
+    done
+    [ ${#zones[@]} -eq 0 ] && zones=(top)
+
+    local root="$WORK/data/items"
+    if [ "$show_zone_col" = true ]; then
+        printf '%-28s %-9s %-11s %-11s %s\n' SLUG STATUS DUE UPDATED ZONE
+    else
+        printf '%-28s %-9s %-11s %-11s\n' SLUG STATUS DUE UPDATED
+    fi
+
+    local zone dir itemdir slug front status due updated found=0
+    for zone in "${zones[@]}"; do
+        dir="$root"
+        [ "$zone" != top ] && dir="$root/$zone"
+        [ -d "$dir" ] || continue
+        for itemdir in "$dir"/*/; do
+            [ -d "$itemdir" ] || continue
+            slug=$(basename "$itemdir")
+            front="$itemdir$slug.md"
+            [ -f "$front" ] || continue
+            status=$(sed -n 's/^status: *//p' "$front" | head -1)
+            [ -n "$status_filter" ] && [ "$status" != "$status_filter" ] && continue
+            due=$(sed -n 's/^due: *//p' "$front" | head -1)
+            updated=$(file_mtime_date "$front")
+            if [ "$show_zone_col" = true ]; then
+                printf '%-28s %-9s %-11s %-11s %s\n' "$slug" "$status" "${due:--}" "${updated:--}" "$zone"
+            else
+                printf '%-28s %-9s %-11s %-11s\n' "$slug" "$status" "${due:--}" "${updated:--}"
+            fi
+            found=1
+        done
+    done
+    [ "$found" -eq 1 ] || echo "(none)"
+}
+
+wi_archive() {
+    local slug='' newstatus='' a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            --completed) newstatus=completed ;;
+            --cancelled) newstatus=cancelled ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$slug" ]; then slug=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+        shift
+    done
+    if [ -z "$slug" ]; then
+        print_error "Usage: workitem archive <slug> [--completed|--cancelled]"; return 1
+    fi
+
+    local root="$WORK/data/items" srcdir=''
+    if [ -d "$root/$slug" ]; then
+        srcdir="$root/$slug"
+    elif [ -d "$root/backlog/$slug" ]; then
+        srcdir="$root/backlog/$slug"
+    elif [ -d "$root/archived/$slug" ]; then
+        print_error "'$slug' is already archived."; return 1
+    else
+        print_error "No item '$slug' found (checked items/ and items/backlog/)."; return 1
+    fi
+    print_verbose "Found item at ${srcdir/#$HOME/\~}"
+
+    if [ -z "$newstatus" ]; then
+        read -r -p "completed or cancelled? [c/x] " reply
+        case "$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')" in
+            c*) newstatus=completed ;;
+            x*|d*) newstatus=cancelled ;;
+            *) print_error "Cancelled — nothing changed."; return 1 ;;
+        esac
+    fi
+
+    local front="$srcdir/$slug.md"
+    local today; today=$(date +%Y-%m-%d)
+    local tmp; tmp=$(mktemp)
+    if grep -q '^completed:' "$front"; then
+        sed -e "s/^status:.*/status: $newstatus/" \
+            -e "s/^completed:.*/completed: $today/" "$front" > "$tmp"
+    else
+        awk -v s="$newstatus" -v d="$today" '
+            /^status:/ { print "status: " s; print "completed: " d; next }
+            { print }
+        ' "$front" > "$tmp"
+    fi
+    mv "$tmp" "$front"
+    print_debug "Frontmatter updated: status=$newstatus completed=$today"
+
+    local destdir="$root/archived/$slug"
+    if [ -e "$destdir" ]; then
+        print_error "Target already exists: items/archived/$slug"; return 1
+    fi
+    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1; then
+        git -C "$WORK/data" mv "${srcdir#"$WORK"/data/}" "items/archived/$slug"
+    else
+        mv "$srcdir" "$destdir"
+    fi
+
+    if [ -d "$WORK/worktrees/$slug" ]; then
+        print_status "Removing worktree(s) for '$slug' ..."
+        worktree rm "$slug" || print_warning "worktree rm failed — clean it up by hand."
+    fi
+
+    print_success "Archived → items/archived/$slug ($newstatus)"
+}
+
+###
+### Dispatch
+###
+# Parse global options before the subcommand so `workitem -v list` works.
+# -d implies -v.
 while [ $# -gt 0 ]; do
     case "$1" in
-        -v|--verbose) VERBOSE=true ;;
-        -d|--debug)   DEBUG=true; VERBOSE=true ;;
-        -h|--help|help)
-            printf '%s\n' "$usage"
-            exit 0 ;;
-        -*) print_error "Unknown option: $1"; exit 1 ;;
-        *)  title_parts+=("$1") ;;
+        -v|--verbose) VERBOSE=true; shift ;;
+        -d|--debug)   DEBUG=true; VERBOSE=true; shift ;;
+        -h|--help|help) printf '%s\n' "$usage"; exit 0 ;;
+        *) break ;;
     esac
-    shift
 done
 
-###
-### Collect title
-###
-title=''
-[ ${#title_parts[@]} -gt 0 ] && title="${title_parts[*]}"
-title="$(trim "$title")"
-if [ -z "$title" ]; then
-    read -r -p "title: " title
-    title="$(trim "$title")"
-fi
-if [ -z "$title" ]; then
-    print_error "Empty title — nothing created."; exit 1
-fi
-
-read -r -p "description (a sentence or two, blank to omit): " desc
-desc="$(trim "$desc")"
-
-###
-### Prompts
-###
-read -r -p "active (top-level) or backlog (proposed)? [a/b] " zone
-status=active
-subdir=''
-if printf '%s' "$zone" | grep -qiE '^b'; then
-    status=proposed
-    subdir=backlog/
-fi
-
-read -r -p "to (person/team/self, blank to omit): " to
-to="$(trim "$to")"
-read -r -p "due (YYYY-MM-DD, blank for none): " due
-due="$(trim "$due")"
-duetype=''
-if [ -n "$due" ]; then
-    read -r -p "  due type [hard/soft]: " duetype
-    duetype="$(trim "$duetype")"
-fi
-
-###
-### Write the file
-###
-made=$(date +%Y-%m-%d)
-slug=$(kebab "$title")
-print_debug "Creating item: slug=$slug status=$status subdir='$subdir'"
-
-# Refuse if an item with this slug exists in any zone (file or directory —
-# the latter check catches legacy single-file items too, just in case).
-for z in '' backlog/ archived/; do
-    if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
-        print_error "An item named '$slug' already exists (items/$z)."; exit 1
-    fi
-done
-
-itemdir="$WORK/data/items/$subdir$slug"
-file="$itemdir/$slug.md"
-mkdir -p "$itemdir"
-{
-    echo "---"
-    echo "title: $title"
-    echo "status: $status"
-    echo "made: $made"
-    [ -n "$to" ] && echo "to: $to"
-    if [ -n "$due" ]; then
-        echo "due: $due"
-        [ -n "$duetype" ] && echo "due-type: $duetype"
-    fi
-    echo "---"
-    echo
-    echo "# $title"
-    if [ -n "$desc" ]; then
-        echo
-        echo "$desc"
-    fi
-} > "$file"
-
-print_success "Created → ${file/#$HOME/\~}"
+cmd="${1:-}"
+[ "$#" -gt 0 ] && shift
+case "$cmd" in
+    create)  wi_create "$@" ;;
+    list)    wi_list "$@" ;;
+    archive) wi_archive "$@" ;;
+    '')      printf '%s\n' "$usage" ;;
+    *)       print_error "Unknown command '$cmd' (try: workitem help)"; exit 1 ;;
+esac

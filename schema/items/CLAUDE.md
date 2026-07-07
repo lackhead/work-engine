@@ -208,14 +208,14 @@ item links never include the zone:
 
 ### Adding an item
 
-Create the item's directory with its front-door file, `items/<name>/<name>.md`
-(frontmatter: `title`, `status: proposed` by default, `made:` today). Ask for
-missing required fields and for `to:` if a promise is implied; when a `due:`
-is set, ask hard vs. soft. Confirm whether to promote straight to `active`
-(which means it also lands at the top level rather than `backlog/`) or leave
-`proposed` in `backlog/`. Add a body only if there's context worth capturing.
-Add `plan.md` and `status/` later, only when the item earns them — most
-items never do.
+`workitem create` prompts for title, a one/two-sentence description,
+placement (active top-level vs. backlog), and optionally `to`/`due` —
+creates the item's directory with its front-door file,
+`items/<name>/<name>.md`. When creating one conversationally instead, follow
+the same shape: `status: proposed` by default, `made:` today, ask for
+missing required fields and for `to:` if a promise is implied, ask hard vs.
+soft when a `due:` is set. Add `plan.md` and `status/` later, only when the
+item earns them — most items never do.
 
 ### Surfacing items
 
@@ -239,6 +239,11 @@ Moving to `items/archived/` takes an item out of active circulation. Usually
 paired with a `completed` / `cancelled` status, but an item set aside
 long-term may be archived carrying any status. The body is preserved; archived
 content is read-only by convention (fix outright errors only).
+
+`workitem archive <slug> [--completed|--cancelled]` automates the common
+case: sets `status:` and `completed:`, moves the item to `items/archived/`,
+and removes its worktree(s) if any. For the "set aside carrying any other
+status" case, do the move by hand (or ask Claude to).
 
 ### Promoting a reminder into an item
 
