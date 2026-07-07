@@ -44,9 +44,9 @@ Arguments:
 
 Description:
    Creates a work item directory (items/<slug>/<slug>.md, the front door)
-   with YAML frontmatter. Prompts for placement (active top-level vs.
-   backlog), and optionally for to/due. Add plan.md/status/ later if and
-   when the item earns them.
+   with YAML frontmatter. Prompts for a one- or two-sentence description to
+   seed the body, placement (active top-level vs. backlog), and optionally
+   for to/due. Add plan.md/status/ later if and when the item earns them.
 
 Examples:
    workitem
@@ -88,6 +88,9 @@ fi
 if [ -z "$title" ]; then
     print_error "Empty title — nothing created."; exit 1
 fi
+
+read -r -p "description (a sentence or two, blank to omit): " desc
+desc="$(trim "$desc")"
 
 ###
 ### Prompts
@@ -141,6 +144,10 @@ mkdir -p "$itemdir"
     echo "---"
     echo
     echo "# $title"
+    if [ -n "$desc" ]; then
+        echo
+        echo "$desc"
+    fi
 } > "$file"
 
 print_success "Created → ${file/#$HOME/\~}"
