@@ -72,6 +72,19 @@ EOF
 trim()  { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
 kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
 
+# Truncate to at most $2 chars, marking truncation with a trailing '..'
+# (plain ASCII, not a unicode ellipsis, to avoid locale-dependent character
+# counting in ${#s} throwing the width off). Keeps table columns aligned
+# regardless of how long a slug is.
+trunc() {
+    local s=$1 max=$2
+    if [ ${#s} -le "$max" ]; then
+        printf '%s' "$s"
+    else
+        printf '%s..' "${s:0:$((max - 2))}"
+    fi
+}
+
 # Portable last-modified date (BSD/macOS stat and GNU/Linux stat use
 # incompatible flags — branch on uname rather than probing flags, since
 # GNU's -f means something else entirely and won't reliably fail).
@@ -197,9 +210,11 @@ wi_list() {
             due=$(sed -n 's/^due: *//p' "$front" | head -1)
             updated=$(file_mtime_date "$front")
             if [ "$show_zone_col" = true ]; then
-                printf '%-28s %-9s %-11s %-11s %s\n' "$slug" "$status" "${due:--}" "${updated:--}" "$zone"
+                printf '%-28s %-9s %-11s %-11s %s\n' \
+                    "$(trunc "$slug" 28)" "$status" "${due:--}" "${updated:--}" "$zone"
             else
-                printf '%-28s %-9s %-11s %-11s\n' "$slug" "$status" "${due:--}" "${updated:--}"
+                printf '%-28s %-9s %-11s %-11s\n' \
+                    "$(trunc "$slug" 28)" "$status" "${due:--}" "${updated:--}"
             fi
             found=1
         done

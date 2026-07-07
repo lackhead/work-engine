@@ -91,6 +91,19 @@ remote_ref() {
     [ "$(printf '%s\n' "$matches" | grep -c .)" -eq 1 ] && printf '%s\n' "$matches"
 }
 
+# Truncate to at most $2 chars, marking truncation with a trailing '..'
+# (plain ASCII, not a unicode ellipsis, to avoid locale-dependent character
+# counting in ${#s} throwing the width off). Keeps table columns aligned
+# regardless of how long a slug/repo/branch name is.
+trunc() {
+    local s=$1 max=$2
+    if [ ${#s} -le "$max" ]; then
+        printf '%s' "$s"
+    else
+        printf '%s..' "${s:0:$((max - 2))}"
+    fi
+}
+
 ###
 ### Subcommands
 ###
@@ -204,7 +217,8 @@ wt_list() {
             branch=$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD 2>/dev/null); [ -n "$branch" ] || branch='?'
             st=$(git -C "$repo_dir" status --porcelain 2>/dev/null)
             if [ -n "$st" ]; then dirty=dirty; else dirty=clean; fi
-            printf '%-28s %-10s %-32s %s\n' "$slug" "$repo" "$branch" "$dirty"
+            printf '%-28s %-10s %-32s %s\n' \
+                "$(trunc "$slug" 28)" "$(trunc "$repo" 10)" "$(trunc "$branch" 32)" "$dirty"
             found=1
         done
     done
