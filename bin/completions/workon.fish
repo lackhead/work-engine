@@ -3,7 +3,7 @@
 # Symlinked into ~/.config/fish/completions/ so fish autoloads it.
 
 function __workon_item_slugs
-    set -l items $HOME/work/items
+    set -l items $HOME/work/data/items
     test -d $items; or return
     # Active (top-level) items only.
     for p in $items/*

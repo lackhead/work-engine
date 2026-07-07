@@ -3,7 +3,7 @@
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
 
 function __workreminder_item_slugs
-    set -l items $HOME/work/items
+    set -l items $HOME/work/data/items
     test -d $items; or return
     for p in $items/*
         set -l b (basename $p)

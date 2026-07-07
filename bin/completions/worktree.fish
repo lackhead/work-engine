@@ -36,7 +36,7 @@ end
 
 # Item slugs (for `add`): active (top-level) items only — not backlog/archived.
 function __worktree_item_slugs
-    set -l items (__worktree_root)/items
+    set -l items (__worktree_root)/data/items
     test -d $items; or return
     for zone in $items
         test -d $zone; or continue
