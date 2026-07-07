@@ -102,6 +102,12 @@ Save the result to `~/.config/claude-sandbox.env` (path overridable with
 CLAUDE_CODE_OAUTH_TOKEN=<token>
 ```
 
+Then lock down its permissions — it's a live credential:
+
+```bash
+chmod 600 ~/.config/claude-sandbox.env
+```
+
 This file is gitignored and never baked into the image. It's only read at
 container *creation* (`sandbox up` injects it via `--env-file`) — if you set
 it up after the container already exists, `sandbox rebuild` to pick it up.
