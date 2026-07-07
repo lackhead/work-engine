@@ -84,7 +84,31 @@ unexpected state — it flags anything odd instead (exit code `2`) so you can
 resolve it by hand. Safe to re-run any time, including just to verify nothing
 has drifted (a clean second run is the idempotency check).
 
-## 4. Build the sandbox
+## 4. Set up the long-lived auth token
+
+Sessions inside the sandbox authenticate via a long-lived OAuth token rather
+than an interactive browser login. Generate one on the host (assumes
+Claude Code is already installed and logged in there — separate from this
+setup):
+
+```bash
+claude setup-token
+```
+
+Save the result to `~/.config/claude-sandbox.env` (path overridable with
+`$SANDBOX_ENV`):
+
+```
+CLAUDE_CODE_OAUTH_TOKEN=<token>
+```
+
+This file is gitignored and never baked into the image. It's only read at
+container *creation* (`sandbox up` injects it via `--env-file`) — if you set
+it up after the container already exists, `sandbox rebuild` to pick it up.
+Skipping this step isn't fatal; sessions just fall back to an interactive
+login inside the container instead.
+
+## 5. Build the sandbox
 
 ```bash
 sandbox build      # ~5–10 min the first time
@@ -94,7 +118,7 @@ sandbox up
 Confirm with `sandbox status`. The container auto-starts on future logins
 (`--restart unless-stopped` + Docker Desktop "start at login").
 
-## 5. Verify end to end
+## 6. Verify end to end
 
 ```bash
 workon <any-active-item>    # drops into a containerized Claude session
