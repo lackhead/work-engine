@@ -4,15 +4,19 @@
 # needs a matching change in the engine itself.
 #
 # Two rules, both required:
-#   1. Start with exactly these two lines (BASE_IMAGE is supplied by
-#      `sandbox build` via --build-arg; don't hardcode a tag).
+#   1. Start with exactly these two lines. `sandbox build` always passes
+#      --build-arg BASE_IMAGE=work-sandbox-base:latest, which overrides the
+#      ARG default below — the default is only there so Docker's linter
+#      doesn't warn about a FROM that could resolve empty if this file were
+#      ever built standalone. Keep it in sync with bin/sandbox's BASE_IMAGE
+#      constant, but don't rely on it being the source of truth.
 #   2. End back at `USER root` — the base image's entrypoint needs to run
 #      as root, and USER is inherited state that carries through the build.
 #
 # Everything in between is yours: apt-get, pipx, COPY (context is this
 # file's own directory, data/sandbox/), etc.
 
-ARG BASE_IMAGE
+ARG BASE_IMAGE=work-sandbox-base:latest
 FROM ${BASE_IMAGE}
 
 USER clake
