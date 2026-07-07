@@ -43,10 +43,10 @@ Arguments:
    [title...]  Item title (prompted if omitted)
 
 Description:
-   Creates a single-file work item with YAML frontmatter. Prompts for
-   placement (active top-level vs. backlog), and optionally for to/due.
-   Promote to a directory later if and when the item earns a plan or
-   status log.
+   Creates a work item directory (items/<slug>/<slug>.md, the front door)
+   with YAML frontmatter. Prompts for placement (active top-level vs.
+   backlog), and optionally for to/due. Add plan.md/status/ later if and
+   when the item earns them.
 
 Examples:
    workitem
@@ -117,14 +117,17 @@ made=$(date +%Y-%m-%d)
 slug=$(kebab "$title")
 print_debug "Creating item: slug=$slug status=$status subdir='$subdir'"
 
-# Refuse if an item with this slug exists in any zone (file or directory).
+# Refuse if an item with this slug exists in any zone (file or directory —
+# the latter check catches legacy single-file items too, just in case).
 for z in '' backlog/ archived/; do
     if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
         print_error "An item named '$slug' already exists (items/$z)."; exit 1
     fi
 done
 
-file="$WORK/data/items/$subdir$slug.md"
+itemdir="$WORK/data/items/$subdir$slug"
+file="$itemdir/$slug.md"
+mkdir -p "$itemdir"
 {
     echo "---"
     echo "title: $title"
@@ -141,4 +144,3 @@ file="$WORK/data/items/$subdir$slug.md"
 } > "$file"
 
 print_success "Created → ${file/#$HOME/\~}"
-print_status  "Single-file item; promote to a directory when it earns a plan/status log."

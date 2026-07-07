@@ -76,32 +76,26 @@ work moves to `archived/`, preserving the body as historical record.
 
 ## Structure
 
-A work item is either a single file or a directory, depending on how much
-scaffolding it has earned. You never decide the weight at creation time — make
-a file, and grow it only if and when it needs more.
-
-### Single-file items
-
-`items/<name>.md` (or `items/backlog/<name>.md`, etc.) — YAML frontmatter, a
-`#` heading matching the title, and optional body prose (what was promised,
-context, approach notes). Many items never need more than this.
-
-### Directory items
-
-When an item earns phases, a forward-looking plan, or a status log, it grows
-into a directory:
+Every work item is a **directory**, created as one from the start — there's
+no lighter-weight form and no promotion step. What scales with how much
+scaffolding an item earns is what's *inside* the directory, not whether it
+has one:
 
 ```
 items/<name>/
-├── <name>.md      # the front door (see naming note below)
+├── <name>.md      # the front door (see naming note below) — always present
 ├── plan.md        # forward-looking: phases, decisions, success/rollback criteria
 └── status/        # dated snapshots: YYYY-MM-DD.md, append-only
 ```
 
+Only `<name>.md` is created up front; `plan.md` and `status/` are added later,
+only if and when the item earns them (a phased rollout, a status log worth
+keeping). Many items never grow past the front door alone, and that's fine —
+it's still a directory, just a small one.
+
 The front-door file is named **`<name>.md`** (matching the directory), *not*
 `README.md`. This is deliberate: it makes the item linkable as a bare
-`[[<name>]]` whether it's a single file or a directory, and that link survives
-both zone moves and the file→directory promotion (see Linking).
+`[[<name>]]` regardless of how much else the directory holds (see Linking).
 
 - **`<name>.md`** — short, living, rewritten in place: what the item is,
   current state, what's next, links to the item's other files. This is what's
@@ -119,16 +113,11 @@ not a duplicate of repo docs), **`artifacts/`** (diagrams, exports, binaries),
 **`bin/`** (item-scoped tooling), **`CLAUDE.md`** (per-item conventions for
 complex items), **`risks.md`** (formal risk tracking).
 
-### Growing a single file into a directory
-
-The promotion is a one-step move within the same type, not a reclassification:
-
-1. `mkdir items/<zone>/<name>/`
-2. `mv items/<zone>/<name>.md items/<zone>/<name>/<name>.md`
-3. Add `plan.md` and `status/` as needed.
-
-Because the front door keeps the name `<name>.md`, a bare `[[<name>]]` link
-keeps resolving across the promotion — no inbound links break.
+(Directory-only creation is a 2026-07-07 schema change: a single-file item
+with no worktree had no directory `workon` could open a session in at all,
+forcing manual promotion before you could even start planning it. Existing
+items were migrated to match; nothing should create a bare `items/<name>.md`
+file anymore.)
 
 ## Frontmatter
 
@@ -195,7 +184,6 @@ item touching several repos gets one worktree per repo under the same slug
   version numbers or dates in names (those go in frontmatter or `plan.md`).
 - **Front-door file:** `<name>.md`, matching the directory name. Never
   `README.md`.
-- **Single-file items:** `<name>.md` directly under the zone directory.
 - **No dates in item names** — `made:` and `due:` carry dates.
 
 ## Linking and cross-references
@@ -203,10 +191,9 @@ item touching several repos gets one worktree per repo under the same slug
 The item name (slug) is the basename and is **stable across zone moves**, so
 item links never include the zone:
 
-- **A work item:** bare `[[<name>]]` — resolves to the single file
-  `items/.../<name>.md` or the directory front door `items/.../<name>/<name>.md`
-  wherever it sits. This is the canonical link form and survives zone changes
-  and file→directory promotion.
+- **A work item:** bare `[[<name>]]` — resolves to the directory front door
+  `items/.../<name>/<name>.md` wherever it sits. This is the canonical link
+  form and survives zone changes.
 - **A sub-file of a directory item** (status entry, plan, internal doc): use
   the item-name-prefixed suffix form, `[[<name>/plan]]`,
   `[[<name>/status/2026-05-04]]` — also zone-independent.
@@ -221,13 +208,14 @@ item links never include the zone:
 
 ### Adding an item
 
-Create a single file with frontmatter (`title`, `status: proposed` by default,
-`made:` today). Ask for missing required fields and for `to:` if a promise is
-implied; when a `due:` is set, ask hard vs. soft. Confirm whether to promote
-straight to `active` (which means it also lands at the top level rather than
-`backlog/`) or leave `proposed` in `backlog/`. Add a body only if there's
-context worth capturing. Most new items start as a single file; scaffold a
-directory only when the item clearly needs a plan or status log.
+Create the item's directory with its front-door file, `items/<name>/<name>.md`
+(frontmatter: `title`, `status: proposed` by default, `made:` today). Ask for
+missing required fields and for `to:` if a promise is implied; when a `due:`
+is set, ask hard vs. soft. Confirm whether to promote straight to `active`
+(which means it also lands at the top level rather than `backlog/`) or leave
+`proposed` in `backlog/`. Add a body only if there's context worth capturing.
+Add `plan.md` and `status/` later, only when the item earns them — most
+items never do.
 
 ### Surfacing items
 
@@ -254,30 +242,13 @@ content is read-only by convention (fix outright errors only).
 
 ### Promoting a reminder into an item
 
-When a reminder earns a session, create the item (`items/<name>.md` or a
-directory), set the reminder's `status: addressed`, and optionally archive the
-reminder. See `reminders/CLAUDE.md`.
+When a reminder earns a session, create the item
+(`items/<name>/<name>.md`), set the reminder's `status: addressed`, and
+optionally archive the reminder. See `reminders/CLAUDE.md`.
 
-## Templates
+## Template
 
-### Single-file item
-
-```markdown
----
-title: Rework cache host info
-to: self
-made: 2026-04-23
-status: active
-related-repos: [Ansible]
-tags: [caching]
----
-
-# Rework cache host info
-
-Short body with context / approach, if any. Frontmatter-only is fine.
-```
-
-### Directory item front door (`<name>.md`)
+### Item front door (`<name>.md`)
 
 ```markdown
 ---
