@@ -204,6 +204,9 @@ wt_list() {
     local want=${1:-}
     local root; root=$(work_root)
     local wt=$root/worktrees
+
+    printf '%-28s %-10s %-32s %s\n' SLUG REPO BRANCH STATE
+
     if [ ! -d "$wt" ]; then echo "(no worktrees yet)"; return 0; fi
 
     local found=0 slug_dir slug repo_dir repo branch st dirty
