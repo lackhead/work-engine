@@ -12,6 +12,7 @@
 set -u
 
 IMAGE=work-sandbox:latest
+BASE_IMAGE=work-sandbox-base:latest
 CONTAINER=work-sandbox
 VOLUME=claude-home
 CACHE_VOLUME=claude-cache
@@ -22,12 +23,12 @@ RECIPE="$WORK/engine/sandbox"
 # sessions authenticate without an in-container browser login. Kept OUT of ~/work
 # and the image; only this path is referenced, never the token itself.
 SANDBOX_ENV="${SANDBOX_ENV:-$HOME/.config/claude-sandbox.env}"
-# Optional per-instance Docker build-arg overrides (e.g.
-# INSTALL_ANSIBLE_TOOLCHAIN=false for a personal instance with no Ansible
-# work) — one KEY=value per line, blank lines and #-comments ignored. Lives
-# in data/ (tracked, no secrets here) since it's instance-specific, not
-# engine content — a personal and a work instance each carry their own.
-BUILD_ARGS_FILE="${BUILD_ARGS_FILE:-$WORK/data/sandbox/build-args.env}"
+# Optional per-instance Dockerfile, layered on top of the engine's base image
+# (e.g. a work instance's Ansible/pre-commit toolchain that a personal
+# instance doesn't want). Lives in data/ since it's instance-specific, not
+# engine content — adding a package here never touches the engine. Absent by
+# default: no file means the base image ships as-is.
+LOCAL_DOCKERFILE="${LOCAL_DOCKERFILE:-$WORK/data/sandbox/Dockerfile.local}"
 
 ###
 ### Output functions
@@ -83,9 +84,13 @@ Description:
    available inside for passwordless auth. The SSH keys sandbox_github and
    sandbox_deploy are bind-mounted read-only if present under ~/.ssh/.
 
-   data/sandbox/build-args.env (if present) supplies per-instance Docker
-   build-args — e.g. INSTALL_ANSIBLE_TOOLCHAIN=false for a personal instance
-   that doesn't need the Ansible toolchain — one KEY=value per line.
+   data/sandbox/Dockerfile.local (if present) layers instance-specific
+   tooling on top of the engine's base image — e.g. a work instance's
+   Ansible/pre-commit toolchain that a personal instance doesn't want.
+   Adding a package here never touches the engine's Dockerfile. It must
+   start with `ARG BASE_IMAGE` / `FROM ${BASE_IMAGE}` and end back at
+   `USER root` (see the file's own template comments). No file means the
+   base image ships as-is.
 
 Examples:
    sandbox up            # start or create the container
@@ -114,19 +119,19 @@ build() {
     need_docker
     [ -f "$RECIPE/Dockerfile" ] || { print_error "No Dockerfile at $RECIPE."; exit 1; }
 
-    local build_args=() line
-    if [ -f "$BUILD_ARGS_FILE" ]; then
-        print_verbose "Reading build args from $BUILD_ARGS_FILE"
-        while IFS= read -r line || [ -n "$line" ]; do
-            case "$line" in
-                ''|'#'*) continue ;;
-                *) build_args+=(--build-arg "$line"); print_debug "build-arg: $line" ;;
-            esac
-        done < "$BUILD_ARGS_FILE"
-    fi
+    print_status "Building base image ($BASE_IMAGE) from $RECIPE ..."
+    docker build "$@" -t "$BASE_IMAGE" "$RECIPE" \
+        || { print_error "Base image build failed."; return 1; }
 
-    print_status "Building $IMAGE from $RECIPE ..."
-    docker build ${build_args[@]+"${build_args[@]}"} "$@" -t "$IMAGE" "$RECIPE"
+    if [ -f "$LOCAL_DOCKERFILE" ]; then
+        print_verbose "Layering instance overlay: $LOCAL_DOCKERFILE"
+        docker build "$@" --build-arg "BASE_IMAGE=$BASE_IMAGE" \
+            -f "$LOCAL_DOCKERFILE" -t "$IMAGE" "$(dirname "$LOCAL_DOCKERFILE")" \
+            || { print_error "Instance overlay build failed."; return 1; }
+    else
+        print_verbose "No overlay at $LOCAL_DOCKERFILE — $IMAGE is the base image"
+        docker tag "$BASE_IMAGE" "$IMAGE"
+    fi
 }
 
 run_container() {
@@ -201,6 +206,16 @@ restart() {
 
 status() {
     need_docker
+    if docker image inspect "$BASE_IMAGE" >/dev/null 2>&1; then
+        print_status "Base image: $BASE_IMAGE (built)"
+    else
+        print_warning "Base image: $BASE_IMAGE (not built — run 'sandbox build')"
+    fi
+    if [ -f "$LOCAL_DOCKERFILE" ]; then
+        print_status "Overlay:    $LOCAL_DOCKERFILE (present)"
+    else
+        print_verbose "Overlay:    none at $LOCAL_DOCKERFILE"
+    fi
     if docker image inspect "$IMAGE" >/dev/null 2>&1; then
         print_status "Image:     $IMAGE (built)"
     else

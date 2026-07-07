@@ -1,0 +1,22 @@
+# Template for an instance's optional sandbox overlay. Copy this to
+# data/sandbox/Dockerfile.local and edit — it's picked up automatically by
+# `sandbox build` (layered on top of the engine's base image) and never
+# needs a matching change in the engine itself.
+#
+# Two rules, both required:
+#   1. Start with exactly these two lines (BASE_IMAGE is supplied by
+#      `sandbox build` via --build-arg; don't hardcode a tag).
+#   2. End back at `USER root` — the base image's entrypoint needs to run
+#      as root, and USER is inherited state that carries through the build.
+#
+# Everything in between is yours: apt-get, pipx, COPY (context is this
+# file's own directory, data/sandbox/), etc.
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+USER clake
+RUN pipx install pre-commit \
+    && pipx install --include-deps ansible \
+    && pipx install ansible-lint
+USER root

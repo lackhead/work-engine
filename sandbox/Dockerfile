@@ -59,27 +59,13 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 # To pin a version instead of latest stable:
 #   RUN curl -fsSL https://claude.ai/install.sh | bash -s <version>
 
-# Python CLI toolchain for the Ansible workflow, installed AS THE USER via pipx.
-# Per-instance: a personal instance with no Ansible work sets
-# INSTALL_ANSIBLE_TOOLCHAIN=false (see ~/work/engine/bin/sandbox — reads
-# data/sandbox/build-args.env and passes it through as --build-arg). Default
-# true preserves existing behavior for instances that don't set it.
-# PEP 668 marks Debian's system Python externally-managed, so pipx is the
-# sanctioned path — each app gets its own venv with entry points on ~/.local/bin
-# (already on PATH). Image-authoritative: a `sandbox rebuild` updates them.
-#   - pre-commit builds its own per-hook venvs at RUN time (needs python3-venv,
-#     installed above); those live in ~/.cache/pre-commit, persisted via volume.
-#   - the `ansible` meta-package (not ansible-core) bundles the collections the
-#     repo's syntax checks resolve (ansible.windows/posix, community.general/mysql);
-#     --include-deps exposes ansible-core's binaries (ansible-playbook, -galaxy,
-#     -inventory, -vault) on PATH for direct use / the repo's Makefile.
-#   - ansible-lint for `make lint` and ad-hoc linting.
-ARG INSTALL_ANSIBLE_TOOLCHAIN=true
-RUN if [ "$INSTALL_ANSIBLE_TOOLCHAIN" = "true" ]; then \
-        pipx install pre-commit \
-        && pipx install --include-deps ansible \
-        && pipx install ansible-lint; \
-    fi
+# This is the base image only — instance-specific tooling (e.g. the
+# Ansible/pre-commit toolchain a work instance needs but a personal one
+# doesn't) does NOT belong here. `sandbox build` layers an optional
+# data/sandbox/Dockerfile.local on top of this image if one exists; see that
+# file's own comments (or ~/work/engine/docs/work-system-setup.md) for the
+# shape it needs. python3-venv/pip/pipx are kept in the base apt install above
+# since they're generic prerequisites any such overlay is likely to want.
 
 # Minimal interactive shell config (greeting off + work-system completions);
 # generic, deliberately not a copy of the host's fish setup.
