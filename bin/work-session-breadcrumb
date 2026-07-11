@@ -92,14 +92,20 @@ iso_now() {
 }
 end_ts="$(iso_now)"
 
-# Session window start = timestamp of the first transcript line, if readable.
+# Session window start = timestamp of the first *timestamped* transcript
+# line. NOT necessarily line 1 — Claude Code now leads a transcript with a
+# few untimestamped metadata records (mode, permission-mode,
+# file-history-snapshot, ...) before the first real message, so a bare
+# `head -n1` silently yields empty here. An empty start_ts zeroes out every
+# repo's commit/file counts below (the `[ -n "$start_ts" ]` guards), which in
+# turn blocks the auto-archive sweep for any quick item with an attached
+# repo — accidentally fail-safe, but only by luck.
 start_ts=""
 if [ -n "$transcript" ] && [ -r "$transcript" ]; then
     if command -v jq >/dev/null 2>&1; then
-        start_ts="$(head -n1 "$transcript" 2>/dev/null | jq -r '.timestamp // empty' 2>/dev/null)"
+        start_ts="$(jq -r '.timestamp // empty' "$transcript" 2>/dev/null | grep -m1 .)"
     else
-        start_ts="$(head -n1 "$transcript" 2>/dev/null \
-            | sed -n 's/.*"timestamp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+        start_ts="$(sed -n 's/.*"timestamp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$transcript" 2>/dev/null | head -n1)"
     fi
 fi
 
