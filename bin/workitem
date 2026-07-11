@@ -48,24 +48,16 @@ Description:
    create   Non-interactive: takes only a title (kebab-cased into the slug),
             no prompts. Always creates items/<slug>/<slug>.md, status active,
             top-level. A missing title is a usage error, except with --quick
-            (see below). Description, to, due, and any other optional
-            frontmatter are no longer collected here — a Claude session that
-            notices those fields are missing is expected to ask and edit the
-            file directly. Add plan.md/status/ later if and when the item
-            earns them.
+            (see below). 
 
             --quick additionally: an untitled item gets a generated
             timestamp title instead of a usage error, and tags: [quick] is
-            added. Prints only the resulting slug to stdout (for scripting —
-            see `workon --quick`). Meant for throwaway work too small to
-            warrant a tracked item; a quick item that ends its session with
-            no repo changes and no added files is auto-archived by the
-            SessionEnd hook.
+            added (this triggers the SessionEnd hook to auto-archive the 
+            work item if no durable changes were made). 
 
-   list     Quick terminal-native glance: slug, status, due, last-updated —
-            no LLM session needed. Defaults to top-level (active + blocked).
-            --backlog / --archived switch zones; --all shows every zone with
-            a zone column; --status <value> filters to one status value.
+   list     Display work items, including: slug, status, due, and last 
+            update time. Defaults to top-level (active + blocked), with
+            --backlog/--archived/--all available to change the scope.
 
    archive  Sets status to completed/cancelled (prompted if not given as a
             flag) plus the completed: date, moves the item to

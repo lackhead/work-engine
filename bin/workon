@@ -43,7 +43,7 @@ print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workon: open a Claude Code session for a work item, in the right place
+workon: open a Claude Code session for a work item
 
 Usage:
    workon [ -h|--help ]
@@ -54,7 +54,6 @@ Arguments:
    -h|--help         Show what you are seeing right now
    -v|--verbose      Show what is happening as it happens
    -d|--debug        Show diagnostic detail (implies --verbose)
-
    <slug>            Work item basename. If it doesn't exist yet, you'll be
                      asked to create it (skip the prompt with -c/--create).
    -c|--create       Don't ask — create the item if <slug> doesn't exist.
@@ -63,25 +62,20 @@ Arguments:
                      the session. Repeatable — pass it more than once for a
                      multi-repo item. Every worktree the item already has is
                      attached automatically, with or without -r.
-
-   --quick           Create a throwaway item with a generated slug and open
-                     it now — for work too small to warrant a tracked item.
+   --quick           Create a temporary item with a generated slug and open
+                     it now — for work too small or exploratory to warrant 
+                     creating a fully tracked item off the bat.
                      [title...] becomes the item title (kebab-cased into the
                      slug); omit it for an auto-generated timestamp title.
                      If the session ends with no repo changes and nothing
-                     added to the item folder, it's auto-archived as
+                     added to the item folder, the item is auto-archived as
                      completed — otherwise it's left as a normal item.
 
 Description:
-   Opens Claude Code with the item's own folder as the working directory —
-   every repo the item touches is attached alongside it (each as its own
-   --add-dir), not entered one at a time. Flags branch drift behind the
-   integration branch, per repo, and offers to sync. Resumes the item's last
-   session if one exists.
-
-   Sessions run inside the persistent sandbox container via docker exec.
-   Resume works because Claude Code keys transcripts by working directory
-   and the vault is bind-mounted at the same absolute path inside and out.
+   Opens Claude Code with the item's folder as the working directory,­with
+   each repo attached alongside it using --add-dir, Flags branch drift behind
+   the integration branch, per repo, and offers to sync. Resumes the item's
+   last session if one exists.
 
 Examples:
    workon nagios
