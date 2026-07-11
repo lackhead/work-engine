@@ -249,11 +249,29 @@ file="$day_dir/$date_str.$slug.session.$nn.md"
 # agg_unique_known guards the case where a repo's integration branch couldn't
 # be resolved (unreliable count, same as an unread start_ts before) — treated
 # as ambiguous rather than trusted as "clean".
-if is_quick_item "$slug" \
-   && [ "$agg_dirty" != true ] && [ "$agg_unique_commits" -eq 0 ] \
-   && { [ ${#repos_touched[@]} -eq 0 ] || [ "$agg_unique_known" = true ]; } \
-   && ! has_extra_item_files "$slug"; then
-    workitem archive "$slug" --completed >/dev/null 2>&1
+# stderr (not stdout) is the only thing Claude Code shows the user for a
+# SessionEnd hook — see docs/en/hooks.md's exit-code table ("SessionEnd: Shows
+# stderr to user only"). This is the one place in the script that's meant to
+# be seen; everything else is silent by design.
+if is_quick_item "$slug"; then
+    if [ "$agg_dirty" != true ] && [ "$agg_unique_commits" -eq 0 ] \
+       && { [ ${#repos_touched[@]} -eq 0 ] || [ "$agg_unique_known" = true ]; } \
+       && ! has_extra_item_files "$slug"; then
+        workitem archive "$slug" --completed >/dev/null 2>&1
+        echo "[quick] '$slug' was clean — archived as completed." >&2
+    else
+        why=()
+        [ "$agg_dirty" = true ] && why+=("uncommitted changes")
+        [ "$agg_unique_commits" -gt 0 ] && why+=("$agg_unique_commits commit(s)")
+        has_extra_item_files "$slug" && why+=("extra files in the item folder")
+        [ "$agg_unique_known" != true ] && why+=("couldn't verify repo history — skipping to be safe")
+        if [ ${#why[@]} -gt 0 ]; then
+            IFS=', '; reason="${why[*]}"; unset IFS
+        else
+            reason="unknown reason"
+        fi
+        echo "[quick] '$slug' left active — $reason." >&2
+    fi
 fi
 
 exit 0
