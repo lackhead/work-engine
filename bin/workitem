@@ -35,7 +35,7 @@ workitem: create, list, and archive work items under ~/work/data/items/
 
 Usage:
    workitem [ -h|--help ]
-   workitem [ -v|--verbose ] [ -d|--debug ] create  [--quick] [title...]
+   workitem [ -v|--verbose ] [ -d|--debug ] create  [-q|--quick] [title...]
    workitem [ -v|--verbose ] [ -d|--debug ] list    [--backlog|--archived|--all] [--status <value>]
    workitem [ -v|--verbose ] [ -d|--debug ] archive <slug> [--completed|--cancelled]
 
@@ -47,10 +47,10 @@ Arguments:
 Description:
    create   Non-interactive: takes only a title (kebab-cased into the slug),
             no prompts. Always creates items/<slug>/<slug>.md, status active,
-            top-level. A missing title is a usage error, except with --quick
-            (see below). 
+            top-level. A missing title is a usage error, except with -q/--quick
+            (see below).
 
-            --quick additionally: an untitled item gets a generated
+            -q/--quick additionally: an untitled item gets a generated
             timestamp title instead of a usage error, and tags: [quick] is
             added (this triggers the SessionEnd hook to auto-archive the 
             work item if no durable changes were made). 
@@ -66,7 +66,7 @@ Description:
 
 Examples:
    workitem create Rework cache host info
-   workitem create --quick
+   workitem create -q
    workitem create --quick Fix the Ansible lint warning
    workitem list
    workitem list --backlog
@@ -108,8 +108,8 @@ wi_create() {
     local quick=false title_parts=() title made slug itemdir file a
     for a in "$@"; do
         case "$a" in
-            --quick) quick=true ;;
-            *)       title_parts+=("$a") ;;
+            -q|--quick) quick=true ;;
+            *)          title_parts+=("$a") ;;
         esac
     done
 
@@ -117,10 +117,13 @@ wi_create() {
     [ ${#title_parts[@]} -gt 0 ] && title="${title_parts[*]}"
     title="$(trim "$title")"
     if [ -z "$title" ] && [ "$quick" = true ]; then
-        title="Quick task — $(date '+%Y-%m-%d %H:%M')"
+        # Seconds, not just minutes — two `--quick` runs inside the same
+        # minute would otherwise generate the same slug and the exists-check
+        # below would reject the second one outright.
+        title="Quick task — $(date '+%Y-%m-%d %H:%M:%S')"
     fi
     if [ -z "$title" ]; then
-        print_error "Usage: workitem create [--quick] <title...> — title is required."
+        print_error "Usage: workitem create [-q|--quick] <title...> — title is required."
         return 1
     fi
 
@@ -277,8 +280,15 @@ wi_archive() {
     # exist (neither creates it) — items/archived/ is expected to be there in
     # a normal vault, but don't assume it.
     mkdir -p "$root/archived"
-    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1; then
-        git -C "$WORK/data" mv "${srcdir#"$WORK"/data/}" "items/archived/$slug" || {
+    local rel="${srcdir#"$WORK"/data/}"
+    # `git mv` refuses untracked paths outright ("fatal: not under version
+    # control") — a --quick item archived in the same session it was created
+    # in was never `git add`ed, so only fall back to plain `mv` when nothing
+    # under srcdir is actually tracked yet; use `git mv` (preserving rename
+    # history) whenever the item has been committed at least once.
+    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1 \
+       && [ -n "$(git -C "$WORK/data" ls-files "$rel")" ]; then
+        git -C "$WORK/data" mv "$rel" "items/archived/$slug" || {
             print_error "Move to items/archived/$slug failed — item left in place."
             return 1
         }

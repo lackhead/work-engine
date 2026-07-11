@@ -48,7 +48,7 @@ workon: open a Claude Code session for a work item
 Usage:
    workon [ -h|--help ]
    workon [ -v|--verbose ] [ -d|--debug ] [ -c|--create ] [ -r|--repo <repo> ]... <slug>
-   workon [ -v|--verbose ] [ -d|--debug ] --quick [ -r|--repo <repo> ]... [title...]
+   workon [ -v|--verbose ] [ -d|--debug ] -q|--quick [ -r|--repo <repo> ]... [title...]
 
 Arguments:
    -h|--help         Show what you are seeing right now
@@ -62,8 +62,8 @@ Arguments:
                      the session. Repeatable — pass it more than once for a
                      multi-repo item. Every worktree the item already has is
                      attached automatically, with or without -r.
-   --quick           Create a temporary item with a generated slug and open
-                     it now — for work too small or exploratory to warrant 
+   -q|--quick        Create a temporary item with a generated slug and open
+                     it now — for work too small or exploratory to warrant
                      creating a fully tracked item off the bat.
                      [title...] becomes the item title (kebab-cased into the
                      slug); omit it for an auto-generated timestamp title.
@@ -82,7 +82,7 @@ Examples:
    workon ad-upgrade -r Ansible
    workon new-idea -r Ansible -r Internal
    workon some-new-thing -c -r work-engine
-   workon --quick
+   workon -q
    workon --quick -r work-engine fix the lint warning
 
 EOF
@@ -122,7 +122,7 @@ while [ $# -gt 0 ]; do
         -h|--help|help)
             printf '%s\n' "$usage"
             exit 0 ;;
-        --quick)     quick=true ;;
+        -q|--quick)  quick=true ;;
         -c|--create) create=true ;;
         -r|--repo)
             [ -z "${2:-}" ] && { print_error "Option -r/--repo requires an argument"; exit 1; }

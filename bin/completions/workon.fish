@@ -45,12 +45,12 @@ complete -c workon -s v -l verbose -d 'Show what is happening as it happens'
 complete -c workon -s d -l debug   -d 'Show diagnostic detail (implies --verbose)'
 complete -c workon -s h -l help    -d 'Show help'
 complete -c workon -s c -l create -d "Don't ask — create <slug> if it doesn't exist"
-complete -c workon -l quick -d 'Create a throwaway item and open it now'
+complete -c workon -s q -l quick -d 'Create a throwaway item and open it now'
 complete -c workon -s r -l repo -x -a '(__workon_repos)' \
     -d 'Ensure a worktree for this repo and attach it (repeatable)'
 
 # The only remaining positional: <slug> (non-quick) or the start of [title...]
 # (--quick). There's no second positional anymore — a repo is only ever named
 # via -r/--repo, never positionally.
-complete -c workon -n 'not __fish_seen_argument -l quick; and test (__workon_nargs) -eq 0' \
+complete -c workon -n 'not __fish_seen_argument -s q -l quick; and test (__workon_nargs) -eq 0' \
     -a '(__workon_item_slugs)' -d 'work item'
