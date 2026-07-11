@@ -119,6 +119,11 @@ repos_touched=()
 agg_dirty=false
 agg_commits=0
 agg_files=0
+# Cumulative commits unique to the branch (vs. the integration branch),
+# independent of *this* session's window — see the sweep condition below for
+# why this, not agg_commits, is what gates auto-archive.
+agg_unique_commits=0
+agg_unique_known=true
 body_repos=""
 if [ -d "$wtbase" ]; then
     for d in "$wtbase"/*/; do
@@ -139,6 +144,23 @@ if [ -d "$wtbase" ]; then
         [ -n "$repo_commits" ] && repo_commit_count="$(printf '%s\n' "$repo_commits" | grep -c .)"
         repo_files_count=0
         [ -n "$repo_files" ] && repo_files_count="$(printf '%s\n' "$repo_files" | grep -c .)"
+
+        # Commits unique to this branch, full stop — not windowed by
+        # start_ts. A quick item that graduated to real work in an *earlier*
+        # session still carries `tags: [quick]` forever (nothing strips it),
+        # so a later session with zero *new* commits must not read as "clean"
+        # just because this session's own window was empty.
+        clone="$WORK/repos/$repo"
+        intbr=$(git -C "$clone" rev-parse --abbrev-ref HEAD 2>/dev/null)
+        repo_unique_commits=''
+        if [ -n "$intbr" ] && [ "$intbr" != HEAD ]; then
+            repo_unique_commits=$(git -C "$d" rev-list --count "$intbr..HEAD" 2>/dev/null)
+        fi
+        if [ -n "$repo_unique_commits" ]; then
+            agg_unique_commits=$((agg_unique_commits + repo_unique_commits))
+        else
+            agg_unique_known=false
+        fi
 
         repos_touched+=("$repo")
         [ "$repo_dirty" = true ] && agg_dirty=true
@@ -212,21 +234,24 @@ file="$day_dir/$date_str.$slug.session.$nn.md"
 } > "$file" 2>/dev/null
 
 # --- sweep a clean --quick item -------------------------------------------
-# Nothing landed anywhere for this session: no dirty/committed changes in any
-# attached repo (or no repo at all — agg_dirty/agg_commits are already
-# false/0 in that case) and nothing added to the item folder itself. Archive
-# it the same way `workitem archive <slug> --completed` always does — moves
-# it under items/archived/ and removes its worktree(s) — so quick items never
-# need to be remembered or cleaned up by hand. Real work is left untouched.
+# Nothing has ever landed here: no dirty changes right now, no commits unique
+# to the branch in any attached worktree (or no repo at all), and nothing
+# added to the item folder itself. Archive it the same way `workitem archive
+# <slug> --completed` always does — moves it under items/archived/ and
+# removes its worktree(s) — so quick items never need to be remembered or
+# cleaned up by hand. Real work is left untouched.
 #
-# Each repo's commit count is windowed by `start_ts` (parsed from the
-# transcript's first line, above) — if there's at least one repo but
-# `start_ts` couldn't be read, the aggregate commit count is unreliable
-# (stays 0 even if commits happened), so a missing start_ts blocks the sweep
-# rather than being trusted as "clean".
+# Gated on agg_unique_commits (commits unique to the branch vs. the
+# integration branch), NOT agg_commits (commits since *this session's*
+# start_ts) — a quick item's `tags: [quick]` is never removed once it
+# graduates to real work, so a later session that happens to add zero *new*
+# commits must not read as "clean" and sweep away a branch with real history.
+# agg_unique_known guards the case where a repo's integration branch couldn't
+# be resolved (unreliable count, same as an unread start_ts before) — treated
+# as ambiguous rather than trusted as "clean".
 if is_quick_item "$slug" \
-   && [ "$agg_dirty" != true ] && [ "$agg_commits" -eq 0 ] \
-   && { [ ${#repos_touched[@]} -eq 0 ] || [ -n "$start_ts" ]; } \
+   && [ "$agg_dirty" != true ] && [ "$agg_unique_commits" -eq 0 ] \
+   && { [ ${#repos_touched[@]} -eq 0 ] || [ "$agg_unique_known" = true ]; } \
    && ! has_extra_item_files "$slug"; then
     workitem archive "$slug" --completed >/dev/null 2>&1
 fi
