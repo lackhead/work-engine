@@ -31,13 +31,14 @@ print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workitem: create, list, and archive work items under ~/work/data/items/
+workitem: create, list, archive, and delete work items under ~/work/data/items/
 
 Usage:
    workitem [ -h|--help ]
    workitem [ -v|--verbose ] [ -d|--debug ] create  [-q|--quick] [title...]
    workitem [ -v|--verbose ] [ -d|--debug ] list    [--backlog|--archived|--all] [--status <value>]
    workitem [ -v|--verbose ] [ -d|--debug ] archive <slug> [--completed|--cancelled]
+   workitem [ -v|--verbose ] [ -d|--debug ] delete  <slug> [--force]
 
 Arguments:
    -h|--help     Show what you are seeing right now
@@ -52,10 +53,10 @@ Description:
 
             -q/--quick additionally: an untitled item gets a generated
             timestamp title instead of a usage error, and tags: [quick] is
-            added (this triggers the SessionEnd hook to auto-archive the 
-            work item if no durable changes were made). 
+            added. `workon` checks this tag itself at session end to decide
+            whether the item was ever used for anything (see `workon --help`).
 
-   list     Display work items, including: slug, status, due, and last 
+   list     Display work items, including: slug, status, due, and last
             update time. Defaults to top-level (active + blocked), with
             --backlog/--archived/--all available to change the scope.
 
@@ -63,6 +64,12 @@ Description:
             flag) plus the completed: date, moves the item to
             items/archived/<slug>/, and removes its worktree(s) if any.
             Looks for <slug> under items/ and items/backlog/.
+
+   delete   Removes the item's worktree(s) and its directory outright — no
+            archived/ copy, nothing kept. Refuses unless <slug> is tagged
+            `quick` (--force overrides); this is the one place in the tool
+            that actually destroys content, reserved for quick items that
+            never accumulated any.
 
 Examples:
    workitem create Rework cache host info
@@ -72,6 +79,7 @@ Examples:
    workitem list --backlog
    workitem list --all --status blocked
    workitem archive nagios --completed
+   workitem delete quick-task-2026-07-11-10-56
 
 EOF
 
@@ -307,6 +315,52 @@ wi_archive() {
     print_success "Archived → items/archived/$slug ($newstatus)"
 }
 
+wi_delete() {
+    local slug='' force=false a
+    for a in "$@"; do
+        case "$a" in
+            --force) force=true ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$slug" ]; then slug=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$slug" ]; then
+        print_error "Usage: workitem delete <slug> [--force]"; return 1
+    fi
+
+    local root="$WORK/data/items" srcdir=''
+    if [ -d "$root/$slug" ]; then
+        srcdir="$root/$slug"
+    elif [ -d "$root/backlog/$slug" ]; then
+        srcdir="$root/backlog/$slug"
+    elif [ -d "$root/archived/$slug" ]; then
+        srcdir="$root/archived/$slug"
+    else
+        print_error "No item '$slug' found."; return 1
+    fi
+    print_verbose "Found item at ${srcdir/#$HOME/\~}"
+
+    # Deletion (not archiving) is a deliberate, narrow exception — see the
+    # root CLAUDE.md's "nothing is deleted" principle. Reserved for `--quick`
+    # items with nothing to preserve; anything else needs --force, an
+    # explicit admission that there's real content being thrown away.
+    if [ "$force" != true ] && ! grep -qE '^tags:.*\bquick\b' "$srcdir/$slug.md" 2>/dev/null; then
+        print_error "'$slug' isn't tagged quick — refusing to delete without --force."
+        return 1
+    fi
+
+    if [ -d "$WORK/worktrees/$slug" ]; then
+        print_status "Removing worktree(s) for '$slug' ..."
+        worktree rm "$slug" || print_warning "worktree rm failed — clean it up by hand."
+    fi
+
+    rm -rf "$srcdir"
+    print_success "Deleted ${srcdir/#$HOME/\~}"
+}
+
 ###
 ### Dispatch
 ###
@@ -327,6 +381,7 @@ case "$cmd" in
     create)  wi_create "$@" ;;
     list)    wi_list "$@" ;;
     archive) wi_archive "$@" ;;
+    delete)  wi_delete "$@" ;;
     '')      printf '%s\n' "$usage" ;;
     *)       print_error "Unknown command '$cmd' (try: workitem help)"; exit 1 ;;
 esac

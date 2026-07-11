@@ -17,6 +17,15 @@
 #
 # Deliberately dumb: it records git/session facts only. Curated, human-framed
 # progress is written separately (the retrospective skill), never here.
+#
+# NOT responsible for the --quick item archive/delete decision — that used to
+# live here, but SessionEnd firing depends on Claude Code's own hook mechanism
+# (unreliable on some exit paths) and its stdout/stderr races the TUI's own
+# terminal teardown (a message printed here can flash and vanish). `workon`
+# now owns that decision itself, host-side, after its `docker exec` returns —
+# see its post-session section and items/CLAUDE.md's quick-item section. This
+# hook fires independently and may still run for the same session; that's
+# fine, it only ever writes a breadcrumb, never mutates the item.
 
 # Never let a hook failure be noisy or disruptive; SessionEnd ignores our exit
 # code anyway, but be tidy.
@@ -49,26 +58,6 @@ transcript="$(field transcript_path)"
 reason="$(field reason)"
 [ -n "$cwd" ] || exit 0
 
-# --- quick-item helpers ---------------------------------------------------
-# A `workon --quick` item is tagged `tags: [quick]` in its frontmatter
-# (bin/workitem's wi_create --quick). Only items carrying that tag are ever
-# candidates for the auto-archive below — git cleanliness alone never
-# triggers it, so a normal item with a no-op planning session is untouched.
-is_quick_item() {
-    local front="$WORK/data/items/$1/$1.md"
-    [ -f "$front" ] || return 1
-    grep -qE '^tags:.*\bquick\b' "$front" 2>/dev/null
-}
-
-# True if the item folder holds anything beyond its own front-door file
-# (plan.md, status/, notes dropped in by hand) — i.e. work happened there
-# even if no repo was ever touched.
-has_extra_item_files() {
-    local dir="$WORK/data/items/$1"
-    [ -d "$dir" ] || return 1
-    find "$dir" -mindepth 1 ! -name "$1.md" 2>/dev/null | grep -q .
-}
-
 # --- derive the slug from the cwd -----------------------------------------
 # cwd is always an item folder now — workon never launches a session with cwd
 # inside a worktree directly. (A hand-launched session started that way,
@@ -96,10 +85,11 @@ end_ts="$(iso_now)"
 # line. NOT necessarily line 1 — Claude Code now leads a transcript with a
 # few untimestamped metadata records (mode, permission-mode,
 # file-history-snapshot, ...) before the first real message, so a bare
-# `head -n1` silently yields empty here. An empty start_ts zeroes out every
-# repo's commit/file counts below (the `[ -n "$start_ts" ]` guards), which in
-# turn blocks the auto-archive sweep for any quick item with an attached
-# repo — accidentally fail-safe, but only by luck.
+# `head -n1` silently yields empty here. An empty start_ts just zeroes out
+# this session's reported commit/file counts in the breadcrumb body below
+# (the `[ -n "$start_ts" ]` guards) — no longer safety-critical the way it
+# used to be, now that the quick-item sweep decision lives in `workon`
+# instead of here.
 start_ts=""
 if [ -n "$transcript" ] && [ -r "$transcript" ]; then
     if command -v jq >/dev/null 2>&1; then
@@ -119,11 +109,6 @@ repos_touched=()
 agg_dirty=false
 agg_commits=0
 agg_files=0
-# Cumulative commits unique to the branch (vs. the integration branch),
-# independent of *this* session's window — see the sweep condition below for
-# why this, not agg_commits, is what gates auto-archive.
-agg_unique_commits=0
-agg_unique_known=true
 body_repos=""
 if [ -d "$wtbase" ]; then
     for d in "$wtbase"/*/; do
@@ -144,23 +129,6 @@ if [ -d "$wtbase" ]; then
         [ -n "$repo_commits" ] && repo_commit_count="$(printf '%s\n' "$repo_commits" | grep -c .)"
         repo_files_count=0
         [ -n "$repo_files" ] && repo_files_count="$(printf '%s\n' "$repo_files" | grep -c .)"
-
-        # Commits unique to this branch, full stop — not windowed by
-        # start_ts. A quick item that graduated to real work in an *earlier*
-        # session still carries `tags: [quick]` forever (nothing strips it),
-        # so a later session with zero *new* commits must not read as "clean"
-        # just because this session's own window was empty.
-        clone="$WORK/repos/$repo"
-        intbr=$(git -C "$clone" rev-parse --abbrev-ref HEAD 2>/dev/null)
-        repo_unique_commits=''
-        if [ -n "$intbr" ] && [ "$intbr" != HEAD ]; then
-            repo_unique_commits=$(git -C "$d" rev-list --count "$intbr..HEAD" 2>/dev/null)
-        fi
-        if [ -n "$repo_unique_commits" ]; then
-            agg_unique_commits=$((agg_unique_commits + repo_unique_commits))
-        else
-            agg_unique_known=false
-        fi
 
         repos_touched+=("$repo")
         [ "$repo_dirty" = true ] && agg_dirty=true
@@ -232,46 +200,5 @@ file="$day_dir/$date_str.$slug.session.$nn.md"
         echo
     fi
 } > "$file" 2>/dev/null
-
-# --- sweep a clean --quick item -------------------------------------------
-# Nothing has ever landed here: no dirty changes right now, no commits unique
-# to the branch in any attached worktree (or no repo at all), and nothing
-# added to the item folder itself. Archive it the same way `workitem archive
-# <slug> --completed` always does — moves it under items/archived/ and
-# removes its worktree(s) — so quick items never need to be remembered or
-# cleaned up by hand. Real work is left untouched.
-#
-# Gated on agg_unique_commits (commits unique to the branch vs. the
-# integration branch), NOT agg_commits (commits since *this session's*
-# start_ts) — a quick item's `tags: [quick]` is never removed once it
-# graduates to real work, so a later session that happens to add zero *new*
-# commits must not read as "clean" and sweep away a branch with real history.
-# agg_unique_known guards the case where a repo's integration branch couldn't
-# be resolved (unreliable count, same as an unread start_ts before) — treated
-# as ambiguous rather than trusted as "clean".
-# stderr (not stdout) is the only thing Claude Code shows the user for a
-# SessionEnd hook — see docs/en/hooks.md's exit-code table ("SessionEnd: Shows
-# stderr to user only"). This is the one place in the script that's meant to
-# be seen; everything else is silent by design.
-if is_quick_item "$slug"; then
-    if [ "$agg_dirty" != true ] && [ "$agg_unique_commits" -eq 0 ] \
-       && { [ ${#repos_touched[@]} -eq 0 ] || [ "$agg_unique_known" = true ]; } \
-       && ! has_extra_item_files "$slug"; then
-        workitem archive "$slug" --completed >/dev/null 2>&1
-        echo "[quick] '$slug' was clean — archived as completed." >&2
-    else
-        why=()
-        [ "$agg_dirty" = true ] && why+=("uncommitted changes")
-        [ "$agg_unique_commits" -gt 0 ] && why+=("$agg_unique_commits commit(s)")
-        has_extra_item_files "$slug" && why+=("extra files in the item folder")
-        [ "$agg_unique_known" != true ] && why+=("couldn't verify repo history — skipping to be safe")
-        if [ ${#why[@]} -gt 0 ]; then
-            IFS=', '; reason="${why[*]}"; unset IFS
-        else
-            reason="unknown reason"
-        fi
-        echo "[quick] '$slug' left active — $reason." >&2
-    fi
-fi
 
 exit 0

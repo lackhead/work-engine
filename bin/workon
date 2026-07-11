@@ -18,6 +18,14 @@
 # the item/worktree resolution above is host-side and unchanged; only the final
 # launch — and the resume probe that feeds it — target the container.
 #
+# Deliberately NOT `exec`'d into the final `docker exec` — this process stays
+# alive as the session's parent so it can do post-session bookkeeping (the
+# --quick sweep, below) once the container session ends, host-side, after
+# Claude's own TUI has fully torn down. That's the whole point: the command
+# line here is for managing work (create/start/end); the sandbox is where the
+# work itself happens. The cost is one idle bash process for the life of the
+# session — negligible next to what it buys.
+#
 
 set -u
 
@@ -67,9 +75,12 @@ Arguments:
                      creating a fully tracked item off the bat.
                      [title...] becomes the item title (kebab-cased into the
                      slug); omit it for an auto-generated timestamp title.
-                     If the session ends with no repo changes and nothing
-                     added to the item folder, the item is auto-archived as
-                     completed — otherwise it's left as a normal item.
+                     At session end, workon checks every quick item attached
+                     to this invocation: if nothing ever landed (no commits
+                     unique to its branch, no uncommitted changes, no extra
+                     files in the item folder) it's deleted outright — no
+                     archived/ copy, there's nothing to preserve. Otherwise
+                     it's left exactly as any other active item.
 
 Description:
    Opens Claude Code with the item's folder as the working directory,­with
@@ -332,8 +343,64 @@ dexec=(docker exec -it --user clake -w "$start"
        -e TERM -e CLAUDE_CODE_DISABLE_TERMINAL_TITLE "$CONTAINER")
 if [ -n "$existing" ]; then
     print_status "Resuming $slug in $pretty"
-    exec "${dexec[@]}" claude --continue ${flags[@]+"${flags[@]}"}
+    "${dexec[@]}" claude --continue ${flags[@]+"${flags[@]}"}
 else
     print_status "New session for $slug in $pretty"
-    exec "${dexec[@]}" claude ${flags[@]+"${flags[@]}"}
+    "${dexec[@]}" claude ${flags[@]+"${flags[@]}"}
 fi
+rc=$?
+
+###
+### Post-session: the --quick sweep
+###
+# Runs after the container session has fully exited — no `exec` hand-off — so
+# nothing here races Claude's own terminal teardown (a message printed from
+# *inside* the session, e.g. by the old SessionEnd hook, could flash and
+# vanish; this can't). Only quick items are ever touched, and only based on
+# what's cumulatively true right now (commits unique to the branch, not just
+# this session's), so a later no-op session never mistakes a graduated item
+# with real history for one that's still empty.
+front="$itemdir/$slug.md"
+if grep -qE '^tags:.*\bquick\b' "$front" 2>/dev/null; then
+    sweep_dirty=false
+    sweep_unique_commits=0
+    sweep_unique_known=true
+    for repo in ${wt_repos[@]+"${wt_repos[@]}"}; do
+        wt_path="$wtbase/$repo"
+        [ -n "$(git -C "$wt_path" status --porcelain 2>/dev/null)" ] && sweep_dirty=true
+        clone="$root/repos/$repo"
+        sweep_intbr=$(git -C "$clone" rev-parse --abbrev-ref HEAD 2>/dev/null)
+        n=''
+        if [ -n "$sweep_intbr" ] && [ "$sweep_intbr" != HEAD ]; then
+            n=$(git -C "$wt_path" rev-list --count "$sweep_intbr..HEAD" 2>/dev/null)
+        fi
+        if [ -n "$n" ]; then
+            sweep_unique_commits=$((sweep_unique_commits + n))
+        else
+            sweep_unique_known=false
+        fi
+    done
+    sweep_has_extra=false
+    find "$itemdir" -mindepth 1 ! -name "$slug.md" 2>/dev/null | grep -q . && sweep_has_extra=true
+
+    if [ "$sweep_dirty" != true ] && [ "$sweep_unique_commits" -eq 0 ] \
+       && { [ ${#wt_repos[@]} -eq 0 ] || [ "$sweep_unique_known" = true ]; } \
+       && [ "$sweep_has_extra" != true ]; then
+        workitem delete "$slug" >/dev/null 2>&1
+        print_success "'$slug' was empty — deleted, nothing to keep."
+    else
+        why=()
+        [ "$sweep_dirty" = true ] && why+=("uncommitted changes")
+        [ "$sweep_unique_commits" -gt 0 ] && why+=("$sweep_unique_commits commit(s)")
+        [ "$sweep_has_extra" = true ] && why+=("extra files in the item folder")
+        [ "$sweep_unique_known" != true ] && why+=("couldn't verify repo history — skipping to be safe")
+        if [ ${#why[@]} -gt 0 ]; then
+            IFS=', '; reason="${why[*]}"; unset IFS
+        else
+            reason="unknown reason"
+        fi
+        print_status "'$slug' left active — $reason."
+    fi
+fi
+
+exit $rc

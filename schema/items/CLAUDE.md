@@ -198,27 +198,40 @@ a different repo's item — not something to ask permission for first.
 
 ## Quick items
 
-`workon --quick` creates a throwaway item for work too small to warrant the
-usual create-then-activate ceremony — a fix expected to take under 15–90
-minutes, or a repo-less session just to run a skill (`dashboard`,
+`workon --quick` (or `-q`) creates a throwaway item for work too small to
+warrant the usual create-then-activate ceremony — a fix expected to take
+under 15–90 minutes, or a repo-less session just to run a skill (`dashboard`,
 `retrospective`) or answer a question. It's a normal item in every structural
 sense (same directory, same frontmatter, same `worktree` machinery); the only
 difference is `workitem create --quick` skips every prompt (title is
 generated from a timestamp if none is given, status is always `active`/
 top-level) and tags the frontmatter `tags: [quick]`.
 
-That tag is the *only* signal the `SessionEnd` breadcrumb hook
-(`work-session-breadcrumb`) uses to decide whether to sweep an item — git
-cleanliness alone never triggers it, so a normal item with a no-op planning
-session is left untouched. When a quick item's session ends with no repo
-changes (no dirty state, no commits) in *any* attached worktree and nothing
-added to the item folder beyond its front-door file, the hook runs `workitem
-archive <slug> --completed` on it automatically: archived, worktree(s)
-removed, nothing to remember or clean up by hand. If real work happened — a
-commit or uncommitted changes in any attached repo, or files added to the
-item folder — it's left exactly as any other active item would be, `quick`
-tag and all; nothing about it is special after that point, including whether
-it's ever archived.
+That tag is the *only* signal `workon` uses to decide whether to sweep an
+item at session end — git cleanliness alone never triggers it, so a normal
+item with a no-op planning session is left untouched. `workon` makes this
+call itself, host-side, once its `docker exec` into the session returns
+(deliberately not `exec`'d into it — see `bin/workon`'s header comment): if
+nothing ever landed — no commits unique to the branch in any attached
+worktree, no uncommitted changes, nothing added to the item folder beyond its
+front-door file — it runs `workitem delete <slug>` on it: worktree(s) removed,
+item directory gone outright, no `archived/` copy. There's nothing to
+preserve for a placeholder that was never used, which is why this is
+deletion and not archiving — see the root `CLAUDE.md`'s note on that
+exception. If real work happened — a commit or uncommitted changes in any
+attached repo, or files added to the item folder — it's left exactly as any
+other active item would be, `quick` tag and all; nothing about it is special
+after that point, including whether it's ever archived. The "nothing landed"
+check is cumulative (commits unique to the branch versus its integration
+branch), not limited to the session that just ended, so a quick item that
+graduated to real work in an earlier session is never at risk from a later
+session that happens to add nothing new.
+
+Either way, `workon` prints one line reporting what it decided before
+exiting. The `SessionEnd` breadcrumb hook (`work-session-breadcrumb`) still
+runs independently and still writes the diary breadcrumb as usual, but has
+no say in a quick item's fate — see that script's header comment for why the
+sweep decision moved out of it.
 
 ## Naming conventions
 

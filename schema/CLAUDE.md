@@ -51,8 +51,13 @@ ever serve.
    - **Documents** (`docs/`) carry no `status:` field, so location alone is
      the signal: present in `docs/`, archived in `docs/archived/`, or promoted
      into a work item (gone from `docs/` entirely).
-   Nothing is deleted; archiving preserves the body. Transitions are
-   deliberate, not automatic.
+   Nothing that represents actual work is deleted; archiving preserves the
+   body, and transitions are deliberate, not automatic. The one deliberate
+   exception is narrow and explicit: a `--quick` item that never accumulated
+   any content at all — no commits, no uncommitted changes, no files added to
+   its folder — is deleted outright at session end rather than archived,
+   because there's no body to preserve for a placeholder that was never used.
+   See `items/CLAUDE.md`'s quick-item section for the mechanics.
 6. **Two actionable types: reminders and work items, split on whether work
    gets a session.** A reminder is an atomic note you action or flip without
    sitting down to work it. A work item is something you sit down and work in
