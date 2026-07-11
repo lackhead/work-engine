@@ -43,6 +43,10 @@ complete -c workitem -n __fish_use_subcommand -a create  -d 'Create a work item'
 complete -c workitem -n __fish_use_subcommand -a list    -d 'List work items'
 complete -c workitem -n __fish_use_subcommand -a archive -d 'Archive a work item'
 
+# create [--quick] [title...]
+complete -c workitem -n '__fish_seen_subcommand_from create' -l quick \
+    -d 'Skip prompts; active/top-level, tags: [quick]'
+
 # list [--backlog|--archived|--all] [--status <value>]
 complete -c workitem -n '__fish_seen_subcommand_from list' -l backlog  -d 'Show items/backlog/'
 complete -c workitem -n '__fish_seen_subcommand_from list' -l archived -d 'Show items/archived/'

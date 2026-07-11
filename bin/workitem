@@ -35,7 +35,7 @@ workitem: create, list, and archive work items under ~/work/data/items/
 
 Usage:
    workitem [ -h|--help ]
-   workitem [ -v|--verbose ] [ -d|--debug ] create  [title...]
+   workitem [ -v|--verbose ] [ -d|--debug ] create  [--quick] [title...]
    workitem [ -v|--verbose ] [ -d|--debug ] list    [--backlog|--archived|--all] [--status <value>]
    workitem [ -v|--verbose ] [ -d|--debug ] archive <slug> [--completed|--cancelled]
 
@@ -45,10 +45,22 @@ Arguments:
    -d|--debug    Show diagnostic detail (implies --verbose)
 
 Description:
-   create   Prompts for title, a one/two-sentence description, placement
-            (active top-level vs. backlog), and optionally to/due. Creates
-            items/<slug>/<slug>.md, the front door. Add plan.md/status/
-            later if and when the item earns them.
+   create   Non-interactive: takes only a title (kebab-cased into the slug),
+            no prompts. Always creates items/<slug>/<slug>.md, status active,
+            top-level. A missing title is a usage error, except with --quick
+            (see below). Description, to, due, and any other optional
+            frontmatter are no longer collected here — a Claude session that
+            notices those fields are missing is expected to ask and edit the
+            file directly. Add plan.md/status/ later if and when the item
+            earns them.
+
+            --quick additionally: an untitled item gets a generated
+            timestamp title instead of a usage error, and tags: [quick] is
+            added. Prints only the resulting slug to stdout (for scripting —
+            see `workon --quick`). Meant for throwaway work too small to
+            warrant a tracked item; a quick item that ends its session with
+            no repo changes and no added files is auto-archived by the
+            SessionEnd hook.
 
    list     Quick terminal-native glance: slug, status, due, last-updated —
             no LLM session needed. Defaults to top-level (active + blocked).
@@ -62,6 +74,8 @@ Description:
 
 Examples:
    workitem create Rework cache host info
+   workitem create --quick
+   workitem create --quick Fix the Ansible lint warning
    workitem list
    workitem list --backlog
    workitem list --all --status blocked
@@ -99,46 +113,34 @@ file_mtime_date() {
 ### Subcommands
 ###
 wi_create() {
-    local title_parts=() title desc to due duetype made slug itemdir file
-    title_parts=("$@")
+    local quick=false title_parts=() title made slug itemdir file a
+    for a in "$@"; do
+        case "$a" in
+            --quick) quick=true ;;
+            *)       title_parts+=("$a") ;;
+        esac
+    done
 
     title=''
     [ ${#title_parts[@]} -gt 0 ] && title="${title_parts[*]}"
     title="$(trim "$title")"
-    if [ -z "$title" ]; then
-        read -r -p "title: " title
-        title="$(trim "$title")"
+    if [ -z "$title" ] && [ "$quick" = true ]; then
+        title="Quick task — $(date '+%Y-%m-%d %H:%M')"
     fi
     if [ -z "$title" ]; then
-        print_error "Empty title — nothing created."; return 1
-    fi
-
-    read -r -p "description (a sentence or two, blank to omit): " desc
-    desc="$(trim "$desc")"
-
-    read -r -p "active (top-level) or backlog (proposed)? [a/b] " zone
-    local status=active subdir=''
-    if printf '%s' "$zone" | grep -qiE '^b'; then
-        status=proposed
-        subdir=backlog/
-    fi
-
-    read -r -p "to (person/team/self, blank to omit): " to
-    to="$(trim "$to")"
-    read -r -p "due (YYYY-MM-DD, blank for none): " due
-    due="$(trim "$due")"
-    duetype=''
-    if [ -n "$due" ]; then
-        read -r -p "  due type [hard/soft]: " duetype
-        duetype="$(trim "$duetype")"
+        print_error "Usage: workitem create [--quick] <title...> — title is required."
+        return 1
     fi
 
     made=$(date +%Y-%m-%d)
     slug=$(kebab "$title")
-    print_debug "Creating item: slug=$slug status=$status subdir='$subdir'"
+    print_debug "Creating item: slug=$slug quick=$quick"
 
     # Refuse if an item with this slug exists in any zone (file or directory —
     # the latter check catches legacy single-file items too, just in case).
+    # Still checked against backlog/archived even though create itself never
+    # places an item there anymore — a pre-existing item in either zone must
+    # still block reuse of its slug.
     local z
     for z in '' backlog/ archived/; do
         if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
@@ -146,29 +148,27 @@ wi_create() {
         fi
     done
 
-    itemdir="$WORK/data/items/$subdir$slug"
+    itemdir="$WORK/data/items/$slug"
     file="$itemdir/$slug.md"
     mkdir -p "$itemdir"
     {
         echo "---"
         echo "title: $title"
-        echo "status: $status"
+        echo "status: active"
         echo "made: $made"
-        [ -n "$to" ] && echo "to: $to"
-        if [ -n "$due" ]; then
-            echo "due: $due"
-            [ -n "$duetype" ] && echo "due-type: $duetype"
-        fi
+        [ "$quick" = true ] && echo "tags: [quick]"
         echo "---"
         echo
         echo "# $title"
-        if [ -n "$desc" ]; then
-            echo
-            echo "$desc"
-        fi
     } > "$file"
 
-    print_success "Created → ${file/#$HOME/\~}"
+    # --quick is meant to be consumed by scripts (workon --quick captures
+    # this via command substitution) — bare slug only, no banner.
+    if [ "$quick" = true ]; then
+        printf '%s\n' "$slug"
+    else
+        print_success "Created → ${file/#$HOME/\~}"
+    fi
 }
 
 wi_list() {
@@ -281,10 +281,20 @@ wi_archive() {
     if [ -e "$destdir" ]; then
         print_error "Target already exists: items/archived/$slug"; return 1
     fi
+    # Both `git mv` and plain `mv` require the destination's parent to already
+    # exist (neither creates it) — items/archived/ is expected to be there in
+    # a normal vault, but don't assume it.
+    mkdir -p "$root/archived"
     if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1; then
-        git -C "$WORK/data" mv "${srcdir#"$WORK"/data/}" "items/archived/$slug"
+        git -C "$WORK/data" mv "${srcdir#"$WORK"/data/}" "items/archived/$slug" || {
+            print_error "Move to items/archived/$slug failed — item left in place."
+            return 1
+        }
     else
-        mv "$srcdir" "$destdir"
+        mv "$srcdir" "$destdir" || {
+            print_error "Move to items/archived/$slug failed — item left in place."
+            return 1
+        }
     fi
 
     if [ -d "$WORK/worktrees/$slug" ]; then

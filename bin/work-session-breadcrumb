@@ -6,8 +6,9 @@
 # it in ~/.claude/settings.json (see the companion settings snippet).
 #
 # On session end it reads the SessionEnd JSON from stdin, and IF the session's
-# cwd is inside the ~/work system (a worktree or an item folder), writes a
-# factual "breadcrumb" into the diary:
+# cwd is inside the ~/work system (an item folder — workon always starts a
+# session there now, never inside a worktree directly), writes a factual
+# "breadcrumb" into the diary, aggregated across every worktree the item has:
 #
 #   ~/work/data/diary/YYYY/MM/DD/<date>.<slug>.session.NN.md
 #
@@ -48,16 +49,33 @@ transcript="$(field transcript_path)"
 reason="$(field reason)"
 [ -n "$cwd" ] || exit 0
 
-# --- derive the slug (and repo, for worktree sessions) from the cwd ------
+# --- quick-item helpers ---------------------------------------------------
+# A `workon --quick` item is tagged `tags: [quick]` in its frontmatter
+# (bin/workitem's wi_create --quick). Only items carrying that tag are ever
+# candidates for the auto-archive below — git cleanliness alone never
+# triggers it, so a normal item with a no-op planning session is untouched.
+is_quick_item() {
+    local front="$WORK/data/items/$1/$1.md"
+    [ -f "$front" ] || return 1
+    grep -qE '^tags:.*\bquick\b' "$front" 2>/dev/null
+}
+
+# True if the item folder holds anything beyond its own front-door file
+# (plan.md, status/, notes dropped in by hand) — i.e. work happened there
+# even if no repo was ever touched.
+has_extra_item_files() {
+    local dir="$WORK/data/items/$1"
+    [ -d "$dir" ] || return 1
+    find "$dir" -mindepth 1 ! -name "$1.md" 2>/dev/null | grep -q .
+}
+
+# --- derive the slug from the cwd -----------------------------------------
+# cwd is always an item folder now — workon never launches a session with cwd
+# inside a worktree directly. (A hand-launched session started that way,
+# bypassing workon, would simply not match any case below and fall through
+# to the catch-all — nothing has ever actually done this.)
 slug=""
-repo=""
 case "$cwd" in
-    "$WORK/worktrees/"*)
-        rest="${cwd#"$WORK"/worktrees/}"     # <slug>/<repo>/...
-        slug="${rest%%/*}"
-        repo="${rest#*/}"; repo="${repo%%/*}"
-        [ "$repo" = "$rest" ] && repo=""     # no repo component present
-        ;;
     "$WORK/data/items/backlog/"*) rest="${cwd#"$WORK"/data/items/backlog/}";  slug="${rest%%/*}" ;;
     "$WORK/data/items/archived/"*) rest="${cwd#"$WORK"/data/items/archived/}"; slug="${rest%%/*}" ;;
     "$WORK/data/items/"*)          rest="${cwd#"$WORK"/data/items/}";          slug="${rest%%/*}" ;;
@@ -85,28 +103,60 @@ if [ -n "$transcript" ] && [ -r "$transcript" ]; then
     fi
 fi
 
-# --- git facts (only when the cwd is a real code worktree) ---------------
-# ~/work/data is itself a git repo (vault backup), so a planning session in an
-# item folder resolves UP to the vault. Without this guard the breadcrumb would
-# record the vault's branch, its automated backup commits, and every file the
-# backup touched as if they were the session's work. Gather git facts only when
-# the cwd's repo is a real worktree — i.e. its toplevel is NOT the vault root.
-branch=""; dirty=""; commits=""; files=""
-toplevel="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$toplevel" ] && [ "$toplevel" != "$WORK/data" ]; then
-    branch="$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-    if [ -n "$(git -C "$cwd" status --porcelain 2>/dev/null)" ]; then dirty="true"; else dirty="false"; fi
-    if [ -n "$start_ts" ]; then
-        commits="$(git -C "$cwd" log --since="$start_ts" --pretty=format:'%h %s' 2>/dev/null)"
-        files="$(git -C "$cwd" log --since="$start_ts" --name-only --pretty=format: 2>/dev/null \
-                 | sed '/^[[:space:]]*$/d' | sort -u)"
-    fi
-fi
+# --- git facts across every worktree the item has -------------------------
+# No vault-git guard needed here (unlike an item-folder cwd, which can
+# resolve *up* into ~/work/data's own git repo) — each worktree directory has
+# its own .git that shadows the vault, so `git -C <worktree>` always resolves
+# to the worktree itself. See docs/bin-coding-standards.md.
+wtbase="$WORK/worktrees/$slug"
+repos_touched=()
+agg_dirty=false
+agg_commits=0
+agg_files=0
+body_repos=""
+if [ -d "$wtbase" ]; then
+    for d in "$wtbase"/*/; do
+        [ -d "$d" ] || continue
+        repo=$(basename "$d")
+        branch=$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null)
+        repo_dirty=false
+        [ -n "$(git -C "$d" status --porcelain 2>/dev/null)" ] && repo_dirty=true
 
-files_count=0
-[ -n "$files" ] && files_count="$(printf '%s\n' "$files" | grep -c .)"
-commit_count=0
-[ -n "$commits" ] && commit_count="$(printf '%s\n' "$commits" | grep -c .)"
+        repo_commits=''
+        repo_files=''
+        if [ -n "$start_ts" ]; then
+            repo_commits="$(git -C "$d" log --since="$start_ts" --pretty=format:'%h %s' 2>/dev/null)"
+            repo_files="$(git -C "$d" log --since="$start_ts" --name-only --pretty=format: 2>/dev/null \
+                         | sed '/^[[:space:]]*$/d' | sort -u)"
+        fi
+        repo_commit_count=0
+        [ -n "$repo_commits" ] && repo_commit_count="$(printf '%s\n' "$repo_commits" | grep -c .)"
+        repo_files_count=0
+        [ -n "$repo_files" ] && repo_files_count="$(printf '%s\n' "$repo_files" | grep -c .)"
+
+        repos_touched+=("$repo")
+        [ "$repo_dirty" = true ] && agg_dirty=true
+        # Plain arithmetic, never inside a `| while read` — bash runs a
+        # pipeline's right-hand side in a subshell here (no `shopt -s
+        # lastpipe`), so accumulating inside one would silently discard
+        # every increment once the subshell exits.
+        agg_commits=$((agg_commits + repo_commit_count))
+        agg_files=$((agg_files + repo_files_count))
+
+        body_repos="${body_repos}## \`$repo\`"$'\n\n'
+        body_repos="${body_repos}\`$branch\` — $repo_commit_count commit(s), $repo_files_count file(s) changed"
+        [ "$repo_dirty" = true ] && body_repos="${body_repos}, uncommitted changes present"
+        body_repos="${body_repos}."$'\n\n'
+        if [ "$repo_commit_count" -gt 0 ]; then
+            body_repos="${body_repos}### Commits"$'\n\n'
+            body_repos="${body_repos}$(printf '%s\n' "$repo_commits" | sed 's/^/- /')"$'\n\n'
+        fi
+        if [ "$repo_files_count" -gt 0 ]; then
+            body_repos="${body_repos}### Files changed"$'\n\n'
+            body_repos="${body_repos}$(printf '%s\n' "$repo_files" | sed 's/^/- `/; s/$/`/')"$'\n\n'
+        fi
+    done
+fi
 
 # --- choose the diary path + NN ------------------------------------------
 day_dir="$WORK/data/diary/$(date +%Y)/$(date +%m)/$(date +%d)"
@@ -128,11 +178,13 @@ file="$day_dir/$date_str.$slug.session.$nn.md"
     echo "session-num: \"$nn\""
     [ -n "$start_ts" ] && echo "start: $start_ts"
     echo "end: $end_ts"
-    [ -n "$repo" ]   && echo "repo: $repo"
-    [ -n "$branch" ] && echo "branch: $branch"
-    [ -n "$dirty" ]  && echo "dirty: $dirty"
-    echo "commits: $commit_count"
-    echo "files-changed: $files_count"
+    if [ ${#repos_touched[@]} -gt 0 ]; then
+        present=$(printf '%s, ' "${repos_touched[@]}"); present=${present%, }
+        echo "repos: [$present]"
+    fi
+    echo "dirty: $agg_dirty"
+    echo "commits: $agg_commits"
+    echo "files-changed: $agg_files"
     [ -n "$reason" ] && echo "reason: $reason"
     [ -n "$transcript" ] && echo "transcript: $transcript"
     echo "---"
@@ -140,30 +192,37 @@ file="$day_dir/$date_str.$slug.session.$nn.md"
     echo "# Session — $slug"
     echo
 
-    # One-line human-readable summary.
-    if [ -n "$repo" ] || [ -n "$branch" ]; then
-        printf 'Worktree session on `%s`' "$slug"
-        [ -n "$repo" ]   && printf ' (`%s`' "$repo" && { [ -n "$branch" ] && printf '@`%s`' "$branch"; } && printf ')'
-        printf ' — %s commit(s), %s file(s) changed' "$commit_count" "$files_count"
-        [ "$dirty" = "true" ] && printf ', uncommitted changes present'
+    if [ ${#repos_touched[@]} -gt 0 ]; then
+        printf 'Session on `%s` — %d repo(s), %s commit(s), %s file(s) changed' \
+            "$slug" "${#repos_touched[@]}" "$agg_commits" "$agg_files"
+        [ "$agg_dirty" = true ] && printf ', uncommitted changes present'
         echo "."
+        echo
+        printf '%s' "$body_repos"
     else
         echo "Item-folder session on \`$slug\` (no worktree — planning/tracking)."
-    fi
-    echo
-
-    if [ "$commit_count" -gt 0 ]; then
-        echo "## Commits"
-        echo
-        printf '%s\n' "$commits" | sed 's/^/- /'
-        echo
-    fi
-    if [ "$files_count" -gt 0 ]; then
-        echo "## Files changed"
-        echo
-        printf '%s\n' "$files" | sed 's/^/- `/; s/$/`/'
         echo
     fi
 } > "$file" 2>/dev/null
+
+# --- sweep a clean --quick item -------------------------------------------
+# Nothing landed anywhere for this session: no dirty/committed changes in any
+# attached repo (or no repo at all — agg_dirty/agg_commits are already
+# false/0 in that case) and nothing added to the item folder itself. Archive
+# it the same way `workitem archive <slug> --completed` always does — moves
+# it under items/archived/ and removes its worktree(s) — so quick items never
+# need to be remembered or cleaned up by hand. Real work is left untouched.
+#
+# Each repo's commit count is windowed by `start_ts` (parsed from the
+# transcript's first line, above) — if there's at least one repo but
+# `start_ts` couldn't be read, the aggregate commit count is unreliable
+# (stays 0 even if commits happened), so a missing start_ts blocks the sweep
+# rather than being trusted as "clean".
+if is_quick_item "$slug" \
+   && [ "$agg_dirty" != true ] && [ "$agg_commits" -eq 0 ] \
+   && { [ ${#repos_touched[@]} -eq 0 ] || [ -n "$start_ts" ]; } \
+   && ! has_extra_item_files "$slug"; then
+    workitem archive "$slug" --completed >/dev/null 2>&1
+fi
 
 exit 0

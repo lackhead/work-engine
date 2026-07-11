@@ -6,10 +6,12 @@
 # work-engine repo); ~/work/engine/bin is on PATH. Companion completions live
 # at ~/work/engine/bin/completions/workon.fish.
 #
-# Model: one worktree = one session. An item may have several worktrees (one
-# per repo it touches); each is its own session. Cross-repo coordination is
-# carried by the shared item folder (data/items/<slug>/), which every session
-# gets via --add-dir — not by pulling sibling worktrees into one session.
+# Model: the item's own folder (data/items/<slug>/) is always the session's
+# working directory — never a specific repo's worktree. Every worktree the
+# item has (zero, one, or several) is attached alongside it as its own
+# --add-dir, all equally reachable; there's no "pick one to open." -r/--repo
+# ensures a worktree exists (idempotent) and attaches it; an unknown slug
+# offers to create the item first.
 #
 # NOTE (isolated-claude-workspace): the launch step at the bottom runs Claude
 # inside the persistent sandbox container via `docker exec` (Phase 1 wiring). All
@@ -45,22 +47,37 @@ workon: open a Claude Code session for a work item, in the right place
 
 Usage:
    workon [ -h|--help ]
-   workon [ -v|--verbose ] [ -d|--debug ] <slug> [repo]
+   workon [ -v|--verbose ] [ -d|--debug ] [ -c|--create ] [ -r|--repo <repo> ]... <slug>
+   workon [ -v|--verbose ] [ -d|--debug ] --quick [ -r|--repo <repo> ]... [title...]
 
 Arguments:
-   -h|--help     Show what you are seeing right now
-   -v|--verbose  Show what is happening as it happens
-   -d|--debug    Show diagnostic detail (implies --verbose)
+   -h|--help         Show what you are seeing right now
+   -v|--verbose      Show what is happening as it happens
+   -d|--debug        Show diagnostic detail (implies --verbose)
 
-   <slug>        Work item basename (must be an active top-level item)
-   [repo]        Open that repo's worktree directly (skip the prompt when
-                 the item has multiple worktrees)
+   <slug>            Work item basename. If it doesn't exist yet, you'll be
+                     asked to create it (skip the prompt with -c/--create).
+   -c|--create       Don't ask — create the item if <slug> doesn't exist.
+   -r|--repo <repo>  Ensure a worktree exists for this repo (creates it if
+                     missing, reuses it if already there) and attach it to
+                     the session. Repeatable — pass it more than once for a
+                     multi-repo item. Every worktree the item already has is
+                     attached automatically, with or without -r.
+
+   --quick           Create a throwaway item with a generated slug and open
+                     it now — for work too small to warrant a tracked item.
+                     [title...] becomes the item title (kebab-cased into the
+                     slug); omit it for an auto-generated timestamp title.
+                     If the session ends with no repo changes and nothing
+                     added to the item folder, it's auto-archived as
+                     completed — otherwise it's left as a normal item.
 
 Description:
-   Opens Claude Code in the item's worktree (prompting if it has more than
-   one), or its folder if it has none, with the item folder added for shared
-   cross-repo context. Flags branch drift behind the integration branch and
-   offers to sync. Resumes that directory's last session if one exists.
+   Opens Claude Code with the item's own folder as the working directory —
+   every repo the item touches is attached alongside it (each as its own
+   --add-dir), not entered one at a time. Flags branch drift behind the
+   integration branch, per repo, and offers to sync. Resumes the item's last
+   session if one exists.
 
    Sessions run inside the persistent sandbox container via docker exec.
    Resume works because Claude Code keys transcripts by working directory
@@ -68,8 +85,11 @@ Description:
 
 Examples:
    workon nagios
-   workon ad-upgrade Ansible
-   workon isolated-claude-workspace
+   workon ad-upgrade -r Ansible
+   workon new-idea -r Ansible -r Internal
+   workon some-new-thing -c -r work-engine
+   workon --quick
+   workon --quick -r work-engine fix the lint warning
 
 EOF
 
@@ -86,11 +106,21 @@ mid_sync() {
     [ -d "$g/rebase-merge" ] || [ -d "$g/rebase-apply" ] || [ -e "$g/MERGE_HEAD" ]
 }
 
+# Lowercase-kebab-case from $1 (for slugs) — duplicated from workitem's copy
+# by house convention (docs/bin-coding-standards.md: no shared library).
+# Idempotent, so re-kebabing an already-canonical slug is always a no-op —
+# that's what lets workon compute the slug a new item *will* get without
+# needing to parse it back out of `workitem create`'s output.
+kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
+
 ###
 ### Parse arguments
 ###
+quick=false
+create=false
 slug=''
-repo_arg=''
+repo_opts=()
+title_parts=()
 while [ $# -gt 0 ]; do
     case "$1" in
         -v|--verbose) VERBOSE=true ;;
@@ -98,145 +128,164 @@ while [ $# -gt 0 ]; do
         -h|--help|help)
             printf '%s\n' "$usage"
             exit 0 ;;
+        --quick)     quick=true ;;
+        -c|--create) create=true ;;
+        -r|--repo)
+            [ -z "${2:-}" ] && { print_error "Option -r/--repo requires an argument"; exit 1; }
+            shift; repo_opts+=("$1") ;;
+        --repo=*) repo_opts+=("${1#--repo=}") ;;
         -*)
             print_error "Unknown option: $1"
             exit 1 ;;
         *)
-            if [ -z "$slug" ]; then slug=$1
-            elif [ -z "$repo_arg" ]; then repo_arg=$1
+            if [ "$quick" = true ]; then
+                title_parts+=("$1")
+            elif [ -z "$slug" ]; then slug=$1
             else print_error "Too many arguments."; exit 1
             fi ;;
     esac
     shift
 done
 
-if [ -z "$slug" ]; then
+if [ "$quick" = false ] && [ -z "$slug" ]; then
     printf '%s\n' "$usage"
     exit 0
 fi
 
-###
-### Locate the item
-###
 root="$WORK"
 print_debug "Work root: $root"
 
-# Active (top-level) items only — not backlog/ or archived/.
+###
+### Resolve (or create) the item
+###
 itemdir=''
-found=0
-if [ -f "$root/data/items/$slug/$slug.md" ]; then
-    itemdir="$root/data/items/$slug"; found=1
-elif [ -f "$root/data/items/$slug.md" ]; then
-    itemdir=''; found=1
+item_created_this_run=false
+
+if [ "$quick" = true ]; then
+    if [ ${#title_parts[@]} -gt 0 ]; then
+        slug=$(workitem create --quick "${title_parts[@]}")
+    else
+        slug=$(workitem create --quick)
+    fi
+    if [ -z "$slug" ]; then
+        print_error "Could not create a quick item."
+        exit 1
+    fi
+    itemdir="$root/data/items/$slug"
+    item_created_this_run=true
+    print_success "Quick item created: $slug"
+else
+    if [ -f "$root/data/items/$slug/$slug.md" ]; then
+        itemdir="$root/data/items/$slug"
+        print_verbose "Item found: $slug"
+    elif [ -f "$root/data/items/$slug.md" ]; then
+        print_error "'$slug' is a legacy single-file item (items/$slug.md, no directory)."
+        print_error "Migrate it by hand: create items/$slug/$slug.md and remove the old file."
+        exit 1
+    elif [ -d "$root/data/items/backlog/$slug" ] || [ -d "$root/data/items/archived/$slug" ]; then
+        print_error "'$slug' exists but is not an active top-level item."
+        print_error "Activate it first (move it out of backlog/ or archived/)."
+        exit 1
+    else
+        if [ "$create" = false ]; then
+            read -r -p "Item '$slug' doesn't exist — create it? [y/N] " reply
+            case "$reply" in
+                y|Y|yes|Yes) ;;
+                *) exit 0 ;;
+            esac
+        fi
+        slug=$(kebab "$slug")
+        if ! workitem create "$slug" >/dev/null; then
+            print_error "Could not create item '$slug'."
+            exit 1
+        fi
+        itemdir="$root/data/items/$slug"
+        item_created_this_run=true
+    fi
 fi
-if [ "$found" -eq 0 ]; then
-    print_error "'$slug' is not an active work item (top-level items/)."
-    print_error "Activate it first (it may be in backlog/ or archived/)."
-    exit 1
-fi
-print_verbose "Item found: slug=$slug itemdir='${itemdir:-single-file}'"
 
 ###
-### Pick the worktree
+### Ensure requested repos have worktrees (idempotent), collect the full set
 ###
 wtbase="$root/worktrees/$slug"
+created_this_run=()
+for repo in ${repo_opts[@]+"${repo_opts[@]}"}; do
+    if [ -d "$wtbase/$repo" ]; then
+        print_verbose "Worktree already present: $repo"
+    elif worktree add "$slug" "$repo"; then
+        created_this_run+=("$repo")
+    else
+        # Roll back everything *this invocation* created — worktrees, and the
+        # item itself if we're the ones who just created it — rather than
+        # launching into a partial/inconsistent attachment set.
+        for r in ${created_this_run[@]+"${created_this_run[@]}"}; do
+            worktree rm "$slug" "$r" 2>/dev/null
+        done
+        [ "$item_created_this_run" = true ] && rm -rf "$itemdir"
+        print_error "Could not create a worktree in '$repo' for '$slug'."
+        exit 1
+    fi
+done
+
 wt_repos=()
 if [ -d "$wtbase" ]; then
     for d in "$wtbase"/*/; do [ -d "$d" ] && wt_repos+=("$(basename "$d")"); done
 fi
-nrepos=${#wt_repos[@]}
-print_verbose "Worktrees: $nrepos found (${wt_repos[*]:-none})"
-
-chosen=''
-if [ -n "$repo_arg" ]; then
-    for r in ${wt_repos[@]+"${wt_repos[@]}"}; do [ "$r" = "$repo_arg" ] && chosen=$repo_arg; done
-    if [ -z "$chosen" ]; then
-        print_error "No worktree at worktrees/$slug/$repo_arg"
-        if [ "$nrepos" -gt 0 ]; then
-            present=$(printf '%s, ' "${wt_repos[@]}"); present=${present%, }
-            print_error "Present: $present"
-        fi
-        print_error "Create it with 'worktree add $slug $repo_arg <branch>'."
-        exit 1
-    fi
-elif [ "$nrepos" -eq 1 ]; then
-    chosen=${wt_repos[0]}
-elif [ "$nrepos" -gt 1 ]; then
-    echo "workon: '$slug' has $nrepos worktrees:"
-    i=1
-    for r in "${wt_repos[@]}"; do echo "  $i) $r"; i=$((i + 1)); done
-    read -r -p "  open which? [1-$nrepos or repo name]: " reply
-    if [ -z "$reply" ]; then print_error "Cancelled."; exit 1; fi
-    if printf '%s' "$reply" | grep -qE '^[0-9]+$'; then
-        if [ "$reply" -ge 1 ] && [ "$reply" -le "$nrepos" ]; then chosen=${wt_repos[$((reply - 1))]}; fi
-    else
-        for r in "${wt_repos[@]}"; do [ "$r" = "$reply" ] && chosen=$reply; done
-    fi
-    if [ -z "$chosen" ]; then print_error "'$reply' is not a valid choice."; exit 1; fi
-fi
+print_verbose "Worktrees for '$slug': ${wt_repos[*]:-none}"
 
 ###
-### Start directory
+### Start directory — always the item folder itself
 ###
-start=''
-if [ -n "$chosen" ]; then
-    start="$wtbase/$chosen"
-elif [ -n "$itemdir" ]; then
-    start="$itemdir"
-    print_warning "No worktree for '$slug' — starting in the item folder."
-    print_warning "Run 'worktree add $slug <repo> <branch>' to set one up."
-else
-    print_error "'$slug' is a single-file item with no worktree — nothing to open in."
-    print_error "Promote it to a directory, or add a worktree."
-    exit 1
-fi
+start="$itemdir"
 print_verbose "Start directory: $start"
 
 ###
-### Drift check
+### Drift check — once per attached repo
 ###
-if [ -n "$chosen" ]; then
+for repo in ${wt_repos[@]+"${wt_repos[@]}"}; do
+    wt_path="$wtbase/$repo"
+
     # Keep the branch-point honest before measuring drift: fast-forward the
     # clone's integration branch if it hasn't been fetched in a while (48h gate,
     # non-fatal when offline). Manual equivalent: `worktree refresh`.
-    print_verbose "Running worktree refresh --if-stale $chosen"
-    worktree refresh --if-stale "$chosen" || true
+    print_verbose "[$repo] Running worktree refresh --if-stale $repo"
+    worktree refresh --if-stale "$repo" || true
 
-    clone="$root/repos/$chosen"
+    clone="$root/repos/$repo"
     intbr=$(git -C "$clone" rev-parse --abbrev-ref HEAD 2>/dev/null)
-    wt=${start/#$HOME/\~}
-    if mid_sync "$start"; then
-        print_error "This worktree is mid-rebase/merge — finish or abort it first:"
+    wt=${wt_path/#$HOME/\~}
+    if mid_sync "$wt_path"; then
+        print_error "[$repo] This worktree is mid-rebase/merge — finish or abort it first:"
         print_error "  git -C $wt rebase --abort      # (or: merge --abort)"
     elif [ -n "$intbr" ] && [ "$intbr" != HEAD ]; then
-        behind=$(git -C "$start" rev-list --count "HEAD..$intbr" 2>/dev/null)
+        behind=$(git -C "$wt_path" rev-list --count "HEAD..$intbr" 2>/dev/null)
         if [ -n "$behind" ] && [ "$behind" -gt 0 ]; then
-            print_warning "This branch is $behind commit(s) behind $intbr (local clone — fetch for the latest)."
-            dirty=$(git -C "$start" status --porcelain 2>/dev/null)
+            print_warning "[$repo] This branch is $behind commit(s) behind $intbr (local clone — fetch for the latest)."
+            dirty=$(git -C "$wt_path" status --porcelain 2>/dev/null)
             if [ "$behind" -gt 25 ]; then
-                echo "  That's a big gap — a deliberate integration, not a quick sync (expect conflicts)."
+                echo "  [$repo] That's a big gap — a deliberate integration, not a quick sync (expect conflicts)."
                 echo "  Do it in the session with Claude's help, or by hand first:"
                 echo "      git -C $wt merge $intbr     # often simpler than rebase for a large gap"
             elif [ -n "$dirty" ]; then
-                echo "  Uncommitted changes — commit or stash, then: git -C $wt rebase $intbr"
+                echo "  [$repo] Uncommitted changes — commit or stash, then: git -C $wt rebase $intbr"
             else
-                read -r -p "  Sync now? [r]ebase / [m]erge / [s]kip: " sync
+                read -r -p "  [$repo] Sync now? [r]ebase / [m]erge / [s]kip: " sync
                 sync=$(printf '%s' "$sync" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
                 case "$sync" in
-                    r|rebase) git -C "$start" rebase "$intbr" ;;
-                    m|merge)  git -C "$start" merge --no-edit "$intbr" ;;
+                    r|rebase) git -C "$wt_path" rebase "$intbr" ;;
+                    m|merge)  git -C "$wt_path" merge --no-edit "$intbr" ;;
                     *)        echo "  Skipped." ;;
                 esac
                 # Never launch into a half-finished sync.
-                if mid_sync "$start"; then
-                    git -C "$start" rebase --abort 2>/dev/null
-                    git -C "$start" merge --abort 2>/dev/null
-                    print_warning "Sync hit conflicts — rolled back, branch unchanged. Do it by hand: git -C $wt rebase $intbr"
+                if mid_sync "$wt_path"; then
+                    git -C "$wt_path" rebase --abort 2>/dev/null
+                    git -C "$wt_path" merge --abort 2>/dev/null
+                    print_warning "[$repo] Sync hit conflicts — rolled back, branch unchanged. Do it by hand: git -C $wt rebase $intbr"
                 fi
             fi
         fi
     fi
-fi
+done
 
 ###
 ### Flags for Claude
@@ -247,9 +296,9 @@ fi
 # `claude` (e.g. via `sandbox shell`) stays safe-by-default under the allow/ask/deny
 # lists. deny + ask rules are still enforced under bypass (see claude-settings.json).
 flags=(--permission-mode bypassPermissions)
-if [ -n "$itemdir" ] && [ "$itemdir" != "$start" ]; then
-    flags+=(--add-dir "$itemdir")
-fi
+for repo in ${wt_repos[@]+"${wt_repos[@]}"}; do
+    flags+=(--add-dir "$wtbase/$repo")
+done
 
 ###
 ### Launch in the sandbox container
@@ -277,21 +326,20 @@ existing=$(docker exec "$CONTAINER" sh -c "ls '$HOME/.claude/projects/$enc'/*.js
 print_debug "Existing transcripts: ${existing:-none}"
 
 pretty=${start/#$HOME/\~}
-suffix=''; [ -n "$chosen" ] && suffix="/$chosen"
 cd "$start" || { print_error "Cannot cd to $start"; exit 1; }
 
 # Label the terminal tab/window with the item slug. CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
 # keeps Claude from re-titling every turn; we pass it into the container explicitly.
 : "${CLAUDE_CODE_DISABLE_TERMINAL_TITLE:=1}"
 export CLAUDE_CODE_DISABLE_TERMINAL_TITLE
-printf '\033]1;%s\007\033]2;workon: %s%s\007' "$slug$suffix" "$slug" "$suffix"
+printf '\033]1;%s\007\033]2;workon: %s\007' "$slug" "$slug"
 
 dexec=(docker exec -it --user clake -w "$start"
        -e TERM -e CLAUDE_CODE_DISABLE_TERMINAL_TITLE "$CONTAINER")
 if [ -n "$existing" ]; then
-    print_status "Resuming $slug$suffix in $pretty"
+    print_status "Resuming $slug in $pretty"
     exec "${dexec[@]}" claude --continue ${flags[@]+"${flags[@]}"}
 else
-    print_status "New session for $slug$suffix in $pretty"
+    print_status "New session for $slug in $pretty"
     exec "${dexec[@]}" claude ${flags[@]+"${flags[@]}"}
 fi

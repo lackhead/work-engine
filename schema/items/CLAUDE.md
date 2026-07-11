@@ -177,6 +177,49 @@ item touching several repos gets one worktree per repo under the same slug
 (`worktrees/<slug>/Ansible/`, `worktrees/<slug>/Internal/`); `worktree rm
 <slug>` clears them all at once on completion.
 
+`workon` always starts a session with the item's own folder as the working
+directory — never inside a specific repo's worktree. Every worktree the item
+has (zero, one, or several) is attached alongside it, each as its own
+`--add-dir`, all equally reachable; there's no "pick one to open." Plenty of
+items have no repo at all (document drafting, data analysis, planning-only
+work) — for those, a repo was never the point, and this model reflects that
+directly: a repo is a purely optional attachment to an item, not something
+every item is implicitly built around. `-r/--repo` on `workon` (repeatable)
+ensures a worktree exists for a repo — creates it if missing, reuses it if
+already there — and attaches it.
+
+Mid-session, Claude can do the same thing itself: run `worktree add <slug>
+<repo>` (already on `PATH` in the sandbox, which already runs under
+`bypassPermissions`) and then the CLI's `/add-dir` command to attach it to
+the *live* session, with no restart and no lost context. This is the expected,
+encouraged way to handle "I need to touch one more repo" mid-conversation —
+e.g. realizing the best fix is a new fish function in dotfiles while working
+a different repo's item — not something to ask permission for first.
+
+## Quick items
+
+`workon --quick` creates a throwaway item for work too small to warrant the
+usual create-then-activate ceremony — a fix expected to take under 15–90
+minutes, or a repo-less session just to run a skill (`dashboard`,
+`retrospective`) or answer a question. It's a normal item in every structural
+sense (same directory, same frontmatter, same `worktree` machinery); the only
+difference is `workitem create --quick` skips every prompt (title is
+generated from a timestamp if none is given, status is always `active`/
+top-level) and tags the frontmatter `tags: [quick]`.
+
+That tag is the *only* signal the `SessionEnd` breadcrumb hook
+(`work-session-breadcrumb`) uses to decide whether to sweep an item — git
+cleanliness alone never triggers it, so a normal item with a no-op planning
+session is left untouched. When a quick item's session ends with no repo
+changes (no dirty state, no commits) in *any* attached worktree and nothing
+added to the item folder beyond its front-door file, the hook runs `workitem
+archive <slug> --completed` on it automatically: archived, worktree(s)
+removed, nothing to remember or clean up by hand. If real work happened — a
+commit or uncommitted changes in any attached repo, or files added to the
+item folder — it's left exactly as any other active item would be, `quick`
+tag and all; nothing about it is special after that point, including whether
+it's ever archived.
+
 ## Naming conventions
 
 - **Item names:** lowercase, hyphenated, concise, descriptive at a glance —
@@ -208,14 +251,17 @@ item links never include the zone:
 
 ### Adding an item
 
-`workitem create` prompts for title, a one/two-sentence description,
-placement (active top-level vs. backlog), and optionally `to`/`due` —
-creates the item's directory with its front-door file,
-`items/<name>/<name>.md`. When creating one conversationally instead, follow
-the same shape: `status: proposed` by default, `made:` today, ask for
-missing required fields and for `to:` if a promise is implied, ask hard vs.
-soft when a `due:` is set. Add `plan.md` and `status/` later, only when the
-item earns them — most items never do.
+`workitem create <title...>` is non-interactive: title only, no prompts.
+It always creates `items/<name>/<name>.md` with `status: active`, top-level,
+`made:` today. Description, `to`, `due`, and any other optional frontmatter
+are not collected by `create` at all. When an item's frontmatter is missing
+those optional fields — most noticeably right after it was just created —
+ask the user conversationally and edit the file directly: is there a
+one/two-sentence description worth capturing, is this promised to someone
+(`to:`) or self-directed, is there a `due:` and is it hard or soft. There's
+no special signal for "this was just created" beyond the fields being empty —
+missing optional fields is the whole trigger. Add `plan.md` and `status/`
+later, only when the item earns them — most items never do.
 
 ### Surfacing items
 
