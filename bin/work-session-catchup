@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+#
+# work-session-catchup — Claude Code SessionStart hook.
+#
+# Install at ~/.claude/hooks/work-session-catchup (chmod +x) and register it
+# in ~/.claude/settings.json under SessionStart with "matcher": "startup" —
+# that matcher is what keeps this from ever firing on resume/clear/compact;
+# no in-script check needed.
+#
+# On session start it reads the SessionStart JSON from stdin, and IF the
+# session's cwd is inside an item folder, checks that item's log/ for
+# `workitem append` entries (type: workitem-append) written since the item's
+# last known session-breadcrumb `end:` timestamp — i.e. out-of-band notes
+# recorded from a phone, another terminal, or a hallway conversation, that no
+# prior Claude Code session ever saw. If any exist, they're printed to stdout
+# so the new session picks them up as context, unprompted.
+#
+# Session breadcrumbs themselves are never re-surfaced here: every one is
+# written automatically by the SessionEnd hook the moment its session ends,
+# so the newest one *is* the cutoff by construction — nothing can ever be
+# newer than the max of itself. Only append entries have no such automatic
+# visibility, so they're the only thing this hook looks for.
+#
+# It is a user-global hook, so it fires for every Claude Code session start;
+# for any session not under ~/work, or with nothing new to report, it exits
+# silently.
+
+set -u
+WORK="${WORK_ROOT:-$HOME/work}"
+
+# --- read stdin payload --------------------------------------------------
+PAYLOAD="$(cat 2>/dev/null)"
+[ -n "$PAYLOAD" ] || exit 0
+
+# Extract a top-level string field from the payload (jq if available, else sed).
+field() {
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s' "$PAYLOAD" | jq -r --arg k "$1" '.[$k] // empty' 2>/dev/null
+    else
+        printf '%s' "$PAYLOAD" \
+            | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+            | head -n1
+    fi
+}
+
+cwd="$(field cwd)"
+[ -n "$cwd" ] || exit 0
+
+# --- derive the slug + item directory from the cwd -------------------------
+# Same zone-detection shape as work-session-breadcrumb (copied, not shared —
+# see docs/bin-coding-standards.md's no-shared-library convention).
+slug=""
+zone_prefix=""
+case "$cwd" in
+    "$WORK/data/items/backlog/"*)  zone_prefix="$WORK/data/items/backlog";  rest="${cwd#"$WORK"/data/items/backlog/}";  slug="${rest%%/*}" ;;
+    "$WORK/data/items/archived/"*) zone_prefix="$WORK/data/items/archived"; rest="${cwd#"$WORK"/data/items/archived/}"; slug="${rest%%/*}" ;;
+    "$WORK/data/items/"*)          zone_prefix="$WORK/data/items";          rest="${cwd#"$WORK"/data/items/}";          slug="${rest%%/*}" ;;
+    *) exit 0 ;;
+esac
+[ -n "$slug" ] || exit 0
+item_dir="$zone_prefix/$slug"
+log_dir="$item_dir/log"
+[ -d "$log_dir" ] || exit 0
+
+# --- cutoff: max `end:` across every session breadcrumb -------------------
+# ISO 8601 sorts correctly as a plain string — no date arithmetic needed.
+cutoff=""
+for f in "$log_dir"/*.session.*.md; do
+    [ -e "$f" ] || continue
+    end="$(sed -n 's/^end: *//p' "$f" | head -1)"
+    [ -n "$end" ] || continue
+    if [ -z "$cutoff" ] || [[ "$end" > "$cutoff" ]]; then
+        cutoff="$end"
+    fi
+done
+
+# --- find append entries newer than the cutoff -----------------------------
+# note_text: the first non-blank, non-heading line after the frontmatter —
+# workitem append always writes exactly one line of note text there.
+note_text() {
+    awk '
+        /^---$/ { fm++; next }
+        fm < 2  { next }
+        /^# /   { next }
+        NF == 0 { next }
+        { print; exit }
+    ' "$1"
+}
+
+hits=()
+for f in "$log_dir"/*.append.*.md; do
+    [ -e "$f" ] || continue
+    t="$(sed -n 's/^time: *//p' "$f" | head -1)"
+    [ -n "$t" ] || continue
+    if [ -z "$cutoff" ] || [[ "$t" > "$cutoff" ]]; then
+        hits+=("$t|$f")
+    fi
+done
+[ ${#hits[@]} -gt 0 ] || exit 0
+
+# --- print the catch-up block ----------------------------------------------
+echo "---"
+echo "**[Automated: new activity in items/$slug/log/ since your last session here]**"
+echo
+first=true
+while IFS='|' read -r t f; do
+    [ -n "$t" ] || continue
+    disp_date="${t%%T*}"
+    disp_time="${t#*T}"
+    disp_time="${disp_time%%[+-]*}"  # strip tz offset
+    disp_time="${disp_time%:*}"      # HH:MM:SS -> HH:MM
+    note="$(note_text "$f")"
+    [ "$first" = true ] || echo
+    echo "$disp_date $disp_time — append: $note"
+    first=false
+done < <(printf '%s\n' "${hits[@]}" | sort)
+echo "---"
+
+exit 0

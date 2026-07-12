@@ -38,6 +38,7 @@ Usage:
    workitem [ -v|--verbose ] [ -d|--debug ] create   [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [title...]
    workitem [ -v|--verbose ] [ -d|--debug ] list     [--backlog|--archived|--all] [--status <value>]
    workitem [ -v|--verbose ] [ -d|--debug ] show     <slug>
+   workitem [ -v|--verbose ] [ -d|--debug ] append   <slug> [-r|--repo <repo>]
    workitem [ -v|--verbose ] [ -d|--debug ] activate <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] defer    <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] block    <slug>
@@ -63,6 +64,11 @@ Description:
 
    show     Prints the item's front door (<slug>.md) — piped through
             $PAGER if set, else plain output.
+
+   append   Records a note directly into the item's log/, for work done
+            outside a Claude Code session. Prompts for the latest commit
+            (in the given -r/--repo, or the current directory's repo if
+            inside one) and for note text.
 
    activate Moves a backlog item to items/<slug>/, status active.
 
@@ -91,6 +97,8 @@ Examples:
    workitem list --backlog
    workitem list --all --status blocked
    workitem show nagios
+   workitem append nagios
+   workitem append nagios --repo Ansible
    workitem activate some-backlog-item
    workitem defer some-active-item
    workitem block some-active-item
@@ -101,6 +109,12 @@ Examples:
 EOF
 
 trim()  { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+
+iso_now() {
+    local t
+    t="$(date +%Y-%m-%dT%H:%M:%S%z)"
+    printf '%s' "$t" | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/'
+}
 
 # Kebab-case $1, truncated to at most $2 characters (default 30). Truncation
 # snaps back to the last complete word boundary that fits rather than
@@ -400,6 +414,98 @@ wi_show() {
     fi
 }
 
+wi_append() {
+    local slug='' repo_opt='' a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            -r|--repo) shift; repo_opt=${1:-} ;;
+            --repo=*)  repo_opt=${a#--repo=} ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$slug" ]; then slug=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+        shift
+    done
+    if [ -z "$slug" ]; then
+        print_error "Usage: workitem append <slug> [-r|--repo <repo>]"; return 1
+    fi
+
+    local root="$WORK/data/items" item_dir='' z
+    for z in '' backlog/ archived/; do
+        if [ -f "$root/$z$slug/$slug.md" ]; then
+            item_dir="$root/$z$slug"
+            break
+        fi
+    done
+    if [ -z "$item_dir" ]; then
+        print_error "No item '$slug' found."; return 1
+    fi
+
+    # --- git context (same vault-git guard as workjot/the SessionEnd hook) ---
+    local gitdir='' top
+    if [ -n "$repo_opt" ]; then
+        gitdir="$WORK/repos/$repo_opt"
+        if ! git -C "$gitdir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            print_error "repos/$repo_opt is not a git repo"; return 1
+        fi
+    else
+        top="$(git -C "$(pwd)" rev-parse --show-toplevel 2>/dev/null)"
+        if [ -n "$top" ] && [ "$top" != "$WORK/data" ]; then
+            gitdir="$(pwd)"
+        fi
+    fi
+
+    local commit=''
+    if [ -n "$gitdir" ]; then
+        local h subj br rname
+        h=$(git -C "$gitdir" log -1 --format=%h 2>/dev/null)
+        if [ -n "$h" ]; then
+            subj=$(git -C "$gitdir" log -1 --format=%s 2>/dev/null)
+            br=$(git -C "$gitdir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+            rname=$(basename "$(git -C "$gitdir" rev-parse --show-toplevel 2>/dev/null)")
+            print_status "Latest commit in $rname@$br:"
+            echo "    $h  $subj"
+            read -r -p "  Record this commit with the entry? [Y/n] " yn
+            if [ -z "$yn" ] || printf '%s' "$yn" | grep -qiE '^y'; then
+                commit="$rname@$br $h \"$subj\""
+            fi
+        fi
+    fi
+
+    local note
+    read -r -p "note: " note
+    note="$(trim "$note")"
+    if [ -z "$note" ]; then
+        print_error "Empty note — nothing recorded."; return 1
+    fi
+
+    local date_str; date_str=$(date +%Y-%m-%d)
+    local log_dir="$item_dir/log" n nn file
+    mkdir -p "$log_dir"
+    n=1
+    while [ -e "$log_dir/$date_str.$slug.append.$(printf '%02d' "$n").md" ]; do
+        n=$((n + 1))
+    done
+    nn="$(printf '%02d' "$n")"
+    file="$log_dir/$date_str.$slug.append.$nn.md"
+    {
+        echo "---"
+        echo "type: workitem-append"
+        echo "slug: $slug"
+        echo "time: $(iso_now)"
+        [ -n "$commit" ] && echo "commit: \"$commit\""
+        echo "---"
+        echo
+        echo "# Append — $slug"
+        echo
+        echo "$note"
+    } > "$file"
+    print_success "Appended → ${file/#$HOME/\~}"
+}
+
 # activate/defer/block/unblock deliberately never touch worktrees, unlike
 # archive/delete: the item is staying in play, just changing zone/status,
 # not leaving active circulation.
@@ -666,6 +772,7 @@ case "$cmd" in
     create)   wi_create "$@" ;;
     list)     wi_list "$@" ;;
     show)     wi_show "$@" ;;
+    append)   wi_append "$@" ;;
     activate) wi_activate "$@" ;;
     defer)    wi_defer "$@" ;;
     block)    wi_block "$@" ;;
