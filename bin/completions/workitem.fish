@@ -1,10 +1,18 @@
-# Completions for `workitem` (create/list/show/activate/defer/block/unblock/
-# archive/delete subcommands).
+# Completions for `workitem` (create/list/show/append/activate/defer/block/
+# unblock/archive/delete subcommands).
 # Canonical location: ~/work/engine/bin/completions/workitem.fish (the work-engine repo);
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
 
 function __workitem_root
     echo $HOME/work
+end
+
+function __workitem_repos
+    set -l repos (__workitem_root)/repos
+    test -d $repos; or return
+    for p in $repos/*
+        test -e $p/.git; and basename $p
+    end
 end
 
 # How many positionals are already completed after the subcommand.
@@ -104,6 +112,7 @@ complete -c workitem -s h -l help    -d 'Show help'
 complete -c workitem -n __fish_use_subcommand -a create   -d 'Create a work item'
 complete -c workitem -n __fish_use_subcommand -a list     -d 'List work items'
 complete -c workitem -n __fish_use_subcommand -a show     -d 'Print a work item front door'
+complete -c workitem -n __fish_use_subcommand -a append   -d 'Record a note into the item log'
 complete -c workitem -n __fish_use_subcommand -a activate -d 'Move a backlog item to top-level (active)'
 complete -c workitem -n __fish_use_subcommand -a defer    -d 'Move a top-level item to backlog (deferred)'
 complete -c workitem -n __fish_use_subcommand -a block    -d 'Mark a top-level item blocked'
@@ -129,6 +138,12 @@ complete -c workitem -n '__fish_seen_subcommand_from list' -l status -x \
 # show <slug>
 complete -c workitem -n '__fish_seen_subcommand_from show; and test (__workitem_nargs) -eq 0' \
     -a '(__workitem_deletable_slugs)' -d item
+
+# append <slug> [-r|--repo <repo>]
+complete -c workitem -n '__fish_seen_subcommand_from append; and test (__workitem_nargs) -eq 0' \
+    -a '(__workitem_deletable_slugs)' -d item
+complete -c workitem -n '__fish_seen_subcommand_from append' -s r -l repo \
+    -x -a '(__workitem_repos)' -d 'repo for git facts'
 
 # activate <slug>
 complete -c workitem -n '__fish_seen_subcommand_from activate; and test (__workitem_nargs) -eq 0' \
