@@ -1,16 +1,16 @@
 ---
 name: dashboard
-description: Answer "where does everything stand and what should I work on now" by reading work items, active reminders, recent session breadcrumbs, and worktree git activity — then regenerate ~/work/data/index.md as a ranked snapshot. Ranking is derived (due-date, status, staleness, optional priority), not hand-set. Read-derived and local — no external sources.
+description: Answer "where does everything stand and what should I work on now" by reading work items, active reminders, each item's own log/, and worktree git activity — then regenerate ~/work/data/index.md as a ranked snapshot. Ranking is derived (due-date, status, staleness, optional priority), not hand-set. Read-derived and local — no external sources.
 user_invocable: true
 ---
 
 Generate the curated front-page view of the work system and write it to
 `~/work/data/index.md`. The dashboard is **read-derived and local**: it computes
-everything from the tree (item frontmatter, reminders), the diary (session
-breadcrumbs and jots), and git (worktree activity). It never invents state — the
-source of truth is frontmatter and git history, and the dashboard only ranks and
-presents it. Capture is manual (the `work*` commands); the dashboard reflects
-what's been captured, it doesn't scrape external sources.
+everything from the tree (item frontmatter, reminders), each item's own `log/`
+(session breadcrumbs and tagged jots), and git (worktree activity). It never
+invents state — the source of truth is frontmatter and git history, and the
+dashboard only ranks and presents it. Capture is manual (the `work*` commands);
+the dashboard reflects what's been captured, it doesn't scrape external sources.
 
 `index.md` is a generated file. The dashboard owns most of it but leaves two
 regions alone: the hand-owned **Notes / current focus** block and the
@@ -35,8 +35,7 @@ DUE_SOON_DAYS    = 7    # due/within-this-window counts as an approaching deadli
 
 Read `~/work/data/items/**` and parse each item's frontmatter (`title`, `status`,
 `due`, `due-type`, `to`, `priority`, `made`). Resolve the front door:
-`items/<zone>/<slug>/<slug>.md` for directory items or `items/<zone>/<slug>.md`
-for single-file items. Group by attention zone from the directory:
+`items/<zone>/<slug>/<slug>.md`. Group by attention zone from the directory:
 
 - **In-flight** — `items/` top level (`active` + `blocked`).
 - **Backlog** — `items/backlog/` (`proposed` + `deferred`).
@@ -58,13 +57,16 @@ stale.
 
 For each in-flight item, find its most recent activity from two sources:
 
-- **Breadcrumbs:** the newest `~/work/data/diary/YYYY/MM/DD/<date>.<slug>.session.NN.md`
-  for that slug — read its `end:` timestamp.
+- **The item's own `log/`:** the newest-dated file in `items/<slug>/log/`
+  (either a `.session.NN.md` or a `.jot.NN.md`, whichever sorts latest by
+  filename date) — read its `end:` (breadcrumb) or timestamp (jot). A single
+  directory listing per item; no cross-referencing anything outside the
+  item.
 - **Worktree commits:** if the item has a worktree, the newest commit date from
   `git -C ~/work/worktrees/<slug>/<repo> log -1 --format=%cI` (across each repo
   the item has a worktree for).
 
-`last-activity = max(newest breadcrumb end, newest commit date)`. An item whose
+`last-activity = max(newest log/ entry, newest commit date)`. An item whose
 `last-activity` is more than `STALE_ITEM_DAYS` ago — or that has none — is
 **at-risk** (quietly falling behind). Two kinds of item are exempt from the
 staleness nudge: **blocked** items (stalled on purpose) and **`priority: low`**
@@ -150,13 +152,13 @@ stdout so it's readable immediately, then print the `index.md` path.
 
 - **Read-derived and local.** No Slack, calendar, or external sources — capture
   is manual via the `work*` commands, and the dashboard only reflects what's in
-  the tree, diary, and git. (Filing new reminders/items is `workreminder` /
-  `workitem`, not the dashboard.)
+  the tree, each item's `log/`, and git. (Filing new reminders/items is
+  `workreminder` / `workitem`, not the dashboard.)
 - **Ranking is derived, upkeep-free.** No item needs a `priority:`; absence just
   means "rank me from due + status + staleness." `priority:` is an override for
   the rare item that warrants it.
 - **Re-runs are safe.** `index.md` is regenerated each run; the hand-owned
-  Notes block and the diary pointer are preserved, so nothing hand-authored is
-  lost.
+  Notes block and the Latest retrospective pointer are preserved, so nothing
+  hand-authored is lost.
 - **Reminders/items are surfaced, not mutated** — the dashboard reflects current
   frontmatter; it never changes statuses or files.

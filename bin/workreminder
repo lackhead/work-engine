@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# workreminder — quickly capture a reminder into ~/work/data/reminders/.
+# workreminder — create, list, archive, delete, and set due dates on
+# reminders under ~/work/data/reminders/.
 #
-# Engine tool for the work system. Lives at ~/work/engine/bin/workreminder (the
-# work-engine repo, on PATH). Companion completion:
+# Engine tool for the work system. Lives at ~/work/engine/bin/workreminder
+# (the work-engine repo, on PATH). Companion completion:
 # ~/work/engine/bin/completions/workreminder.fish.
 #
 
@@ -31,101 +32,353 @@ print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workreminder: quickly capture a reminder into ~/work/data/reminders/
+workreminder: create, list, archive, delete, and set due dates on reminders
 
 Usage:
    workreminder [ -h|--help ]
-   workreminder [ -d|--debug ] [ -i|--item <slug> ] [description...]
+   workreminder [ -v|--verbose ] [ -d|--debug ] create  [-i|--item <slug>] [description...]
+   workreminder [ -v|--verbose ] [ -d|--debug ] list    [--archived|--all]
+   workreminder [ -v|--verbose ] [ -d|--debug ] archive <name> [--addressed|--dismissed]
+   workreminder [ -v|--verbose ] [ -d|--debug ] delete  <name>
+   workreminder [ -v|--verbose ] [ -d|--debug ] due     <name> [date]
 
 Arguments:
-   -h|--help         Show what you are seeing right now
-   -v|--verbose      Show what is happening as it happens
-   -d|--debug        Show diagnostic detail (implies --verbose)
-   -i|--item <slug>  Attribute to a work item (related-item: [[slug]])
-   [description...]  Reminder description (prompted if omitted)
+   -h|--help     Show what you are seeing right now
+   -v|--verbose  Show what is happening as it happens
+   -d|--debug    Show diagnostic detail (implies --verbose)
 
 Description:
-   Creates ~/work/data/reminders/<date>-<slug>.md with status: active.
-   A reminder is an atomic note you action or flip without sitting down
-   to work it — if it needs a full session, use workitem instead.
+   create   Creates reminders/<date>-<slug>.md, status active. Prompts for
+            the description if not given positionally, and for a related
+            item if -i/--item isn't given.
+
+   list     Display reminders: name, due, description. Defaults to active
+            (top level); --archived/--all broaden the scope, and add a
+            STATUS column (addressed/dismissed).
+
+   archive  Sets status to addressed/dismissed (prompted if not given as a
+            flag) and moves the reminder to reminders/archived/. Mirrors
+            workitem archive --completed/--cancelled.
+
+   delete   Removes a reminder outright — for one created by mistake, not
+            the normal end-of-life path (that's archive, which preserves
+            the body). Always confirms before deleting; no silent path.
+
+   due      Sets or changes the optional due: field (bare YYYY-MM-DD, no
+            due-type — reminders stay lower-overhead than items). Omitting
+            the date clears it.
 
 Examples:
-   workreminder
-   workreminder Check nagios alert thresholds after deploy
-   workreminder -i nagios Follow up with team on alert runbook
+   workreminder create Check nagios alert thresholds after deploy
+   workreminder create -i nagios Follow up with team on alert runbook
+   workreminder list
+   workreminder list --all
+   workreminder archive 2026-04-30-check-on-mikes-pr-progress --addressed
+   workreminder due 2026-04-30-check-on-mikes-pr-progress 2026-05-15
+   workreminder due 2026-04-30-check-on-mikes-pr-progress
 
 EOF
 
 trim()  { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
 kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
 
+# Truncate to at most $2 chars, marking truncation with a trailing '..'.
+trunc() {
+    local s=$1 max=$2
+    if [ ${#s} -le "$max" ]; then
+        printf '%s' "$s"
+    else
+        printf '%s..' "${s:0:$((max - 2))}"
+    fi
+}
+
+# Resolve a reminder name to its full path, checking both zones. Echoes the
+# path and returns 0 if found; returns 1 with no output otherwise.
+resolve_reminder() {
+    local name=$1 root="$WORK/data/reminders"
+    if [ -f "$root/$name.md" ]; then
+        printf '%s' "$root/$name.md"; return 0
+    elif [ -f "$root/archived/$name.md" ]; then
+        printf '%s' "$root/archived/$name.md"; return 0
+    fi
+    return 1
+}
+
 ###
-### Parse arguments
+### Subcommands
 ###
-item=''
-desc_parts=()
-while [ $# -gt 0 ]; do
-    a=$1
-    case "$a" in
-        -v|--verbose) VERBOSE=true ;;
-        -d|--debug)   DEBUG=true; VERBOSE=true ;;
-        -h|--help|help)
-            printf '%s\n' "$usage"
-            exit 0 ;;
-        -i|--item)  shift; item=${1:-} ;;
-        --item=*)   item=${a#--item=} ;;
-        -*)         print_error "Unknown option: $a"; exit 1 ;;
-        *)          desc_parts+=("$a") ;;
+wr_create() {
+    local item='' desc_parts=() desc a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            -i|--item) shift; item=${1:-} ;;
+            --item=*)  item=${a#--item=} ;;
+            -*)        print_error "Unknown option: $a"; return 1 ;;
+            *)         desc_parts+=("$a") ;;
+        esac
+        shift
+    done
+
+    desc=''
+    [ ${#desc_parts[@]} -gt 0 ] && desc="${desc_parts[*]}"
+    desc="$(trim "$desc")"
+    if [ -z "$desc" ]; then
+        read -r -p "reminder: " desc
+        desc="$(trim "$desc")"
+    fi
+    if [ -z "$desc" ]; then
+        print_error "Empty description — nothing created."; return 1
+    fi
+
+    if [ -z "$item" ]; then
+        read -r -p "related item (slug, blank for none): " item
+        item="$(trim "$item")"
+    fi
+    if [ -n "$item" ] && [ ! -f "$WORK/data/items/$item/$item.md" ] \
+       && [ ! -f "$WORK/data/items/backlog/$item/$item.md" ] \
+       && [ ! -f "$WORK/data/items/archived/$item/$item.md" ]; then
+        print_warning "'$item' isn't an existing item; tagging anyway."
+    fi
+
+    local date_str slug file
+    date_str=$(date +%Y-%m-%d)
+    slug=$(kebab "$desc")
+    file="$WORK/data/reminders/$date_str-$slug.md"
+    print_verbose "Creating reminder: $file"
+
+    if [ -e "$file" ]; then
+        print_error "$file already exists."; return 1
+    fi
+
+    {
+        echo "---"
+        echo "created: $date_str"
+        echo "status: active"
+        echo "source: manual"
+        [ -n "$item" ] && echo "related-item: [[$item]]"
+        echo "---"
+        echo
+        echo "# $desc"
+    } > "$file"
+
+    print_success "Created → ${file/#$HOME/\~}"
+}
+
+wr_list() {
+    local scope=active a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            --archived) scope=archived ;;
+            --all)      scope=all ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)  print_error "Unexpected argument: $a"; return 1 ;;
+        esac
+        shift
+    done
+
+    local root="$WORK/data/reminders"
+    local show_status=false
+    [ "$scope" != active ] && show_status=true
+
+    if [ "$show_status" = true ]; then
+        printf '%-32s %-11s %-9s %s\n' NAME DUE STATUS DESC
+    else
+        printf '%-32s %-11s %s\n' NAME DUE DESC
+    fi
+
+    local dirs=()
+    case "$scope" in
+        active)   dirs=("$root") ;;
+        archived) dirs=("$root/archived") ;;
+        all)      dirs=("$root" "$root/archived") ;;
     esac
-    shift
+
+    local found=0 dir f name status due desc
+    for dir in "${dirs[@]}"; do
+        [ -d "$dir" ] || continue
+        for f in "$dir"/*.md; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f" .md)
+            status=$(sed -n 's/^status: *//p' "$f" | head -1)
+            [ "$scope" = active ] && [ "$status" != active ] && continue
+            due=$(sed -n 's/^due: *//p' "$f" | head -1)
+            desc=$(sed -n 's/^# *//p' "$f" | head -1)
+            if [ "$show_status" = true ]; then
+                printf '%-32s %-11s %-9s %s\n' "$(trunc "$name" 32)" "${due:--}" "$status" "$(trunc "$desc" 40)"
+            else
+                printf '%-32s %-11s %s\n' "$(trunc "$name" 32)" "${due:--}" "$(trunc "$desc" 40)"
+            fi
+            found=1
+        done
+    done
+    [ "$found" -eq 1 ] || echo "(none)"
+}
+
+wr_archive() {
+    local name='' newstatus='' a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            --addressed) newstatus=addressed ;;
+            --dismissed) newstatus=dismissed ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$name" ]; then name=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+        shift
+    done
+    if [ -z "$name" ]; then
+        print_error "Usage: workreminder archive <name> [--addressed|--dismissed]"; return 1
+    fi
+
+    local root="$WORK/data/reminders"
+    if [ -f "$root/archived/$name.md" ]; then
+        print_error "'$name' is already archived."; return 1
+    fi
+    local src="$root/$name.md"
+    if [ ! -f "$src" ]; then
+        print_error "No reminder '$name' found."; return 1
+    fi
+
+    if [ -z "$newstatus" ]; then
+        read -r -p "addressed or dismissed? [a/d] " reply
+        case "$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')" in
+            a*) newstatus=addressed ;;
+            d*) newstatus=dismissed ;;
+            *) print_error "Cancelled — nothing changed."; return 1 ;;
+        esac
+    fi
+
+    local tmp; tmp=$(mktemp)
+    sed "s/^status:.*/status: $newstatus/" "$src" > "$tmp"
+    mv "$tmp" "$src"
+    print_debug "Frontmatter updated: status=$newstatus"
+
+    mkdir -p "$root/archived"
+    local dest="$root/archived/$name.md"
+    if [ -e "$dest" ]; then
+        print_error "Target already exists: reminders/archived/$name.md"; return 1
+    fi
+    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1 \
+       && [ -n "$(git -C "$WORK/data" ls-files "reminders/$name.md")" ]; then
+        git -C "$WORK/data" mv "reminders/$name.md" "reminders/archived/$name.md" || {
+            print_error "Move to reminders/archived/$name.md failed — reminder left in place."
+            return 1
+        }
+    else
+        mv "$src" "$dest" || {
+            print_error "Move to reminders/archived/$name.md failed — reminder left in place."
+            return 1
+        }
+    fi
+
+    print_success "Archived → reminders/archived/$name.md ($newstatus)"
+}
+
+wr_delete() {
+    local name='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$name" ]; then name=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$name" ]; then
+        print_error "Usage: workreminder delete <name>"; return 1
+    fi
+
+    local src
+    src="$(resolve_reminder "$name")" || {
+        print_error "No reminder '$name' found."; return 1
+    }
+
+    print_warning "About to permanently delete: ${src/#$HOME/\~}"
+    read -r -p "This cannot be undone. Delete? [y/N] " yn
+    if ! printf '%s' "$yn" | grep -qiE '^y'; then
+        print_status "Cancelled — nothing deleted."; return 0
+    fi
+
+    rm -f "$src"
+    print_success "Deleted ${src/#$HOME/\~}"
+}
+
+wr_due() {
+    local name='' newdate='' a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$name" ]; then name=$a
+                elif [ -z "$newdate" ]; then newdate=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+        shift
+    done
+    if [ -z "$name" ]; then
+        print_error "Usage: workreminder due <name> [date]"; return 1
+    fi
+
+    local src
+    src="$(resolve_reminder "$name")" || {
+        print_error "No reminder '$name' found."; return 1
+    }
+
+    if [ -n "$newdate" ] && ! [[ "$newdate" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        print_error "Date must be YYYY-MM-DD."; return 1
+    fi
+
+    local tmp; tmp=$(mktemp)
+    if grep -q '^due:' "$src"; then
+        if [ -n "$newdate" ]; then
+            sed "s/^due:.*/due: $newdate/" "$src" > "$tmp"
+        else
+            sed '/^due:/d' "$src" > "$tmp"
+        fi
+    elif [ -n "$newdate" ]; then
+        awk -v d="$newdate" '/^status:/ { print; print "due: " d; next } { print }' "$src" > "$tmp"
+    else
+        cp "$src" "$tmp"
+    fi
+    mv "$tmp" "$src"
+
+    if [ -n "$newdate" ]; then
+        print_success "Set due: $newdate on ${src/#$HOME/\~}"
+    else
+        print_success "Cleared due date on ${src/#$HOME/\~}"
+    fi
+}
+
+###
+### Dispatch
+###
+# Parse global options before the subcommand so `workreminder -v list` works.
+# -d implies -v.
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -v|--verbose) VERBOSE=true; shift ;;
+        -d|--debug)   DEBUG=true; VERBOSE=true; shift ;;
+        -h|--help|help) printf '%s\n' "$usage"; exit 0 ;;
+        *) break ;;
+    esac
 done
 
-###
-### Collect description
-###
-desc=''
-[ ${#desc_parts[@]} -gt 0 ] && desc="${desc_parts[*]}"
-desc="$(trim "$desc")"
-if [ -z "$desc" ]; then
-    read -r -p "reminder: " desc
-    desc="$(trim "$desc")"
-fi
-if [ -z "$desc" ]; then
-    print_error "Empty description — nothing created."; exit 1
-fi
-
-###
-### Item attribution
-###
-if [ -z "$item" ]; then
-    read -r -p "related item (slug, blank for none): " item
-    item="$(trim "$item")"
-fi
-if [ -n "$item" ] && [ ! -e "$WORK/data/items/$item.md" ] && [ ! -e "$WORK/data/items/$item/$item.md" ]; then
-    print_warning "'$item' isn't an active item; tagging anyway."
-fi
-
-###
-### Write the reminder
-###
-date_str=$(date +%Y-%m-%d)
-slug=$(kebab "$desc")
-file="$WORK/data/reminders/$date_str-$slug.md"
-print_verbose "Creating reminder: $file"
-
-if [ -e "$file" ]; then
-    print_error "$file already exists."; exit 1
-fi
-
-{
-    echo "---"
-    echo "created: $date_str"
-    echo "status: active"
-    echo "source: manual"
-    [ -n "$item" ] && echo "related-item: [[$item]]"
-    echo "---"
-    echo
-    echo "# $desc"
-} > "$file"
-
-print_success "Created → ${file/#$HOME/\~}"
+cmd="${1:-}"
+[ "$#" -gt 0 ] && shift
+case "$cmd" in
+    create)  wr_create "$@" ;;
+    list)    wr_list "$@" ;;
+    archive) wr_archive "$@" ;;
+    delete)  wr_delete "$@" ;;
+    due)     wr_due "$@" ;;
+    '')      printf '%s\n' "$usage" ;;
+    *)       print_error "Unknown command '$cmd' (try: workreminder help)"; exit 1 ;;
+esac
