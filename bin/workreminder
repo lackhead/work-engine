@@ -32,12 +32,13 @@ print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workreminder: create, list, archive, delete, and set due dates on reminders
+workreminder: create, list, show, archive, delete, and set due dates on reminders
 
 Usage:
    workreminder [ -h|--help ]
    workreminder [ -v|--verbose ] [ -d|--debug ] create  [-i|--item <slug>] [description...]
    workreminder [ -v|--verbose ] [ -d|--debug ] list    [--archived|--all]
+   workreminder [ -v|--verbose ] [ -d|--debug ] show    <name>
    workreminder [ -v|--verbose ] [ -d|--debug ] archive <name> [--addressed|--dismissed]
    workreminder [ -v|--verbose ] [ -d|--debug ] delete  <name>
    workreminder [ -v|--verbose ] [ -d|--debug ] due     <name> [date]
@@ -56,6 +57,9 @@ Description:
             (top level); --archived/--all broaden the scope, and add a
             STATUS column (addressed/dismissed).
 
+   show     Prints the reminder file as-is — piped through $PAGER if set,
+            else plain output. Looks in both zones.
+
    archive  Sets status to addressed/dismissed (prompted if not given as a
             flag) and moves the reminder to reminders/archived/. Mirrors
             workitem archive --completed/--cancelled.
@@ -73,6 +77,7 @@ Examples:
    workreminder create -i nagios Follow up with team on alert runbook
    workreminder list
    workreminder list --all
+   workreminder show 2026-04-30-check-on-mikes-pr-progress
    workreminder archive 2026-04-30-check-on-mikes-pr-progress --addressed
    workreminder due 2026-04-30-check-on-mikes-pr-progress 2026-05-15
    workreminder due 2026-04-30-check-on-mikes-pr-progress
@@ -214,6 +219,35 @@ wr_list() {
         done
     done
     [ "$found" -eq 1 ] || echo "(none)"
+}
+
+wr_show() {
+    local name='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$name" ]; then name=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$name" ]; then
+        print_error "Usage: workreminder show <name>"; return 1
+    fi
+
+    local src
+    src="$(resolve_reminder "$name")" || {
+        print_error "No reminder '$name' found."; return 1
+    }
+
+    if [ -n "${PAGER:-}" ]; then
+        # Intentionally unquoted: $PAGER commonly carries flags (e.g. "less -R"),
+        # and quoting it would treat the whole string as one command name.
+        $PAGER "$src"
+    else
+        cat "$src"
+    fi
 }
 
 wr_archive() {
@@ -376,6 +410,7 @@ cmd="${1:-}"
 case "$cmd" in
     create)  wr_create "$@" ;;
     list)    wr_list "$@" ;;
+    show)    wr_show "$@" ;;
     archive) wr_archive "$@" ;;
     delete)  wr_delete "$@" ;;
     due)     wr_due "$@" ;;

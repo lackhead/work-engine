@@ -64,6 +64,7 @@ complete -c workreminder -s h -l help    -d 'Show help'
 
 complete -c workreminder -n __fish_use_subcommand -a create  -d 'Create a reminder'
 complete -c workreminder -n __fish_use_subcommand -a list    -d 'List reminders'
+complete -c workreminder -n __fish_use_subcommand -a show    -d 'Print a reminder'
 complete -c workreminder -n __fish_use_subcommand -a archive -d 'Archive a reminder'
 complete -c workreminder -n __fish_use_subcommand -a delete  -d 'Delete a reminder outright'
 complete -c workreminder -n __fish_use_subcommand -a due     -d 'Set or clear a due date'
@@ -75,6 +76,10 @@ complete -c workreminder -n '__fish_seen_subcommand_from create' -s i -l item \
 # list [--archived|--all]
 complete -c workreminder -n '__fish_seen_subcommand_from list' -l archived -d 'Show reminders/archived/'
 complete -c workreminder -n '__fish_seen_subcommand_from list' -l all      -d 'Show both zones'
+
+# show <name>
+complete -c workreminder -n '__fish_seen_subcommand_from show; and test (__workreminder_nargs) -eq 0' \
+    -a '(__workreminder_all_names)' -d reminder
 
 # archive <name> [--addressed|--dismissed]
 complete -c workreminder -n '__fish_seen_subcommand_from archive; and test (__workreminder_nargs) -eq 0' \

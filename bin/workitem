@@ -31,12 +31,13 @@ print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workitem: create, list, archive, and delete work items under ~/work/data/items/
+workitem: create, list, show, archive, and delete work items under ~/work/data/items/
 
 Usage:
    workitem [ -h|--help ]
    workitem [ -v|--verbose ] [ -d|--debug ] create  [-q|--quick] [title...]
    workitem [ -v|--verbose ] [ -d|--debug ] list    [--backlog|--archived|--all] [--status <value>]
+   workitem [ -v|--verbose ] [ -d|--debug ] show    <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] archive <slug> [--completed|--cancelled]
    workitem [ -v|--verbose ] [ -d|--debug ] delete  <slug> [--force]
 
@@ -60,6 +61,9 @@ Description:
             update time. Defaults to top-level (active + blocked), with
             --backlog/--archived/--all available to change the scope.
 
+   show     Prints the item's front door (<slug>.md) as-is — piped through
+            $PAGER if set, else plain output. Looks in every zone.
+
    archive  Sets status to completed/cancelled (prompted if not given as a
             flag) plus the completed: date, moves the item to
             items/archived/<slug>/, and removes its worktree(s) if any.
@@ -78,6 +82,7 @@ Examples:
    workitem list
    workitem list --backlog
    workitem list --all --status blocked
+   workitem show nagios
    workitem archive nagios --completed
    workitem delete quick-task-2026-07-11-10-56
 
@@ -223,6 +228,41 @@ wi_list() {
         done
     done
     [ "$found" -eq 1 ] || echo "(none)"
+}
+
+wi_show() {
+    local slug='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$slug" ]; then slug=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$slug" ]; then
+        print_error "Usage: workitem show <slug>"; return 1
+    fi
+
+    local root="$WORK/data/items" front='' z
+    for z in '' backlog/ archived/; do
+        if [ -f "$root/$z$slug/$slug.md" ]; then
+            front="$root/$z$slug/$slug.md"
+            break
+        fi
+    done
+    if [ -z "$front" ]; then
+        print_error "No item '$slug' found."; return 1
+    fi
+
+    if [ -n "${PAGER:-}" ]; then
+        # Intentionally unquoted: $PAGER commonly carries flags (e.g. "less -R"),
+        # and quoting it would treat the whole string as one command name.
+        $PAGER "$front"
+    else
+        cat "$front"
+    fi
 }
 
 wi_archive() {
@@ -380,6 +420,7 @@ cmd="${1:-}"
 case "$cmd" in
     create)  wi_create "$@" ;;
     list)    wi_list "$@" ;;
+    show)    wi_show "$@" ;;
     archive) wi_archive "$@" ;;
     delete)  wi_delete "$@" ;;
     '')      printf '%s\n' "$usage" ;;

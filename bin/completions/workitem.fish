@@ -57,6 +57,7 @@ complete -c workitem -s h -l help    -d 'Show help'
 
 complete -c workitem -n __fish_use_subcommand -a create  -d 'Create a work item'
 complete -c workitem -n __fish_use_subcommand -a list    -d 'List work items'
+complete -c workitem -n __fish_use_subcommand -a show    -d 'Print a work item front door'
 complete -c workitem -n __fish_use_subcommand -a archive -d 'Archive a work item'
 complete -c workitem -n __fish_use_subcommand -a delete  -d 'Delete a work item outright'
 
@@ -70,6 +71,10 @@ complete -c workitem -n '__fish_seen_subcommand_from list' -l archived -d 'Show 
 complete -c workitem -n '__fish_seen_subcommand_from list' -l all      -d 'Show every zone'
 complete -c workitem -n '__fish_seen_subcommand_from list' -l status -x \
     -a 'proposed active blocked deferred completed cancelled' -d 'Filter to one status'
+
+# show <slug>
+complete -c workitem -n '__fish_seen_subcommand_from show; and test (__workitem_nargs) -eq 0' \
+    -a '(__workitem_deletable_slugs)' -d item
 
 # archive <slug> [--completed|--cancelled]
 complete -c workitem -n '__fish_seen_subcommand_from archive; and test (__workitem_nargs) -eq 0' \
