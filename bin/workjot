@@ -72,8 +72,9 @@ Description:
             untagged rather than fabricating an item directory.
 
    list     Show jots, defaulting to today. -i/--item scopes to one item's
-            tagged jots; without it, both tagged (across every item) and
-            untagged jots are shown, each labeled with its source. --on
+            tagged jots; without it, both tagged (across every item, each
+            labeled with its item) and untagged jots are shown, the latter
+            unlabeled since they're the default case. --on
             <date> shows one specific day; --since <date> shows a range
             from that day through today. --on/--since are mutually
             exclusive.
@@ -352,7 +353,7 @@ wj_list() {
             in_range "$date_part" || continue
             while IFS= read -r line; do
                 [ -n "$line" ] || continue
-                printf '%s  [untagged]  %s\n' "$date_part" "$line"
+                printf '%s  %s\n' "$date_part" "$line"
                 found=1
             done < <(sed -n 's/^- //p' "$logf")
         done
