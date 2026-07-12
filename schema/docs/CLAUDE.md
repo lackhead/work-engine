@@ -213,7 +213,7 @@ cross-references. The original file leaves `~/work/data/docs/`.
 - **Item-internal documents:** `[[<name>/docs/<doc-name>]]`.
   Use when a standalone document needs to reference a doc that lives
   inside a specific work item.
-- **Reminders:** `[[reminders/<YYYY-MM-DD-name>]]`.
+- **Reminders:** `[[reminders/<name>]]`.
 - **Other documents:** `[[docs/<name>]]`.
 - **Diary entries:** by full path, e.g.
   `[[diary/2026/04/29/2026-04-29.daily-summary]]`.

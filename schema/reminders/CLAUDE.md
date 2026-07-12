@@ -107,17 +107,19 @@ Optional fields:
 
 ## Naming conventions
 
-- **File names:** `YYYY-MM-DD-<kebab-case-description>.md`. The date
-  prefix is the date the reminder was *created* (matching the
-  `created:` frontmatter field), not the date the underlying item
-  arose. The description is short enough to be meaningful at a
-  glance:
-  - `2026-04-30-check-on-mikes-pr-progress.md`
-  - `2026-04-30-revisit-rocky-firewall-quirk.md`
-  - `2026-05-01-ask-lucas-about-q3-staffing.md`
-- The date prefix makes the directory naturally chronological when
-  sorted, which is what I want when scanning for what I've recently
-  flagged.
+- **File names:** `<kebab-case-description>.md` — no date prefix. The
+  creation date already lives in the `created:` frontmatter field, so
+  putting it in the filename too would just be duplication; dropping it
+  also shortens what you type for `show`/`archive`/`delete`/`due`. The
+  description is short enough to be meaningful at a glance:
+  - `check-on-mikes-pr-progress.md`
+  - `revisit-rocky-firewall-quirk.md`
+  - `ask-lucas-about-q3-staffing.md`
+- Chronological order is no longer free from an alphabetical directory
+  listing (that was the date prefix's doing) — `workreminder list` sorts
+  by `created:` explicitly instead.
+- `workreminder create` refuses if the kebab-cased slug collides with an
+  existing reminder, rather than silently overwriting it.
 - **No spaces** in filenames, per the vault-wide convention.
 
 ## How Claude should engage with reminders
@@ -196,7 +198,7 @@ should become a work item. Workflow:
 ## Cross-references
 
 - **Work items:** `[[<name>]]`.
-- **Other reminders:** `[[reminders/<YYYY-MM-DD-name>]]`.
+- **Other reminders:** `[[reminders/<name>]]`.
 - **Documents:** `[[docs/<name>]]`.
 - **Jots:** by full path to a specific file, e.g.
   `[[jots/2026/04/29/2026-04-29.log]]`. Useful for reminders backfilled
