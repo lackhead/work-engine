@@ -186,6 +186,31 @@ Section order: Usage, Arguments, Description, Examples. Keep each section
 short — if Description is growing, the script is probably trying to do too
 much. The Examples section is the highest-value part; don't skip it.
 
+**Description content: usage facts only, never implementation mechanism or
+rationale.** Say what a subcommand does and what each flag means — not how
+it's implemented internally, and not why it was designed that way. A
+reader trying to use the command doesn't need the slug-truncation
+algorithm or a justification for why collisions get a suffix instead of an
+error; they need to know `create` writes a file and `-s/--slug` names it
+explicitly. Cut anything that reads like a code comment or a
+commit-message aside:
+
+```
+# Too much -- implementation + rationale, not usage:
+create   The slug is kebab-cased from the title, truncated to 30
+         characters at a word boundary (not mid-word) -- a long title
+         doesn't produce an unwieldy slug. Either way, a collision with
+         an existing slug appends -2, -3, ... rather than refusing --
+         expected once slugs are short, not an error.
+
+# Right -- usage facts only:
+create   Creates items/<slug>/<slug>.md from the title, status active,
+         top-level. -s/--slug sets the slug explicitly.
+```
+
+Implementation reasoning belongs in a code comment near the logic, or in
+the schema docs for design-level readers — not in `--help`.
+
 ---
 
 ## Argument parsing
