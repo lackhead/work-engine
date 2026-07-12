@@ -51,23 +51,26 @@ a skill:
 - **`items/` (top level) — in-flight: `active` + `blocked`.** The daily /
   weekly glance. `active ↔ blocked` is a frontmatter edit only, **no move** —
   both live here — so the most frequent transition costs nothing.
+  `workitem block <slug>` / `workitem unblock <slug>` do it.
 - **`items/backlog/` — `proposed` + `deferred`.** Candidates and
   intentionally-paused work; consulted occasionally when planning further out.
-- **`items/archived/` — out of active circulation.** Normally `completed` /
-  `cancelled`, but archival is its own decision: an item deliberately set
-  aside long-term may live here carrying any status. The frontmatter status
-  stays canonical; the `archived/` location is the separate "not turning this
+- **`items/archived/` — out of active circulation.** Always `completed` /
+  `cancelled` — set by `workitem archive <slug> [--completed|--cancelled]`,
+  which also stamps the `completed:` date. The frontmatter status stays
+  canonical; the `archived/` location is the separate "not turning this
   over right now" signal.
 
 The directory encodes the zone; the *precise* status (active vs. blocked,
 proposed vs. deferred, completed vs. cancelled) stays in frontmatter. Files
 move between zones only at deliberate transitions:
 
-- commit a candidate: `backlog → top` (set `status: active`)
-- pause: `top → backlog` (set `status: deferred`)
-- resume: `backlog → top` (set `status: active`)
-- finish or abandon: `top|backlog → archived/` (set `completed` / `cancelled`
-  and the `completed:` date)
+- commit a candidate: `backlog → top`, `status: active` — `workitem activate <slug>`
+- pause: `top → backlog`, `status: deferred` — `workitem defer <slug>`
+- resume: `backlog → top`, `status: active` — `workitem activate <slug>`
+- toggle in place: `active ↔ blocked`, no move — `workitem block <slug>` /
+  `workitem unblock <slug>`
+- finish or abandon: `top|backlog → archived/`, `completed` / `cancelled`
+  and the `completed:` date — `workitem archive <slug> [--completed|--cancelled]`
 
 Status edit and zone move usually happen together at these transitions, but
 they remain conceptually separate acts (you can, e.g., mark something
@@ -348,22 +351,24 @@ by `due:` ascending (undated last), with `blocked` flagged. `backlog/`
 
 ### Changing status
 
-Update the `status:` line. If the change crosses a zone boundary (see
-"Attention zones"), move the file/directory to the new zone in the same act.
-`active ↔ blocked` is frontmatter-only — no move. When moving to `completed` /
-`cancelled`, set `completed:` to today and move to `archived/`.
+Use the tooled transitions: `workitem activate`, `workitem defer`,
+`workitem block`, `workitem unblock`, and `workitem archive
+[--completed|--cancelled]` (see "Attention zones" above). Each updates
+`status:` and, where the transition crosses a zone boundary, moves the
+file/directory to the new zone in the same act — `active ↔ blocked` is the
+one frontmatter-only case, no move. Fall back to a manual edit only for a
+status change that isn't one of these named transitions.
 
 ### Archiving
 
-Moving to `items/archived/` takes an item out of active circulation. Usually
-paired with a `completed` / `cancelled` status, but an item set aside
-long-term may be archived carrying any status. The body is preserved; archived
-content is read-only by convention (fix outright errors only).
+Moving to `items/archived/` takes an item out of active circulation. Every
+archived item carries `completed` or `cancelled` status — there is no other
+valid status once in `archived/`. The body is preserved; archived content is
+read-only by convention (fix outright errors only).
 
-`workitem archive <slug> [--completed|--cancelled]` automates the common
-case: sets `status:` and `completed:`, moves the item to `items/archived/`,
-and removes its worktree(s) if any. For the "set aside carrying any other
-status" case, do the move by hand (or ask Claude to).
+`workitem archive <slug> [--completed|--cancelled]` is the only supported
+path: sets `status:` and `completed:`, moves the item to `items/archived/`,
+and removes its worktree(s) if any.
 
 ### Promoting a reminder into an item
 

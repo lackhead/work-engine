@@ -1,4 +1,5 @@
-# Completions for `workitem` (create/list/archive/delete subcommands).
+# Completions for `workitem` (create/list/show/activate/defer/block/unblock/
+# archive/delete subcommands).
 # Canonical location: ~/work/engine/bin/completions/workitem.fish (the work-engine repo);
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
 
@@ -49,21 +50,72 @@ function __workitem_deletable_slugs
     end
 end
 
+# Item slugs in items/backlog/ (candidates for `activate`).
+function __workitem_backlog_slugs
+    set -l zone (__workitem_root)/data/items/backlog
+    test -d $zone; or return
+    for p in $zone/*
+        test -d $p; or continue
+        echo (basename $p)
+    end
+end
+
+# Item slugs at top level, any status (candidates for `defer`; both active
+# and blocked are valid sources).
+function __workitem_toplevel_slugs
+    set -l items (__workitem_root)/data/items
+    test -d $items; or return
+    for p in $items/*
+        test -d $p; or continue
+        set -l b (basename $p)
+        contains -- $b backlog archived; and continue
+        echo $b
+    end
+end
+
+# status: value from a front-door file, or nothing if unreadable.
+function __workitem_status_of
+    test -f $argv[1]; or return
+    string match -rg '^status:\s*(\S+)' < $argv[1] | head -n 1
+end
+
+# Top-level slugs whose status is exactly `active` (candidates for `block`).
+function __workitem_blockable_slugs
+    set -l items (__workitem_root)/data/items
+    for b in (__workitem_toplevel_slugs)
+        test (__workitem_status_of $items/$b/$b.md) = active; and echo $b
+    end
+end
+
+# Top-level slugs whose status is exactly `blocked` (candidates for `unblock`).
+function __workitem_unblockable_slugs
+    set -l items (__workitem_root)/data/items
+    for b in (__workitem_toplevel_slugs)
+        test (__workitem_status_of $items/$b/$b.md) = blocked; and echo $b
+    end
+end
+
 complete -c workitem -f
 
 complete -c workitem -s v -l verbose -d 'Show what is happening as it happens'
 complete -c workitem -s d -l debug   -d 'Show diagnostic detail (implies --verbose)'
 complete -c workitem -s h -l help    -d 'Show help'
 
-complete -c workitem -n __fish_use_subcommand -a create  -d 'Create a work item'
-complete -c workitem -n __fish_use_subcommand -a list    -d 'List work items'
-complete -c workitem -n __fish_use_subcommand -a show    -d 'Print a work item front door'
-complete -c workitem -n __fish_use_subcommand -a archive -d 'Archive a work item'
-complete -c workitem -n __fish_use_subcommand -a delete  -d 'Delete a work item outright'
+complete -c workitem -n __fish_use_subcommand -a create   -d 'Create a work item'
+complete -c workitem -n __fish_use_subcommand -a list     -d 'List work items'
+complete -c workitem -n __fish_use_subcommand -a show     -d 'Print a work item front door'
+complete -c workitem -n __fish_use_subcommand -a activate -d 'Move a backlog item to top-level (active)'
+complete -c workitem -n __fish_use_subcommand -a defer    -d 'Move a top-level item to backlog (deferred)'
+complete -c workitem -n __fish_use_subcommand -a block    -d 'Mark a top-level item blocked'
+complete -c workitem -n __fish_use_subcommand -a unblock  -d 'Mark a blocked item active'
+complete -c workitem -n __fish_use_subcommand -a archive  -d 'Archive a work item'
+complete -c workitem -n __fish_use_subcommand -a delete   -d 'Delete a work item outright'
 
-# create [-q|--quick] [-s|--slug <slug>] [title...]
+# create [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [title...]
 complete -c workitem -n '__fish_seen_subcommand_from create' -s q -l quick \
     -d 'Skip prompts; active/top-level, tags: [quick]'
+complete -c workitem -n '__fish_seen_subcommand_from create' -s b -l backlog \
+    -d 'Create in items/backlog/ instead, status proposed'
 complete -c workitem -n '__fish_seen_subcommand_from create' -s s -l slug \
     -x -d 'Deliberate short slug (skip auto-truncation)'
 
@@ -77,6 +129,22 @@ complete -c workitem -n '__fish_seen_subcommand_from list' -l status -x \
 # show <slug>
 complete -c workitem -n '__fish_seen_subcommand_from show; and test (__workitem_nargs) -eq 0' \
     -a '(__workitem_deletable_slugs)' -d item
+
+# activate <slug>
+complete -c workitem -n '__fish_seen_subcommand_from activate; and test (__workitem_nargs) -eq 0' \
+    -a '(__workitem_backlog_slugs)' -d item
+
+# defer <slug>
+complete -c workitem -n '__fish_seen_subcommand_from defer; and test (__workitem_nargs) -eq 0' \
+    -a '(__workitem_toplevel_slugs)' -d item
+
+# block <slug>
+complete -c workitem -n '__fish_seen_subcommand_from block; and test (__workitem_nargs) -eq 0' \
+    -a '(__workitem_blockable_slugs)' -d item
+
+# unblock <slug>
+complete -c workitem -n '__fish_seen_subcommand_from unblock; and test (__workitem_nargs) -eq 0' \
+    -a '(__workitem_unblockable_slugs)' -d item
 
 # archive <slug> [--completed|--cancelled]
 complete -c workitem -n '__fish_seen_subcommand_from archive; and test (__workitem_nargs) -eq 0' \

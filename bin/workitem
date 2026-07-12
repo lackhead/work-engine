@@ -31,15 +31,19 @@ print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workitem: create, list, show, archive, and delete work items under ~/work/data/items/
+workitem: create, list, show, and transition the lifecycle of work items under ~/work/data/items/
 
 Usage:
    workitem [ -h|--help ]
-   workitem [ -v|--verbose ] [ -d|--debug ] create  [-q|--quick] [-s|--slug <slug>] [title...]
-   workitem [ -v|--verbose ] [ -d|--debug ] list    [--backlog|--archived|--all] [--status <value>]
-   workitem [ -v|--verbose ] [ -d|--debug ] show    <slug>
-   workitem [ -v|--verbose ] [ -d|--debug ] archive <slug> [--completed|--cancelled]
-   workitem [ -v|--verbose ] [ -d|--debug ] delete  <slug> [--force]
+   workitem [ -v|--verbose ] [ -d|--debug ] create   [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [title...]
+   workitem [ -v|--verbose ] [ -d|--debug ] list     [--backlog|--archived|--all] [--status <value>]
+   workitem [ -v|--verbose ] [ -d|--debug ] show     <slug>
+   workitem [ -v|--verbose ] [ -d|--debug ] activate <slug>
+   workitem [ -v|--verbose ] [ -d|--debug ] defer    <slug>
+   workitem [ -v|--verbose ] [ -d|--debug ] block    <slug>
+   workitem [ -v|--verbose ] [ -d|--debug ] unblock  <slug>
+   workitem [ -v|--verbose ] [ -d|--debug ] archive  <slug> [--completed|--cancelled]
+   workitem [ -v|--verbose ] [ -d|--debug ] delete   <slug> [--force]
 
 Arguments:
    -h|--help     Show what you are seeing right now
@@ -50,7 +54,8 @@ Description:
    create   Creates items/<slug>/<slug>.md from the title, status active,
             top-level. -s/--slug sets the slug explicitly. -q/--quick
             skips the title requirement for a throwaway item (tags:
-            [quick]).
+            [quick]). -b/--backlog creates in items/backlog/<slug>/
+            instead, status proposed. -q and -b are mutually exclusive.
 
    list     Display work items: slug, status, due, last update. Defaults
             to top-level (active + blocked); --backlog/--archived/--all
@@ -58,6 +63,17 @@ Description:
 
    show     Prints the item's front door (<slug>.md) — piped through
             $PAGER if set, else plain output.
+
+   activate Moves a backlog item to items/<slug>/, status active.
+
+   defer    Moves a top-level item to items/backlog/<slug>/, status
+            deferred.
+
+   block    Sets a top-level item's status from active to blocked.
+            Frontmatter only, no move.
+
+   unblock  Sets a top-level item's status from blocked to active.
+            Frontmatter only, no move.
 
    archive  Sets status to completed/cancelled (prompted if not given as a
             flag) and moves the item to items/archived/<slug>/.
@@ -69,11 +85,16 @@ Examples:
    workitem create Rework cache host info
    workitem create -q
    workitem create --quick Fix the Ansible lint warning
+   workitem create -b Investigate the new vendor API
    workitem create -s ad-backup-crons Remove -n from the AD backup crons once...
    workitem list
    workitem list --backlog
    workitem list --all --status blocked
    workitem show nagios
+   workitem activate some-backlog-item
+   workitem defer some-active-item
+   workitem block some-active-item
+   workitem unblock some-blocked-item
    workitem archive nagios --completed
    workitem delete quick-task-2026-07-11-10-56
 
@@ -122,21 +143,106 @@ file_mtime_date() {
     esac
 }
 
+# transition_status <front> <new_status> <stamp_field> <destdir>
+#
+# Shared by every subcommand that changes an item's status and/or zone
+# (archive, activate, defer, block, unblock). front is the item's front-door
+# file at its CURRENT location; new_status is the value to write into
+# status:; stamp_field is a frontmatter field to stamp with today's date
+# ('' to skip -- block/unblock/activate/defer don't stamp anything);
+# destdir is the directory to move the item to ('' for a frontmatter-only
+# transition that never moves, e.g. block/unblock).
+#
+# Order matters here and is the entire reason this function exists: the
+# frontmatter edit is staged with `git add` at the CURRENT path BEFORE any
+# `git mv` of the directory. Staging after the move (or not at all) lets
+# `git mv` pick up the index's stale pre-edit blob instead of the file's
+# actual current content, silently dropping the edit from the eventual
+# commit -- a real bug, found and fixed in this function's ancestor (the
+# inline logic that used to live in wi_archive alone).
+#
+# Returns 0 on success. On failure, prints an error and returns 1 -- but if
+# the failure is in the move step, the frontmatter edit has already
+# happened and is already staged; callers shouldn't imply a clean no-op.
+transition_status() {
+    local front=$1 newstatus=$2 stamp_field=${3:-} destdir=${4:-}
+    local srcdir; srcdir=$(dirname "$front")
+
+    if [ ! -f "$front" ]; then
+        print_error "Front-door file not found: ${front#"$WORK"/data/}"
+        return 1
+    fi
+    if [ -n "$destdir" ] && [ -e "$destdir" ]; then
+        print_error "Target already exists: ${destdir#"$WORK"/data/}"
+        return 1
+    fi
+
+    local today; today=$(date +%Y-%m-%d)
+    local tmp; tmp=$(mktemp)
+    if [ -n "$stamp_field" ] && grep -q "^${stamp_field}:" "$front"; then
+        sed -e "s/^status:.*/status: $newstatus/" \
+            -e "s/^${stamp_field}:.*/${stamp_field}: $today/" "$front" > "$tmp"
+    elif [ -n "$stamp_field" ]; then
+        awk -v s="$newstatus" -v f="$stamp_field" -v d="$today" '
+            /^status:/ { print "status: " s; print f ": " d; next }
+            { print }
+        ' "$front" > "$tmp"
+    else
+        sed -e "s/^status:.*/status: $newstatus/" "$front" > "$tmp"
+    fi
+    mv "$tmp" "$front"
+    print_debug "Frontmatter updated: status=$newstatus${stamp_field:+ $stamp_field=$today}"
+
+    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1; then
+        git -C "$WORK/data" add "$front" 2>/dev/null || true
+    fi
+
+    [ -n "$destdir" ] || return 0
+
+    mkdir -p "$(dirname "$destdir")"
+    local rel_src rel_dest
+    rel_src="${srcdir#"$WORK"/data/}"
+    rel_dest="${destdir#"$WORK"/data/}"
+    # `git mv` refuses untracked paths outright ("fatal: not under version
+    # control") — a --quick item transitioned in the same session it was
+    # created in was never `git add`ed, so only fall back to plain `mv` when
+    # nothing under srcdir is actually tracked yet; use `git mv` (preserving
+    # rename history) whenever the item has been committed at least once.
+    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1 \
+       && [ -n "$(git -C "$WORK/data" ls-files "$rel_src")" ]; then
+        git -C "$WORK/data" mv "$rel_src" "$rel_dest" || {
+            print_error "Move to $rel_dest failed — frontmatter updated, item left in place."
+            return 1
+        }
+    else
+        mv "$srcdir" "$destdir" || {
+            print_error "Move to $rel_dest failed — frontmatter updated, item left in place."
+            return 1
+        }
+    fi
+}
+
 ###
 ### Subcommands
 ###
 wi_create() {
-    local quick=false slug_opt='' title_parts=() title made slug itemdir file a
+    local quick=false backlog=false slug_opt='' title_parts=() title made slug itemdir file a
     while [ $# -gt 0 ]; do
         a=$1
         case "$a" in
-            -q|--quick) quick=true ;;
-            -s|--slug)  shift; slug_opt=${1:-} ;;
-            --slug=*)   slug_opt=${a#--slug=} ;;
-            *)          title_parts+=("$a") ;;
+            -q|--quick)   quick=true ;;
+            -b|--backlog) backlog=true ;;
+            -s|--slug)    shift; slug_opt=${1:-} ;;
+            --slug=*)     slug_opt=${a#--slug=} ;;
+            *)            title_parts+=("$a") ;;
         esac
         shift
     done
+
+    if [ "$quick" = true ] && [ "$backlog" = true ]; then
+        print_error "-q/--quick and -b/--backlog are mutually exclusive (quick items are always active/top-level)."
+        return 1
+    fi
 
     title=''
     [ ${#title_parts[@]} -gt 0 ] && title="${title_parts[*]}"
@@ -148,7 +254,7 @@ wi_create() {
         title="Quick task — $(date '+%Y-%m-%d %H:%M:%S')"
     fi
     if [ -z "$title" ]; then
-        print_error "Usage: workitem create [-q|--quick] [-s|--slug <slug>] <title...> — title is required."
+        print_error "Usage: workitem create [-q|--quick] [-b|--backlog] [-s|--slug <slug>] <title...> — title is required."
         return 1
     fi
 
@@ -160,7 +266,7 @@ wi_create() {
     else
         slug=$(kebab "$title")
     fi
-    print_debug "Creating item: slug=$slug quick=$quick"
+    print_debug "Creating item: slug=$slug quick=$quick backlog=$backlog"
 
     # Resolve a collision by appending -2, -3, ... rather than refusing --
     # once slugs are truncated/short, two unrelated titles legitimately
@@ -179,13 +285,19 @@ wi_create() {
     done
     [ "$slug" != "$base" ] && print_verbose "Slug '$base' taken — using '$slug'"
 
-    itemdir="$WORK/data/items/$slug"
+    local zone='' status='active'
+    if [ "$backlog" = true ]; then
+        zone='backlog/'
+        status='proposed'
+    fi
+
+    itemdir="$WORK/data/items/${zone}$slug"
     file="$itemdir/$slug.md"
     mkdir -p "$itemdir"
     {
         echo "---"
         echo "title: $title"
-        echo "status: active"
+        echo "status: $status"
         echo "made: $made"
         [ "$quick" = true ] && echo "tags: [quick]"
         echo "---"
@@ -288,6 +400,154 @@ wi_show() {
     fi
 }
 
+# activate/defer/block/unblock deliberately never touch worktrees, unlike
+# archive/delete: the item is staying in play, just changing zone/status,
+# not leaving active circulation.
+
+wi_activate() {
+    local slug='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$slug" ]; then slug=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$slug" ]; then
+        print_error "Usage: workitem activate <slug>"; return 1
+    fi
+
+    local root="$WORK/data/items"
+    if [ ! -d "$root/backlog/$slug" ]; then
+        if [ -d "$root/$slug" ]; then
+            print_error "'$slug' is already top-level (not in backlog)."
+        elif [ -d "$root/archived/$slug" ]; then
+            print_error "'$slug' is archived — not in backlog."
+        else
+            print_error "No item '$slug' found in items/backlog/."
+        fi
+        return 1
+    fi
+
+    local srcdir="$root/backlog/$slug"
+    transition_status "$srcdir/$slug.md" active '' "$root/$slug" || return 1
+    print_success "Activated → items/$slug (active)"
+}
+
+wi_defer() {
+    local slug='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$slug" ]; then slug=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$slug" ]; then
+        print_error "Usage: workitem defer <slug>"; return 1
+    fi
+
+    local root="$WORK/data/items"
+    if [ ! -d "$root/$slug" ]; then
+        if [ -d "$root/backlog/$slug" ]; then
+            print_error "'$slug' is already in backlog."
+        elif [ -d "$root/archived/$slug" ]; then
+            print_error "'$slug' is archived — not top-level."
+        else
+            print_error "No item '$slug' found at top level."
+        fi
+        return 1
+    fi
+
+    local srcdir="$root/$slug"
+    transition_status "$srcdir/$slug.md" deferred '' "$root/backlog/$slug" || return 1
+    print_success "Deferred → items/backlog/$slug (deferred)"
+}
+
+wi_block() {
+    local slug='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$slug" ]; then slug=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$slug" ]; then
+        print_error "Usage: workitem block <slug>"; return 1
+    fi
+
+    local root="$WORK/data/items"
+    local srcdir="$root/$slug"
+    if [ ! -d "$srcdir" ]; then
+        if [ -d "$root/backlog/$slug" ]; then
+            print_error "'$slug' is in backlog — block only applies to top-level items."
+        elif [ -d "$root/archived/$slug" ]; then
+            print_error "'$slug' is archived — block only applies to top-level items."
+        else
+            print_error "No item '$slug' found at top level."
+        fi
+        return 1
+    fi
+
+    local front="$srcdir/$slug.md"
+    local status; status=$(sed -n 's/^status: *//p' "$front" | head -1)
+    case "$status" in
+        blocked) print_error "'$slug' is already blocked."; return 1 ;;
+        active)  ;;
+        *) print_error "'$slug' has status '$status', not active — refusing to override."; return 1 ;;
+    esac
+
+    transition_status "$front" blocked || return 1
+    print_success "Blocked '$slug' (active → blocked)"
+}
+
+wi_unblock() {
+    local slug='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$slug" ]; then slug=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$slug" ]; then
+        print_error "Usage: workitem unblock <slug>"; return 1
+    fi
+
+    local root="$WORK/data/items"
+    local srcdir="$root/$slug"
+    if [ ! -d "$srcdir" ]; then
+        if [ -d "$root/backlog/$slug" ]; then
+            print_error "'$slug' is in backlog — unblock only applies to top-level items."
+        elif [ -d "$root/archived/$slug" ]; then
+            print_error "'$slug' is archived — unblock only applies to top-level items."
+        else
+            print_error "No item '$slug' found at top level."
+        fi
+        return 1
+    fi
+
+    local front="$srcdir/$slug.md"
+    local status; status=$(sed -n 's/^status: *//p' "$front" | head -1)
+    case "$status" in
+        active)  print_error "'$slug' is not blocked (status: active)."; return 1 ;;
+        blocked) ;;
+        *) print_error "'$slug' has status '$status', not blocked — refusing to override."; return 1 ;;
+    esac
+
+    transition_status "$front" active || return 1
+    print_success "Unblocked '$slug' (blocked → active)"
+}
+
 wi_archive() {
     local slug='' newstatus='' a
     while [ $# -gt 0 ]; do
@@ -329,53 +589,8 @@ wi_archive() {
     fi
 
     local front="$srcdir/$slug.md"
-    local today; today=$(date +%Y-%m-%d)
-    local tmp; tmp=$(mktemp)
-    if grep -q '^completed:' "$front"; then
-        sed -e "s/^status:.*/status: $newstatus/" \
-            -e "s/^completed:.*/completed: $today/" "$front" > "$tmp"
-    else
-        awk -v s="$newstatus" -v d="$today" '
-            /^status:/ { print "status: " s; print "completed: " d; next }
-            { print }
-        ' "$front" > "$tmp"
-    fi
-    mv "$tmp" "$front"
-    print_debug "Frontmatter updated: status=$newstatus completed=$today"
-    # Stage the edit now, at its current path, before the directory-level
-    # `git mv` below — otherwise `git mv` can stage the rename using the
-    # index's stale (pre-edit) blob instead of this file's current content,
-    # silently dropping the frontmatter edit from the eventual commit.
-    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1; then
-        git -C "$WORK/data" add "$front" 2>/dev/null || true
-    fi
-
     local destdir="$root/archived/$slug"
-    if [ -e "$destdir" ]; then
-        print_error "Target already exists: items/archived/$slug"; return 1
-    fi
-    # Both `git mv` and plain `mv` require the destination's parent to already
-    # exist (neither creates it) — items/archived/ is expected to be there in
-    # a normal vault, but don't assume it.
-    mkdir -p "$root/archived"
-    local rel="${srcdir#"$WORK"/data/}"
-    # `git mv` refuses untracked paths outright ("fatal: not under version
-    # control") — a --quick item archived in the same session it was created
-    # in was never `git add`ed, so only fall back to plain `mv` when nothing
-    # under srcdir is actually tracked yet; use `git mv` (preserving rename
-    # history) whenever the item has been committed at least once.
-    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1 \
-       && [ -n "$(git -C "$WORK/data" ls-files "$rel")" ]; then
-        git -C "$WORK/data" mv "$rel" "items/archived/$slug" || {
-            print_error "Move to items/archived/$slug failed — item left in place."
-            return 1
-        }
-    else
-        mv "$srcdir" "$destdir" || {
-            print_error "Move to items/archived/$slug failed — item left in place."
-            return 1
-        }
-    fi
+    transition_status "$front" "$newstatus" completed "$destdir" || return 1
 
     if [ -d "$WORK/worktrees/$slug" ]; then
         print_status "Removing worktree(s) for '$slug' ..."
@@ -448,11 +663,15 @@ done
 cmd="${1:-}"
 [ "$#" -gt 0 ] && shift
 case "$cmd" in
-    create)  wi_create "$@" ;;
-    list)    wi_list "$@" ;;
-    show)    wi_show "$@" ;;
-    archive) wi_archive "$@" ;;
-    delete)  wi_delete "$@" ;;
-    '')      printf '%s\n' "$usage" ;;
-    *)       print_error "Unknown command '$cmd' (try: workitem help)"; exit 1 ;;
+    create)   wi_create "$@" ;;
+    list)     wi_list "$@" ;;
+    show)     wi_show "$@" ;;
+    activate) wi_activate "$@" ;;
+    defer)    wi_defer "$@" ;;
+    block)    wi_block "$@" ;;
+    unblock)  wi_unblock "$@" ;;
+    archive)  wi_archive "$@" ;;
+    delete)   wi_delete "$@" ;;
+    '')       printf '%s\n' "$usage" ;;
+    *)        print_error "Unknown command '$cmd' (try: workitem help)"; exit 1 ;;
 esac

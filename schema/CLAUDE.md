@@ -46,7 +46,9 @@ ever serve.
      directory is the coarse zone; frontmatter holds the precise status. A
      status edit and a zone move usually happen together at a transition but
      are conceptually separate acts; the frequent `active ↔ blocked` toggle is
-     frontmatter-only (no move).
+     frontmatter-only (no move), tooled via `workitem block`/`workitem
+     unblock`. See `items/CLAUDE.md` for the full set of tooled transitions
+     (`activate`/`defer`/`block`/`unblock`/`archive`).
    - **Reminders** (`reminders/`) use the simpler two-way split: in active
      circulation at the top, moved out under `archived/`. Here status and
      location are *coupled*, not independent: a reminder is either `active`
