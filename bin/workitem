@@ -319,6 +319,13 @@ wi_archive() {
     fi
     mv "$tmp" "$front"
     print_debug "Frontmatter updated: status=$newstatus completed=$today"
+    # Stage the edit now, at its current path, before the directory-level
+    # `git mv` below — otherwise `git mv` can stage the rename using the
+    # index's stale (pre-edit) blob instead of this file's current content,
+    # silently dropping the frontmatter edit from the eventual commit.
+    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1; then
+        git -C "$WORK/data" add "$front" 2>/dev/null || true
+    fi
 
     local destdir="$root/archived/$slug"
     if [ -e "$destdir" ]; then

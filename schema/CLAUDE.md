@@ -310,12 +310,14 @@ scope, but the root conventions still apply.
 - Documents have their own per-directory index at [[docs/index]] (not the root
   [[index]]) and carry no `status:` field, so archiving is purely a directory
   move. Otherwise they follow the same lifecycle conventions.
-- Session breadcrumbs in an item's `log/` are machine-written and immutable —
-  never hand-edited. Jots (in `jots/` or tagged into an item's `log/`) are
-  append-only by default, with two narrow, tooled exceptions via `workjot`:
-  `edit` (add follow-up context to an existing jot after the fact) and
-  `delete` (confirm-gated removal, for outright mistakes). Nothing else in
-  the tree gets rewritten this way.
+- An item's `log/` is immutable once written — session breadcrumbs always,
+  and jot entries too from the moment they land there (whether tagged at
+  creation or moved in later). Jots still sitting in `jots/` are
+  append-only by default, with narrow, tooled exceptions via `workjot`:
+  `edit` (add follow-up context after the fact), `delete` (confirm-gated
+  removal for outright mistakes), and `tag` (retroactively move one into an
+  item's `log/`, at which point it stops being a jot workjot manages).
+  Nothing else in the tree gets rewritten this way.
 - If content needs a field the existing schema doesn't describe, revise
   the subdirectory's `CLAUDE.md` first, then add the content. Silent
   schema drift is worse than either changing the schema or omitting the

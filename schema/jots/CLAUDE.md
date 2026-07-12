@@ -57,8 +57,8 @@ carries one is, by definition, not itemless, and lands in that item's
 
 ## Lifecycle and integrity
 
-Jots are **append-only by default**, with two narrow, tooled exceptions —
-both via `workjot`, never by hand-editing the file directly:
+Jots are **append-only by default**, with narrow, tooled exceptions — all
+via `workjot`, never by hand-editing the file directly:
 
 - **`workjot edit`** — amend an existing entry, most commonly to add
   follow-up context that wasn't known at the time ("turned out this was
@@ -68,10 +68,23 @@ both via `workjot`, never by hand-editing the file directly:
 - **`workjot delete`** — confirm-gated removal, for an entry created by
   outright mistake. Always prompts with a warning before deleting; there is
   no silent delete path.
+- **`workjot tag <item-slug>`** — retroactive attribution: moves an
+  existing jot out of `jots/` entirely and into that item's own `log/` as a
+  dated jot entry (same shape a directly-created `create -i` jot has).
+  This is the one case where "removal" from `jots/` isn't a mistake-fix —
+  it's the jot graduating into item history.
 
-Outside of those two actions, past-day entries are immutable. There is no
+All three (`edit`, `delete`, `tag`) only ever operate on entries still
+sitting in `jots/`. Once a jot has been tagged into an item's `log/` —
+whether directly at creation or retroactively via `tag` — it's no longer a
+jot in any tooled sense; `workjot list`/`edit`/`delete` don't see it
+anymore, and it's immutable from that point on like any other `log/`
+entry (see `items/CLAUDE.md`).
+
+Outside of those exceptions, past-day entries are immutable. There is no
 `archived/` subdirectory — jots don't transition between active and
-archived states; they simply accumulate.
+archived states; they simply accumulate (or graduate into an item via
+`tag`).
 
 ## How Claude should engage with jots
 
@@ -91,9 +104,10 @@ archived states; they simply accumulate.
 
 - **Don't author files here directly.** Use `workjot create` (prompts for
   the note and, optionally, an item to attribute it to — leave that prompt
-  blank for a genuinely itemless jot), `workjot edit`, or `workjot delete`.
-  Tagged jots never land here regardless of how `workjot` is invoked — the
-  tool routes them into the item's `log/` itself.
+  blank for a genuinely itemless jot), `workjot edit`, `workjot delete`, or
+  `workjot tag` (moves an existing jot here into an item's `log/`
+  retroactively). Jots tagged at creation never land here at all — the
+  tool routes them straight into the item's `log/`.
 - `workjot` handles file naming, frontmatter, and the day-folder creation;
   there's no reason to create a `YYYY/MM/DD/` folder or the day's log file
   by hand.
