@@ -290,11 +290,17 @@ definition, past the "nothing landed" bar and won't be deleted.
 ## Naming conventions
 
 - **Item names:** lowercase, hyphenated, concise, descriptive at a glance —
-  `ad-upgrade`, `rocky-linux-build`, `repo-deployment-strategy-proposal`. No
-  version numbers or dates in names (those go in frontmatter or `plan.md`).
+  `ad-upgrade`, `rocky-linux-build`. No version numbers or dates in names
+  (those go in frontmatter or `plan.md`).
 - **Front-door file:** `<name>.md`, matching the directory name. Never
   `README.md`.
 - **No dates in item names** — `made:` and `due:` carry dates.
+- **Auto-derived and capped at 30 characters.** `workitem create` kebab-cases
+  the title into the slug, truncated at a word boundary (never mid-word) so
+  a long title doesn't produce an unwieldy directory name. `-s/--slug` gives
+  a deliberate short name instead when truncation wouldn't land on a good
+  one. Either way, a collision with an existing slug appends `-2`, `-3`, ...
+  rather than refusing — expected once slugs are short, not an error.
 
 ## Linking and cross-references
 

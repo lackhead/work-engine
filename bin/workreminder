@@ -36,7 +36,7 @@ workreminder: create, list, show, archive, delete, and set due dates on reminder
 
 Usage:
    workreminder [ -h|--help ]
-   workreminder [ -v|--verbose ] [ -d|--debug ] create  [-i|--item <slug>] [description...]
+   workreminder [ -v|--verbose ] [ -d|--debug ] create  [-i|--item <slug>] [-s|--slug <slug>] [description...]
    workreminder [ -v|--verbose ] [ -d|--debug ] list    [--archived|--all]
    workreminder [ -v|--verbose ] [ -d|--debug ] show    <name>
    workreminder [ -v|--verbose ] [ -d|--debug ] archive <name> [--addressed|--dismissed]
@@ -53,6 +53,13 @@ Description:
             today (the date lives in frontmatter only, not the filename).
             Prompts for the description if not given positionally, and for
             a related item if -i/--item isn't given.
+
+            The slug is kebab-cased from the description, truncated to 30
+            characters at a word boundary (not mid-word). -s/--slug gives
+            a deliberate short name instead (sanitized, not truncated).
+            Either way, a collision with an existing slug appends -2, -3,
+            ... rather than refusing -- expected once slugs are short, not
+            an error.
 
    list     Display reminders: due, description, name -- sorted by
             created: ascending (oldest first). Defaults to active (top
@@ -77,6 +84,7 @@ Description:
 Examples:
    workreminder create Check nagios alert thresholds after deploy
    workreminder create -i nagios Follow up with team on alert runbook
+   workreminder create -s beta-lm-license-hague Ping researcher on 2026-09-01 for...
    workreminder list
    workreminder list --all
    workreminder show check-on-mikes-pr-progress
@@ -87,7 +95,24 @@ Examples:
 EOF
 
 trim()  { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
-kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
+
+# Kebab-case $1, truncated to at most $2 characters (default 30). Truncation
+# snaps back to the last complete word boundary that fits rather than
+# cutting mid-word -- a long description should still read as words, not a
+# ragged fragment. (A single first word longer than the cap is the one
+# case that still gets a hard cut -- nothing left to snap back to.)
+kebab() {
+    local s max cut
+    s=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+    max=${2:-30}
+    if [ ${#s} -le "$max" ]; then
+        printf '%s' "$s"
+        return
+    fi
+    cut="${s:0:$max}"
+    [[ "$cut" == *-* ]] && cut="${cut%-*}"
+    printf '%s' "$cut"
+}
 
 # Truncate to at most $2 chars, marking truncation with a trailing '..'.
 trunc() {
@@ -115,12 +140,14 @@ resolve_reminder() {
 ### Subcommands
 ###
 wr_create() {
-    local item='' desc_parts=() desc a
+    local item='' slug_opt='' desc_parts=() desc a
     while [ $# -gt 0 ]; do
         a=$1
         case "$a" in
             -i|--item) shift; item=${1:-} ;;
             --item=*)  item=${a#--item=} ;;
+            -s|--slug) shift; slug_opt=${1:-} ;;
+            --slug=*)  slug_opt=${a#--slug=} ;;
             -*)        print_error "Unknown option: $a"; return 1 ;;
             *)         desc_parts+=("$a") ;;
         esac
@@ -150,13 +177,26 @@ wr_create() {
 
     local date_str slug file
     date_str=$(date +%Y-%m-%d)
-    slug=$(kebab "$desc")
+    # An explicit -s/--slug is sanitized but not truncated -- it's already a
+    # deliberate short name, not something derived from a long description.
+    if [ -n "$slug_opt" ]; then
+        slug=$(kebab "$slug_opt" 200)
+    else
+        slug=$(kebab "$desc")
+    fi
+
+    # Resolve a collision by appending -2, -3, ... rather than refusing --
+    # once slugs are truncated/short, two unrelated descriptions legitimately
+    # landing on the same slug is expected, not an error.
+    local base="$slug" n=1
+    while [ -e "$WORK/data/reminders/$slug.md" ] || [ -e "$WORK/data/reminders/archived/$slug.md" ]; do
+        n=$((n + 1))
+        slug="$base-$n"
+    done
+    [ "$slug" != "$base" ] && print_verbose "Slug '$base' taken — using '$slug'"
+
     file="$WORK/data/reminders/$slug.md"
     print_verbose "Creating reminder: $file"
-
-    if [ -e "$file" ]; then
-        print_error "$file already exists."; return 1
-    fi
 
     {
         echo "---"
