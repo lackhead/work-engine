@@ -192,7 +192,7 @@ much. The Examples section is the highest-value part; don't skip it.
 
 Three patterns cover all current scripts.
 
-### Pattern 1: global-flag scripts (workon, workjot, workreminder)
+### Pattern 1: global-flag scripts (workon)
 
 No subcommands. Parse everything in one while/case loop. Collect
 positional arguments as you go:
@@ -218,7 +218,7 @@ while [ $# -gt 0 ]; do
 done
 ```
 
-### Pattern 2: subcommand scripts (sandbox, worktree, workitem)
+### Pattern 2: subcommand scripts (sandbox, worktree, workitem, workjot, workreminder)
 
 Parse global flags first with a `while` that `break`s at the first
 non-flag token, then dispatch to subcommand functions with the remaining

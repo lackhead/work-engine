@@ -85,13 +85,15 @@ has one:
 items/<name>/
 ├── <name>.md      # the front door (see naming note below) — always present
 ├── plan.md        # forward-looking: phases, decisions, success/rollback criteria
-└── status/        # dated snapshots: YYYY-MM-DD.md, append-only
+└── log/           # dated session-by-session record, auto-populated
 ```
 
-Only `<name>.md` is created up front; `plan.md` and `status/` are added later,
-only if and when the item earns them (a phased rollout, a status log worth
-keeping). Many items never grow past the front door alone, and that's fine —
-it's still a directory, just a small one.
+Only `<name>.md` is created up front; `plan.md` is added later, only if and
+when the item earns it (a phased rollout worth writing decisions down for).
+`log/` isn't "earned" the same way — it appears automatically the first
+time a session or a tagged jot happens for the item, with no deliberate
+add-this step. Many items never grow past the front door alone, and that's
+fine — it's still a directory, just a small one.
 
 The front-door file is named **`<name>.md`** (matching the directory), *not*
 `README.md`. This is deliberate: it makes the item linkable as a bare
@@ -99,19 +101,65 @@ The front-door file is named **`<name>.md`** (matching the directory), *not*
 
 - **`<name>.md`** — short, living, rewritten in place: what the item is,
   current state, what's next, links to the item's other files. This is what's
-  read first when scoped to the item.
+  read first when scoped to the item. Its `## Current state` is the *only*
+  living narrative for the item — there's no separate dated-snapshot history
+  alongside it (see "Session log" below for why).
 - **`plan.md`** — phases, goals, decisions made (and why), considered-and-
   rejected alternatives, success criteria, rollback criteria. Edited in place
   as the plan evolves.
-- **`status/`** — dated snapshots (`YYYY-MM-DD.md`, or `YYYY-MM-DD-HHMM.md`
-  for the rare multi-snapshot day). Append-only; each captures what moved,
-  what's blocked, what's next. Weekly-ish cadence, not daily (that's the
-  diary's job).
+- **`log/`** — the raw, auto-populated record: session breadcrumbs and
+  tagged jots, dated, one file per event. See "Session log" below.
 
 Optional, added only when earned: **`docs/`** (item-specific documentation —
 not a duplicate of repo docs), **`artifacts/`** (diagrams, exports, binaries),
 **`bin/`** (item-scoped tooling), **`CLAUDE.md`** (per-item conventions for
 complex items), **`risks.md`** (formal risk tracking).
+
+## Session log (`log/`)
+
+Every event that pertains to an item — a real Claude Code session *and* a
+jot tagged to this item — lands in `log/` as a dated per-event file, one
+unified timeline running from rich (a full session breadcrumb) to sparse (a
+one-line jot), rather than two separate mechanisms. `log/` is **raw and
+machine/tool-written**, never hand-authored prose — it's the factual layer
+underneath the front door's curated `## Current state`.
+
+Two filename shapes, distinguished by their dot-separated parts (same
+convention as the old diary breadcrumbs):
+
+- **`<YYYY-MM-DD>.<name>.session.NN.md`** — a session breadcrumb, written
+  automatically by the `SessionEnd` hook (`work-session-breadcrumb`) when a
+  Claude Code session against this item ends (a worktree session or an
+  item-folder planning session). Frontmatter: `type: session-breadcrumb`,
+  `slug`, `session-id`, `session-num` (quoted, `"01"`, `"02"`, ...), `start`,
+  `end`, `repo`/`branch`/`dirty`/`commits`/`files-changed` (worktree sessions
+  only), `reason`, `transcript`. Body: a one-line summary, optional
+  `## Commits` / `## Files changed` lists. No interpretation — that's the
+  front door's job. Multiple sessions for the item in a day stack as `01`,
+  `02`, ….
+- **`<YYYY-MM-DD>.<name>.jot.NN.md`** — a jot tagged to this item, written by
+  `workjot create` when given this item's slug at the attribution prompt.
+  Minimal frontmatter (a timestamp, an optional commit reference); a
+  one-line hand-written body. The sparse end of the same timeline — same
+  directory, same per-event-file granularity, just less populated. An
+  *untagged* jot never appears here — it lands in `jots/` instead (see
+  `jots/CLAUDE.md`).
+
+**Lifecycle:** session breadcrumbs are immutable once written — machine
+facts, never hand-edited. Jot entries follow the same append-only-with-two-
+exceptions rule as `jots/`: `workjot edit` (add follow-up context later) and
+`workjot delete` (confirm-gated removal for a mistake) are the only tooled
+mutations; nothing else in `log/` gets rewritten.
+
+There is no `status/` directory. A prior schema kept dated, curated
+snapshots there, written by the `retrospective` skill after confirmation —
+dropped because nothing downstream ever read them back (`dashboard` never
+did, and `retrospective`'s own long-window strategy composes from other
+retrospectives, not `status/`). The one thing it offered — a per-item
+narrative without cross-referencing retrospectives — wasn't worth the
+write-and-confirm overhead for something effectively never revisited.
+`retrospective` now proposes a refreshed `## Current state` paragraph
+instead of a dated write-back.
 
 (Directory-only creation is a 2026-07-07 schema change: a single-file item
 with no worktree had no directory `workon` could open a session in at all,
@@ -229,9 +277,12 @@ session that happens to add nothing new.
 
 Either way, `workon` prints one line reporting what it decided before
 exiting. The `SessionEnd` breadcrumb hook (`work-session-breadcrumb`) still
-runs independently and still writes the diary breadcrumb as usual, but has
-no say in a quick item's fate — see that script's header comment for why the
-sweep decision moved out of it.
+runs independently and still writes the item's `log/` breadcrumb as usual,
+but has no say in a quick item's fate — see that script's header comment
+for why the sweep decision moved out of it. A quick item deleted before
+anything landed takes its (nonexistent) `log/` with it; one whose slug
+already has breadcrumbs elsewhere from an earlier session is, by
+definition, past the "nothing landed" bar and won't be deleted.
 
 ## Naming conventions
 
@@ -250,14 +301,14 @@ item links never include the zone:
 - **A work item:** bare `[[<name>]]` — resolves to the directory front door
   `items/.../<name>/<name>.md` wherever it sits. This is the canonical link
   form and survives zone changes.
-- **A sub-file of a directory item** (status entry, plan, internal doc): use
+- **A sub-file of a directory item** (a `log/` entry, plan, internal doc): use
   the item-name-prefixed suffix form, `[[<name>/plan]]`,
-  `[[<name>/status/2026-05-04]]` — also zone-independent.
+  `[[<name>/log/2026-05-04.<name>.session.01]]` — also zone-independent.
 - **Never put the zone in a link** (`[[items/backlog/foo]]` would rot when foo
   moves). Don't write `[[items/...]]` paths at all; the bare/suffix forms
   resolve regardless of zone.
-- **Reminders:** `[[reminders/<YYYY-MM-DD-name>]]`. **Diary:** full path,
-  e.g. `[[diary/2026/04/29/2026-04-29.daily-summary]]`. **Documents:**
+- **Reminders:** `[[reminders/<YYYY-MM-DD-name>]]`. **Jots:** full path,
+  e.g. `[[jots/2026/04/29/2026-04-29.log]]`. **Documents:**
   `[[docs/<name>]]`. **Repos:** backticked paths, never wikilinks.
 
 ## How Claude should engage with work items
@@ -273,8 +324,9 @@ ask the user conversationally and edit the file directly: is there a
 one/two-sentence description worth capturing, is this promised to someone
 (`to:`) or self-directed, is there a `due:` and is it hard or soft. There's
 no special signal for "this was just created" beyond the fields being empty —
-missing optional fields is the whole trigger. Add `plan.md` and `status/`
-later, only when the item earns them — most items never do.
+missing optional fields is the whole trigger. Add `plan.md` later, only when
+the item earns it — most items never do. `log/` needs no adding; it appears
+on its own the first time a session or tagged jot happens.
 
 ### Surfacing items
 
@@ -338,5 +390,5 @@ The immediate pointed-at work.
 ## Item files
 
 - [[ad-upgrade/plan]] — phased rollout, decisions, rollback criteria.
-- `status/` — dated snapshots; latest: [[ad-upgrade/status/2026-04-26]].
+- `log/` — session-by-session record (auto-populated).
 ```

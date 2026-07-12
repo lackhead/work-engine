@@ -1,13 +1,15 @@
 # Retrospectives (per-directory schema)
 
 Retrospectives are the **consolidations** of the work system: backward-looking
-roll-ups of what got done over a window, generated on demand by the
+roll-ups of what got done over a window — cross-item, or scoped to a single
+item — generated on demand by the
 [[../.claude/skills/retrospective/SKILL|retrospective]] skill. They are
-deliberately kept **separate from the [[diary/CLAUDE|diary]]** — the diary is
-the running stream of dated *activity* (breadcrumbs, jots), this directory is
-the *consolidation* of that activity. Keeping them apart makes the set of
-retrospectives easy to peruse on its own and keeps the raw work-record (diary)
-distinct from the summaries derived from it (principle #4 in [[CLAUDE]]).
+deliberately kept **separate from the raw activity layer** — an item's own
+`log/` (session breadcrumbs + tagged jots) and [[jots/CLAUDE|`jots/`]] (itemless
+activity) — this directory is the *consolidation* of that activity. Keeping
+them apart makes the set of retrospectives easy to peruse on its own and keeps
+the raw work-record distinct from the summaries derived from it (principle #4
+in [[CLAUDE]]).
 
 Vault-wide conventions live in [[CLAUDE]]. This file specifies how those apply
 to retrospectives.
@@ -22,10 +24,11 @@ to retrospectives.
 
 - **Flat directory, no dated subfolders.** A flat list sorts chronologically by
   filename, which is the whole point — the set is meant to be skimmed at a
-  glance. (Contrast the diary, which nests `YYYY/MM/DD/`.)
-- **No `archived/`.** Like the diary, retrospectives accrete; they don't
-  transition between active and archived. Unlike the diary, they are
-  *regenerable* (see Lifecycle).
+  glance. (Contrast `jots/` or an item's `log/`, which nest `YYYY/MM/DD/` or
+  date-per-file respectively.)
+- **No `archived/`.** Like the raw activity layer, retrospectives accrete;
+  they don't transition between active and archived. Unlike the raw layer,
+  they are *regenerable* (see Lifecycle).
 
 ## Filename
 
@@ -43,6 +46,12 @@ to retrospectives.
   label.
 
 Examples: `2026-06-19.retrospective-7d.md`, `2026-06-17.retrospective-8d.md`.
+
+This directory only ever holds **cross-item** roll-ups. An item-scoped run
+(`retrospective nagios last week`) is printed, not saved here — it reads
+straight from `nagios`'s own `log/`, which is already the cheap, reusable
+source; there's no long-window composition problem to solve by persisting
+it the way a cross-item roll-up has.
 
 ## Frontmatter
 
@@ -68,17 +77,18 @@ transcript. Sections, per the retrospective skill:
 - `## By item` — one subsection per slug that saw activity, item-linked
 - `## Ad-hoc` — untagged jots and stray (item-less) commits
 
-The retrospective is **read-derived and local** — it ranks and frames what the
-breadcrumbs, jots, item `status/` entries, and the user's own git history
-already captured; it doesn't invent state or reach outside the tree (no Slack,
+The retrospective is **read-derived and local** — it ranks and frames what
+items' `log/` entries, `jots/`, and the user's own git history already
+captured; it doesn't invent state or reach outside the tree (no Slack,
 no calendar).
 
 ## Lifecycle and integrity
 
 - **Regenerable.** Re-running the skill for the same window (same end date +
   same span) overwrites that file — regeneration is safe for the current window.
-  Treat re-generating a *past* window as the diary's "fix outright errors only"
-  rule: a retrospective reflects what was captured at the time.
+  Treat re-generating a *past* window as the same "fix outright errors only"
+  rule that governs `jots/` and an item's `log/`: a retrospective reflects
+  what was captured at the time.
 - **Collisions only on same-date-same-span.** Two roll-ups taken the same day
   over different look-backs get distinct filenames (`…-5d` vs `…-7d`) and coexist.
 - **Nothing is deleted on archive** — there is no archive step; the directory

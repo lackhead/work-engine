@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 #
-# workjot — record an ad-hoc work note (a "jot") into the day's diary log.
+# workjot — create, list, edit, and delete ad-hoc work notes ("jots").
 #
 # Engine tool for the work system. Lives at ~/work/engine/bin/workjot (the
 # work-engine repo, on PATH). Companion completion:
 # ~/work/engine/bin/completions/workjot.fish.
 #
-# Ad-hoc work that doesn't get a Claude Code session (a quick fix in a canonical
-# clone, a hallway debug) leaves no SessionEnd breadcrumb. workjot is the manual
-# counterpart: it appends a timestamped one-liner to
-#   ~/work/data/diary/YYYY/MM/DD/<date>.log.md
-# optionally tagged with a work item and enriched with the latest git commit.
+# A jot tagged to a work item (-i/--item) is one piece of that item's own
+# record — it's written as a dated file into items/<slug>/log/, the sparse
+# end of the same timeline session breadcrumbs occupy at the rich end. An
+# untagged jot has no item to belong to and lands in the top-level, itemless
+# ~/work/data/jots/YYYY/MM/DD/<date>.log.md instead. See items/CLAUDE.md and
+# jots/CLAUDE.md.
+#
+# Jots are append-only by default. `edit`/`delete` are narrow, tooled
+# exceptions — edit adds follow-up context after the fact, delete is a
+# confirm-gated removal for outright mistakes. Neither is a general
+# rewrite-history tool.
 #
 
 set -u
@@ -37,140 +43,435 @@ print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workjot: record an ad-hoc work note into the day's diary log
+workjot: create, list, edit, and delete ad-hoc work notes ("jots")
 
 Usage:
    workjot [ -h|--help ]
-   workjot [ -d|--debug ] [ -r|--repo <repo> ] [note...]
+   workjot [ -v|--verbose ] [ -d|--debug ] create [-r|--repo <repo>] [-i|--item <slug>]
+   workjot [ -v|--verbose ] [ -d|--debug ] list   [-i|--item <slug>] [--on <date>|--since <date>]
+   workjot [ -v|--verbose ] [ -d|--debug ] edit   [-i|--item <slug>] [--on <date>]
+   workjot [ -v|--verbose ] [ -d|--debug ] delete [-i|--item <slug>] [--on <date>]
 
 Arguments:
    -h|--help         Show what you are seeing right now
    -v|--verbose      Show what is happening as it happens
    -d|--debug        Show diagnostic detail (implies --verbose)
-   -r|--repo <repo>  Read git facts from ~/work/repos/<repo>
-                     (default: the current directory, if it's a repo)
-   [note...]         Note text (prompted if omitted)
 
 Description:
-   Appends a timestamped one-liner to ~/work/data/diary/YYYY/MM/DD/<date>.log.md,
-   optionally tagged with a work item wikilink and the latest git commit from
-   the working repo. Creates the day log with a header on first write.
+   create   Always prompts — for the note text, and (unless -i/--item is
+            given) for an item to attribute it to. A jot tagged to an item
+            is written into that item's own items/<slug>/log/, the sparse
+            end of its session timeline. An untagged jot (blank prompt, or
+            -i/--item omitted) goes into the itemless
+            jots/YYYY/MM/DD/<date>.log.md. -r/--repo picks which repo to
+            read the latest commit from for attribution (default: cwd, if
+            it's a real repo — never the vault itself); you're always asked
+            to confirm before a commit is attached.
 
-   Use this for ad-hoc work that doesn't get a Claude Code session (a quick
-   fix, a hallway debug) — it's the manual counterpart to the SessionEnd
-   breadcrumb hook.
+            Naming an item that doesn't exist warns and falls back to
+            untagged rather than fabricating an item directory.
+
+   list     Show jots, defaulting to today. -i/--item scopes to one item's
+            tagged jots; without it, both tagged (across every item) and
+            untagged jots are shown, each labeled with its source. --on
+            <date> shows one specific day; --since <date> shows a range
+            from that day through today. --on/--since are mutually
+            exclusive.
+
+   edit     Add follow-up context to an existing jot — not a rewrite, an
+            append. Lists candidates for the given item/date (default:
+            today), asks which one, then appends the follow-up text.
+
+   delete   Confirm-gated removal of a single jot, for outright mistakes.
+            Always shows the full entry and asks before deleting — there is
+            no silent path.
 
 Examples:
-   workjot
-   workjot Fixed the YAML linting issue in account-create
-   workjot -r Ansible Deployed the nagios config update
+   workjot create
+   workjot create -i nagios
+   workjot create -r Ansible
+   workjot list
+   workjot list -i nagios
+   workjot list --since 2026-07-01
+   workjot edit --on 2026-07-10
+   workjot delete -i nagios
 
 EOF
 
 trim() { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
 
-###
-### Parse arguments
-###
-repo_opt=''
-note_parts=()
-while [ $# -gt 0 ]; do
-    a=$1
-    case "$a" in
-        -v|--verbose) VERBOSE=true ;;
-        -d|--debug)   DEBUG=true; VERBOSE=true ;;
-        -h|--help|help)
-            printf '%s\n' "$usage"
-            exit 0 ;;
-        -r|--repo)  shift; repo_opt=${1:-} ;;
-        --repo=*)   repo_opt=${a#--repo=} ;;
-        -*)         print_error "Unknown option: $a"; exit 1 ;;
-        *)          note_parts+=("$a") ;;
-    esac
-    shift
-done
+# ISO 8601 with a colon in the TZ offset (matches the vault convention).
+iso_now() {
+    local t
+    t="$(date +%Y-%m-%dT%H:%M:%S%z)"
+    printf '%s' "$t" | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/'
+}
 
-###
-### Git context
-###
-gitdir=''
-if [ -n "$repo_opt" ]; then
-    gitdir="$WORK/repos/$repo_opt"
-    if ! git -C "$gitdir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        print_error "repos/$repo_opt is not a git repo"; exit 1
-    fi
-    print_verbose "Git dir: $gitdir (explicit --repo)"
-else
-    # ~/work/data is itself a git repo (vault backup); a jot made from an item
-    # folder would otherwise resolve UP to the vault and offer its automated
-    # backup commit. Auto-detect only a real code repo (toplevel != the vault root).
-    top="$(git -C "$(pwd)" rev-parse --show-toplevel 2>/dev/null)"
-    if [ -n "$top" ] && [ "$top" != "$WORK/data" ]; then
-        gitdir="$(pwd)"
-        print_verbose "Git dir: $gitdir (cwd)"
-    fi
-fi
+# Resolve a slug to its zone directory, if the item exists as a real
+# directory item (front door present). Echoes the path and returns 0 if
+# found; returns 1 with no output otherwise.
+resolve_item_dir() {
+    local slug=$1 z
+    for z in '' backlog/ archived/; do
+        if [ -f "$WORK/data/items/$z$slug/$slug.md" ]; then
+            printf '%s' "$WORK/data/items/$z$slug"
+            return 0
+        fi
+    done
+    return 1
+}
 
-# If there's a commit, show it and confirm before attaching it.
-commit=''
-if [ -n "$gitdir" ]; then
-    h=$(git -C "$gitdir" log -1 --format=%h 2>/dev/null)
-    if [ -n "$h" ]; then
-        subj=$(git -C "$gitdir" log -1 --format=%s 2>/dev/null)
-        br=$(git -C "$gitdir" rev-parse --abbrev-ref HEAD 2>/dev/null)
-        rname=$(basename "$(git -C "$gitdir" rev-parse --show-toplevel 2>/dev/null)")
-        print_status "Latest commit in $rname@$br:"
-        echo "    $h  $subj"
-        read -r -p "  Record this commit with the jot? [Y/n] " yn
-        if [ -z "$yn" ] || printf '%s' "$yn" | grep -qiE '^y'; then
-            commit="$rname@$br $h \"$subj\""
+# Populate parallel arrays (kind, path, lineno, label) with jot candidates
+# for the given item filter (blank = all) and single date. `kind` is
+# "tagged" (a standalone items/<slug>/log/*.jot.*.md file, lineno unused) or
+# "untagged" (a bullet line inside a jots/ day-log, lineno is the 1-based
+# line number). Shared by wj_edit and wj_delete.
+collect_candidates() {
+    local item_opt=$1 on_date=$2
+    kind=(); path=(); lineno=(); label=()
+
+    local zones=('' 'backlog/' 'archived/') z dir itemdir slug logf note
+    for z in "${zones[@]}"; do
+        dir="$WORK/data/items/$z"
+        [ -d "$dir" ] || continue
+        for itemdir in "$dir"*/; do
+            [ -d "$itemdir" ] || continue
+            slug=$(basename "$itemdir")
+            [ -n "$item_opt" ] && [ "$slug" != "$item_opt" ] && continue
+            [ -d "${itemdir}log" ] || continue
+            for logf in "${itemdir}log/$on_date.$slug.jot."*.md; do
+                [ -e "$logf" ] || continue
+                note=$(sed -n '/^# Jot/,$p' "$logf" | tail -n +3 | sed '/^[[:space:]]*$/d' | head -1)
+                kind+=(tagged); path+=("$logf"); lineno+=(0); label+=("[$slug] $note")
+            done
+        done
+    done
+
+    if [ -z "$item_opt" ]; then
+        local logf="$WORK/data/jots/${on_date:0:4}/${on_date:5:2}/${on_date:8:2}/$on_date.log.md"
+        if [ -e "$logf" ]; then
+            local n=0 line
+            while IFS= read -r line; do
+                n=$((n + 1))
+                case "$line" in
+                    '- '*)
+                        kind+=(untagged); path+=("$logf"); lineno+=("$n")
+                        label+=("[untagged] ${line#- }") ;;
+                esac
+            done < "$logf"
         fi
     fi
-fi
+}
+
+# Print numbered candidates, prompt for a selection, echo the 0-based index
+# on stdout. Returns 1 (nothing echoed) on an invalid or empty choice.
+choose_candidate() {
+    local prompt=$1 i
+    for i in "${!label[@]}"; do
+        printf '%2d) %s\n' "$((i + 1))" "${label[$i]}" >&2
+    done
+    read -r -p "$prompt [1-${#label[@]}] " choice
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#label[@]}" ]; then
+        print_error "Invalid selection."
+        return 1
+    fi
+    printf '%s' "$((choice - 1))"
+}
 
 ###
-### Note text
+### Subcommands
 ###
-note=''
-[ ${#note_parts[@]} -gt 0 ] && note="${note_parts[*]}"
-note="$(trim "$note")"
-if [ -z "$note" ]; then
+wj_create() {
+    local repo_opt='' item_opt='' a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            -r|--repo) shift; repo_opt=${1:-} ;;
+            --repo=*)  repo_opt=${a#--repo=} ;;
+            -i|--item) shift; item_opt=${1:-} ;;
+            --item=*)  item_opt=${a#--item=} ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)  print_error "workjot create takes no positional arguments — it always prompts for the note."; return 1 ;;
+        esac
+        shift
+    done
+
+    # --- git context (same vault-git guard as the SessionEnd hook) ---
+    local gitdir='' top
+    if [ -n "$repo_opt" ]; then
+        gitdir="$WORK/repos/$repo_opt"
+        if ! git -C "$gitdir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            print_error "repos/$repo_opt is not a git repo"; return 1
+        fi
+        print_verbose "Git dir: $gitdir (explicit --repo)"
+    else
+        top="$(git -C "$(pwd)" rev-parse --show-toplevel 2>/dev/null)"
+        if [ -n "$top" ] && [ "$top" != "$WORK/data" ]; then
+            gitdir="$(pwd)"
+            print_verbose "Git dir: $gitdir (cwd)"
+        fi
+    fi
+
+    local commit=''
+    if [ -n "$gitdir" ]; then
+        local h subj br rname
+        h=$(git -C "$gitdir" log -1 --format=%h 2>/dev/null)
+        if [ -n "$h" ]; then
+            subj=$(git -C "$gitdir" log -1 --format=%s 2>/dev/null)
+            br=$(git -C "$gitdir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+            rname=$(basename "$(git -C "$gitdir" rev-parse --show-toplevel 2>/dev/null)")
+            print_status "Latest commit in $rname@$br:"
+            echo "    $h  $subj"
+            read -r -p "  Record this commit with the jot? [Y/n] " yn
+            if [ -z "$yn" ] || printf '%s' "$yn" | grep -qiE '^y'; then
+                commit="$rname@$br $h \"$subj\""
+            fi
+        fi
+    fi
+
+    # --- note text: always prompted, never positional ---
+    local note
     read -r -p "jot: " note
     note="$(trim "$note")"
-fi
-if [ -z "$note" ]; then
-    print_error "Empty note — nothing recorded."; exit 1
-fi
-
-###
-### Item attribution
-###
-read -r -p "attribute to item (slug, blank for none): " item
-item="$(trim "$item")"
-tag=''
-if [ -n "$item" ]; then
-    if [ ! -e "$WORK/data/items/$item.md" ] && [ ! -e "$WORK/data/items/$item/$item.md" ]; then
-        print_warning "'$item' isn't an active item; tagging anyway."
+    if [ -z "$note" ]; then
+        print_error "Empty note — nothing recorded."; return 1
     fi
-    tag=" [[$item]]"
-fi
+
+    # --- item attribution ---
+    local item="$item_opt"
+    if [ -z "$item" ]; then
+        read -r -p "attribute to item (slug, blank for none): " item
+        item="$(trim "$item")"
+    fi
+
+    local item_dir=''
+    if [ -n "$item" ]; then
+        item_dir="$(resolve_item_dir "$item")" || {
+            print_warning "'$item' isn't an existing item — recording as untagged instead. (Run 'workitem create $item' first if you want it attributed.)"
+            item=''
+        }
+    fi
+
+    local date_str; date_str=$(date +%Y-%m-%d)
+
+    if [ -n "$item" ]; then
+        # --- tagged: one more dated file in the item's own log/ ---
+        local log_dir="$item_dir/log" n nn file
+        mkdir -p "$log_dir"
+        n=1
+        while [ -e "$log_dir/$date_str.$item.jot.$(printf '%02d' "$n").md" ]; do
+            n=$((n + 1))
+        done
+        nn="$(printf '%02d' "$n")"
+        file="$log_dir/$date_str.$item.jot.$nn.md"
+        {
+            echo "---"
+            echo "type: jot"
+            echo "slug: $item"
+            echo "time: $(iso_now)"
+            [ -n "$commit" ] && echo "commit: \"$commit\""
+            echo "---"
+            echo
+            echo "# Jot — $item"
+            echo
+            echo "$note"
+        } > "$file"
+        print_success "Recorded → ${file/#$HOME/\~}"
+    else
+        # --- untagged: append to the day's itemless jots/ log ---
+        local day_dir="$WORK/data/jots/$(date +%Y)/$(date +%m)/$(date +%d)" log line
+        mkdir -p "$day_dir"
+        log="$day_dir/$date_str.log.md"
+        if [ ! -e "$log" ]; then
+            printf -- '---\ntype: jot-log\ndate: %s\n---\n\n# Jot log — %s\n\n' "$date_str" "$date_str" > "$log"
+        fi
+        line="- $(date +%H:%M) — $note"
+        [ -n "$commit" ] && line="$line ($commit)"
+        printf '%s\n' "$line" >> "$log"
+        print_success "Recorded → ${log/#$HOME/\~}"
+        echo "  $line"
+    fi
+}
+
+wj_list() {
+    local item_opt='' on_date='' since_date='' a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            -i|--item) shift; item_opt=${1:-} ;;
+            --item=*)  item_opt=${a#--item=} ;;
+            --on)      shift; on_date=${1:-} ;;
+            --on=*)    on_date=${a#--on=} ;;
+            --since)   shift; since_date=${1:-} ;;
+            --since=*) since_date=${a#--since=} ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)  print_error "Unexpected argument: $a"; return 1 ;;
+        esac
+        shift
+    done
+    if [ -n "$on_date" ] && [ -n "$since_date" ]; then
+        print_error "--on and --since are mutually exclusive."; return 1
+    fi
+
+    local today; today=$(date +%Y-%m-%d)
+    local from_date="${since_date:-${on_date:-$today}}"
+    local to_date="${on_date:-$today}"
+    # String compare is safe here: YYYY-MM-DD sorts lexicographically the
+    # same as chronologically, so no date-arithmetic/portability concerns.
+    in_range() { [[ "$1" > "$from_date" || "$1" == "$from_date" ]] && [[ "$1" < "$to_date" || "$1" == "$to_date" ]]; }
+
+    local found=0
+
+    # --- tagged jots, across every item (or just -i/--item's) ---
+    local zones=('' 'backlog/' 'archived/') z dir itemdir slug logf date_part t note line
+    for z in "${zones[@]}"; do
+        dir="$WORK/data/items/$z"
+        [ -d "$dir" ] || continue
+        for itemdir in "$dir"*/; do
+            [ -d "$itemdir" ] || continue
+            slug=$(basename "$itemdir")
+            [ -n "$item_opt" ] && [ "$slug" != "$item_opt" ] && continue
+            [ -d "${itemdir}log" ] || continue
+            for logf in "${itemdir}log/"*.jot.*.md; do
+                [ -e "$logf" ] || continue
+                date_part=$(basename "$logf" | cut -d. -f1)
+                in_range "$date_part" || continue
+                t=$(sed -n 's/^time: *//p' "$logf" | head -1)
+                note=$(sed -n '/^# Jot/,$p' "$logf" | tail -n +3 | sed '/^[[:space:]]*$/d' | head -1)
+                printf '%s  [%s]  %s\n' "${t:-$date_part}" "$slug" "$note"
+                found=1
+            done
+        done
+    done
+
+    # --- untagged jots (only when not scoped to one item) ---
+    if [ -z "$item_opt" ]; then
+        for logf in "$WORK"/data/jots/*/*/*/*.log.md; do
+            [ -e "$logf" ] || continue
+            date_part=$(basename "$logf" .log.md)
+            in_range "$date_part" || continue
+            while IFS= read -r line; do
+                [ -n "$line" ] || continue
+                printf '%s  [untagged]  %s\n' "$date_part" "$line"
+                found=1
+            done < <(sed -n 's/^- //p' "$logf")
+        done
+    fi
+
+    [ "$found" -eq 1 ] || echo "(none)"
+}
+
+wj_edit() {
+    local item_opt='' on_date='' a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            -i|--item) shift; item_opt=${1:-} ;;
+            --item=*)  item_opt=${a#--item=} ;;
+            --on)      shift; on_date=${1:-} ;;
+            --on=*)    on_date=${a#--on=} ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)  print_error "Unexpected argument: $a"; return 1 ;;
+        esac
+        shift
+    done
+    on_date="${on_date:-$(date +%Y-%m-%d)}"
+
+    local kind=() path=() lineno=() label=()
+    collect_candidates "$item_opt" "$on_date"
+    if [ ${#label[@]} -eq 0 ]; then
+        print_error "No jots found for $on_date${item_opt:+ (item: $item_opt)}."; return 1
+    fi
+
+    local idx
+    idx=$(choose_candidate "Which jot to amend?") || return 1
+
+    read -r -p "Follow-up to add: " followup
+    followup="$(trim "$followup")"
+    if [ -z "$followup" ]; then
+        print_error "Empty follow-up — nothing changed."; return 1
+    fi
+
+    if [ "${kind[$idx]}" = tagged ]; then
+        {
+            echo
+            echo "**Update ($(date +%H:%M)):** $followup"
+        } >> "${path[$idx]}"
+        print_success "Amended ${path[$idx]/#$HOME/\~}"
+    else
+        local f=${path[$idx]} n=${lineno[$idx]} tmp
+        tmp=$(mktemp)
+        awk -v n="$n" -v add=" — update: $followup" \
+            'NR == n { $0 = $0 add } { print }' "$f" > "$tmp"
+        mv "$tmp" "$f"
+        print_success "Amended line $n of ${f/#$HOME/\~}"
+    fi
+}
+
+wj_delete() {
+    local item_opt='' on_date='' a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            -i|--item) shift; item_opt=${1:-} ;;
+            --item=*)  item_opt=${a#--item=} ;;
+            --on)      shift; on_date=${1:-} ;;
+            --on=*)    on_date=${a#--on=} ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)  print_error "Unexpected argument: $a"; return 1 ;;
+        esac
+        shift
+    done
+    on_date="${on_date:-$(date +%Y-%m-%d)}"
+
+    local kind=() path=() lineno=() label=()
+    collect_candidates "$item_opt" "$on_date"
+    if [ ${#label[@]} -eq 0 ]; then
+        print_error "No jots found for $on_date${item_opt:+ (item: $item_opt)}."; return 1
+    fi
+
+    local idx
+    idx=$(choose_candidate "Which jot to delete?") || return 1
+
+    print_warning "About to permanently delete: ${label[$idx]}"
+    read -r -p "This cannot be undone. Delete? [y/N] " yn
+    if ! printf '%s' "$yn" | grep -qiE '^y'; then
+        print_status "Cancelled — nothing deleted."; return 0
+    fi
+
+    if [ "${kind[$idx]}" = tagged ]; then
+        rm -f "${path[$idx]}"
+        print_success "Deleted ${path[$idx]/#$HOME/\~}"
+    else
+        local f=${path[$idx]} n=${lineno[$idx]} tmp
+        tmp=$(mktemp)
+        awk -v n="$n" 'NR != n' "$f" > "$tmp"
+        mv "$tmp" "$f"
+        print_success "Deleted line $n of ${f/#$HOME/\~}"
+    fi
+}
 
 ###
-### Write the jot
+### Dispatch
 ###
-day_dir="$WORK/data/diary/$(date +%Y)/$(date +%m)/$(date +%d)"
-mkdir -p "$day_dir"
-date_str=$(date +%Y-%m-%d)
-log="$day_dir/$date_str.log.md"
-print_verbose "Log file: $log"
+# Parse global options before the subcommand so `workjot -v create` works.
+# -d implies -v.
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -v|--verbose) VERBOSE=true; shift ;;
+        -d|--debug)   DEBUG=true; VERBOSE=true; shift ;;
+        -h|--help|help) printf '%s\n' "$usage"; exit 0 ;;
+        *) break ;;
+    esac
+done
 
-if [ ! -e "$log" ]; then
-    printf -- '---\ntype: jot-log\ndate: %s\n---\n\n# Jot log — %s\n\n' "$date_str" "$date_str" > "$log"
-fi
-
-line="- $(date +%H:%M) — $note$tag"
-[ -n "$commit" ] && line="$line ($commit)"
-printf '%s\n' "$line" >> "$log"
-
-print_success "Recorded → ${log/#$HOME/\~}"
-echo "  $line"
+cmd="${1:-}"
+[ "$#" -gt 0 ] && shift
+case "$cmd" in
+    create) wj_create "$@" ;;
+    list)   wj_list "$@" ;;
+    edit)   wj_edit "$@" ;;
+    delete) wj_delete "$@" ;;
+    '')     printf '%s\n' "$usage" ;;
+    *)      print_error "Unknown command '$cmd' (try: workjot help)"; exit 1 ;;
+esac

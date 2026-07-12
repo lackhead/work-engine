@@ -100,8 +100,9 @@ Optional fields:
 
 | Field | Notes |
 |-------|-------|
-| `source` | Where the reminder came from. Common values: `daily-summary` (proposed by the daily-summary skill), `backfill-from-diary` (added retrospectively from a diary entry), `manual` (added by hand), `slack-thread`, `meeting`. Free-form text — pick a value that lets future-me trace the origin. |
+| `source` | Where the reminder came from. Common values: `daily-summary` (proposed by the daily-summary skill), `backfill-from-jots` (added retrospectively from a jot), `manual` (added by hand), `slack-thread`, `meeting`. Free-form text — pick a value that lets future-me trace the origin. |
 | `related-item` | Wikilink to a work item, e.g. `[[ad-upgrade]]`, when the reminder is tied to or adjacent to a specific work item. Single value, not a list — if a reminder spans several items, that's a sign it's actually a work item of its own. |
+| `due` | `YYYY-MM-DD` deadline. Bare date only — no `due-type` (`hard`/`soft`) the way work items have; reminders stay deliberately lower-overhead. Omit when there isn't one. |
 | `tags` | Inline list of short kebab-case tags. |
 
 ## Naming conventions
@@ -123,11 +124,11 @@ Optional fields:
 
 ### Adding a reminder
 
-When I ask Claude to add a new reminder, Claude creates a single
-file with `created:` set to today and `status: active`. Claude asks
-for the description (used in both the filename and the body heading)
-and does not prompt for optional fields unless I bring them up. The
-body is added only if I describe context worth capturing — most
+`workreminder create` is the tool: it creates a single file with `created:`
+set to today and `status: active`, prompting for the description (used in
+both the filename and the body heading) and, optionally, `-i/--item` to set
+`related-item`. It does not prompt for other optional fields unless brought
+up. The body is added only when there's context worth capturing — most
 reminders are frontmatter-only.
 
 Adding a reminder is the act of saying "this needs follow-up,"
@@ -136,10 +137,18 @@ reminders.
 
 ### Surfacing active reminders
 
-When I ask about active reminders, Claude reads files at
+`workreminder list` shows reminders, defaulting to active (top level);
+`--archived`/`--all` broadens the scope — mirrors `workitem list`. When
+asked about active reminders directly, Claude reads files at
 `~/work/data/reminders/*.md` (excluding `archived/`) and filters to
 `status: active`. Default sort: by `created:` date ascending (oldest
 first), so stale ones surface naturally.
+
+### Setting or changing a due date
+
+`workreminder due <slug> [date]` sets or changes the optional `due:` field;
+omitting the date clears it. There is no `due-type` for reminders — see the
+frontmatter table above.
 
 ### Archiving (addressing or dismissing)
 
@@ -151,6 +160,10 @@ together:
    `dismissed` (no follow-up needed after all).
 2. Move the file to `~/work/data/reminders/archived/<name>.md`.
 
+`workreminder archive <slug> [--addressed|--dismissed]` automates this —
+prompts for the reason if not given as a flag, sets `status:`, and moves the
+file — mirroring `workitem archive --completed/--cancelled`.
+
 Both steps always happen together — don't set `addressed`/`dismissed` while
 leaving the file at the top level, and don't move a file to `archived/`
 without recording the reason in `status:`. (The only edge case is genuinely
@@ -158,6 +171,13 @@ abandoning tracking with no opinion on outcome — prefer `dismissed` for that
 rather than inventing a third state.)
 
 The body is preserved as-is; don't rewrite history.
+
+### Deleting a reminder created in error
+
+`workreminder delete <slug>` removes a reminder outright — for one created
+by mistake, not for the normal end-of-life path (that's archiving, which
+preserves the body). Distinct from archiving the same way `workitem delete`
+is distinct from `workitem archive`.
 
 ### Promoting a reminder to a work item
 
@@ -178,10 +198,9 @@ should become a work item. Workflow:
 - **Work items:** `[[<name>]]`.
 - **Other reminders:** `[[reminders/<YYYY-MM-DD-name>]]`.
 - **Documents:** `[[docs/<name>]]`.
-- **Diary entries:** by full path to a specific file, e.g.
-  `[[diary/2026/04/29/2026-04-29.daily-summary]]`. Useful for
-  reminders surfaced by the daily-summary skill — the diary entry
-  is where the underlying context lives.
+- **Jots:** by full path to a specific file, e.g.
+  `[[jots/2026/04/29/2026-04-29.log]]`. Useful for reminders backfilled
+  from a jot — that's where the underlying context lives.
 - **Repositories:** plain backticked paths, e.g. `~/work/repos/Ansible`.
   Repos are git working trees nested in the vault but conceptually
   separate — reference by path, never wikilink.
@@ -211,7 +230,7 @@ related-item: [[auto-update-backstop]]
 ---
 created: 2026-04-30
 status: active
-source: backfill-from-diary
+source: backfill-from-jots
 tags: [rocky-linux]
 ---
 

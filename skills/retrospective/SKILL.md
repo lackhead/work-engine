@@ -1,20 +1,22 @@
 ---
 name: retrospective
-description: Roll up what was accomplished over a window — day, week, month, quarter, or an explicit range — by reading session breadcrumbs, jots, item status entries, and worktree git history. Purely local and read-derived (no Slack/calendar). Saves a dated retrospective to ~/work/data/retrospectives/ and proposes curated status/ write-backs for items with material progress.
+description: Roll up what was accomplished over a window — day, week, month, quarter, or an explicit range — cross-item or scoped to a single item — by reading each item's own log/ (session breadcrumbs + tagged jots), jots/, and worktree git history. Purely local and read-derived (no Slack/calendar). Saves a dated cross-item retrospective to ~/work/data/retrospectives/ and proposes a refreshed Current state for items with material progress.
 user_invocable: true
 ---
 
-Summarize what got done over a requested window and save it to
-`~/work/data/retrospectives/`. The
-retrospective is **read-derived and local**: it reads session breadcrumbs, the
-ad-hoc jot log, item `status/` entries, and git history across the worktrees —
-nothing else. The system is curated by intention, so there is **no Slack or
-calendar ingestion**; the retrospective recaps what's already been captured, it
-doesn't go looking outside the tree.
+Summarize what got done over a requested window, optionally scoped to a
+single item, and (for cross-item runs) save it to
+`~/work/data/retrospectives/`. The retrospective is **read-derived and
+local**: it reads each item's own `log/`, the `jots/` tree, and git history
+across the worktrees — nothing else. The system is curated by intention, so
+there is **no Slack or calendar ingestion**; the retrospective recaps what's
+already been captured, it doesn't go looking outside the tree.
 
-Two jobs: (1) write a dated retrospective file recapping the window, and (2)
-propose curated `status/` write-backs for items that saw material progress. The
-second is propose-then-write — it never edits an item without confirmation.
+Two jobs: (1) recap the window — cross-item runs write a dated retrospective
+file, item-scoped runs just print (see "Write the retrospective file" below
+for why); and (2) propose a refreshed `## Current state` paragraph for items
+that saw material progress. The second is propose-then-write — it never
+edits an item without confirmation.
 
 This replaces the old `daily-summary`. A standup needs no separate skill: run a
 retrospective over the since-last-standup window for "what I did," and glance at
@@ -22,7 +24,17 @@ the `dashboard` for what's outstanding, blocked, and coming due.
 
 ## Arguments
 
-A free-form window phrase (defaults to `today` if omitted):
+A free-form window phrase (defaults to `today` if omitted), optionally
+preceded by an item slug to scope the whole run to just that item:
+
+- `<window phrase>` — cross-item, the default.
+- `<item-slug> <window phrase>` — e.g. `nagios last week`. Recognize this
+  form by checking whether the first token matches an existing item's slug
+  (`items/<slug>/`, `items/backlog/<slug>/`, or `items/archived/<slug>/`); if
+  it doesn't match any item, treat the whole argument as just the window
+  phrase instead.
+
+Window phrase vocabulary:
 
 - `today`, `yesterday`
 - `past N days` / `last N days`
@@ -53,6 +65,13 @@ meant** rather than guessing the range.
 
 ### 2. Choose a read strategy
 
+**Item-scoped runs always read raw, regardless of window length.** The
+corpus is just one item's own `log/`, already bounded by that item's
+lifetime — there's no volume problem to optimize away, and nothing is saved
+to `retrospectives/` for these anyway (see step 5).
+
+**Cross-item runs:**
+
 - **Short windows (≤ ~2 weeks):** read raw local sources for the whole window
   (step 3). Everything is local and cheap.
 - **Long windows (month/quarter-scale):** to keep the synthesis tractable,
@@ -63,30 +82,38 @@ meant** rather than guessing the range.
   `[end − N days, end]`). Pick a **non-overlapping covering set**
   (largest-span-first, so a day inside a saved 7d retro isn't counted twice),
   then fill remaining spans from raw sources. If no shorter retros exist, read
-  raw for everything. The factual layer (breadcrumbs/git) is always safe to
+  raw for everything. The factual layer (`log/`/git) is always safe to
   re-read; reusing saved retros is purely a volume optimization, never required
   for correctness.
 
 ### 3. Gather local sources in the window
 
-For every date in the window walk `~/work/data/diary/YYYY/MM/DD/` and collect:
+**Item-scoped run:** walk just `items/<slug>/log/` (wherever that item
+currently sits — top level, `backlog/`, or `archived/`), filtering entries to
+the window by their `start`/`end` (breadcrumbs) or timestamp (jots). Collect:
 
 - **Session breadcrumbs** — `<date>.<slug>.session.<NN>.md`. Parse frontmatter
   (`slug`, `repo`, `branch`, `commits`, `files-changed`, `start`/`end`) and the
-  one-line body. These are the spine of "what was worked, when."
-- **Jots** — `<date>.log.md` bullet lines. Tagged jots (`[[slug]]`) attribute to
-  an item; untagged jots are loose ad-hoc activity.
+  one-line body.
+- **Tagged jots** — `<date>.<slug>.jot.<NN>.md`. Sparse, hand-written entries;
+  same directory, same per-event granularity.
+- **The user's own commits** in that item's worktree(s), filtered by author
+  and date range (see the git filtering rule below).
 
-Also collect, across the window:
+**Cross-item run:** for every date in the window, walk every item's
+`items/**/log/` (including `archived/`, since an item's activity during the
+window doesn't care where it sits today) and collect the same two file types
+across all of them, plus:
 
-- **Item `status/` entries** written in the range (`items/**/status/<date>.md`)
-  — already-curated progress; fold in by reference, don't re-summarize.
-- **Git history — the user's own commits only.** Breadcrumbs and jots are the
-  *intent* layer but they're lossy: the user sometimes commits without jotting,
-  so git is a primary source, not just supporting detail. The catch is that the
-  repos are **shared** — `~/work/repos/<repo>` and every worktree's `main` mix
-  several admins' commits, and a worktree `git log` shows the *whole* shared
-  history. So **always filter by author**:
+- **Jots in `jots/YYYY/MM/DD/<date>.log.md`** — itemless activity; these are
+  the only jots that stay ungrouped by slug (see below).
+- **Git history — the user's own commits only, across every repo.**
+  Breadcrumbs and jots are the *intent* layer but they're lossy: the user
+  sometimes commits without jotting, so git is a primary source, not just
+  supporting detail. The catch is that the repos are **shared** —
+  `~/work/repos/<repo>` and every worktree's `main` mix several admins'
+  commits, and a worktree `git log` shows the *whole* shared history. So
+  **always filter by author**:
 
   ```
   ME=$(git -C ~/work/repos/Ansible config user.email)   # e.g. clake@lackhead.org
@@ -100,31 +127,37 @@ Also collect, across the window:
   it shows up in. Pull from the canonical clones (`repos/`), which see all
   branches, rather than relying on a single worktree's checked-out branch.
 
-Group everything by **slug**. Then **cross-reference the two layers**:
+Group everything by **slug** (trivial for the item-scoped run — everything's
+already one slug). Then **cross-reference the two layers**:
 
-- A commit (by the user) **with** a matching breadcrumb/jot/status → attribute
+- A commit (by the user) **with** a matching `log/` entry → attribute
   to that item.
-- A commit (by the user) **with no** matching breadcrumb/jot → still include it
+- A commit (by the user) **with no** matching `log/` entry → still include it
   (it's real work the user forgot to capture); place it by slug if the commit
-  touches that item's files/area, else in the ad-hoc bucket. These capture gaps
-  are exactly why git is read, not skipped.
-- A breadcrumb/jot/status with **no** commit → still counts (planning, non-code
+  touches that item's files/area, else in the ad-hoc bucket (cross-item runs
+  only). These capture gaps are exactly why git is read, not skipped.
+- A `log/` entry with **no** commit → still counts (planning, non-code
   work, investigations).
 
-Untagged jots and the user's commits not tied to any item collect under an
-"ad-hoc" bucket. **When attribution is genuinely ambiguous, ask the user rather
-than guessing.**
+For cross-item runs, untagged jots and the user's commits not tied to any item
+collect under an "ad-hoc" bucket. **When attribution is genuinely ambiguous,
+ask the user rather than guessing.**
 
 ### 4. Synthesize the recap
 
 Write headline-style, outcome-focused prose — what moved, not a transcript.
-Sections:
+
+**Item-scoped run:** a single narrative for that item — what progressed
+(from `log/` entries + commits), with a light commit/files tally where
+useful. No "By item"/"Ad-hoc" split; there's only one item.
+
+**Cross-item run**, sections:
 
 - **Summary** — 3–6 bullets: the window's headline accomplishments across all
   items.
 - **By item** — one subsection per slug that saw activity: what progressed
-  (from breadcrumbs + commits + that item's status entries + tagged jots), with
-  a light commit/files tally where useful. Link the item (`[[<slug>]]`).
+  (from that item's `log/` entries + commits), with a light commit/files
+  tally where useful. Link the item (`[[<slug>]]`).
 - **Ad-hoc** — untagged jots and the user's stray (item-less) commits, as a
   short list.
 
@@ -133,8 +166,9 @@ job — don't duplicate it here.
 
 ### 5. Write the retrospective file
 
-Save to `~/work/data/retrospectives/` (a flat directory — no dated subfolders),
-named by the window's **end** date and its span:
+**Cross-item runs only.** Save to `~/work/data/retrospectives/` (a flat
+directory — no dated subfolders), named by the window's **end** date and its
+span:
 
 - `~/work/data/retrospectives/<end-date>.retrospective-<N>d.md`
 
@@ -146,25 +180,23 @@ field; span plus start/end is the single source of truth. Then the
 step 4. See [[retrospectives/CLAUDE|retrospectives/CLAUDE.md]] for the
 directory's schema.
 
-### 6. Propose status write-backs
+**Item-scoped runs skip this step entirely** — the recap is printed (step 8)
+and not persisted, since it's cheaply re-derivable from that item's own
+`log/` at any time; see the note in `retrospectives/CLAUDE.md` for why this
+directory only holds cross-item roll-ups.
 
-For each **directory** item with *material* progress in the window — material =
-it has breadcrumbs, the user's own commits, or tagged jots in the range — draft,
-but do not yet write:
+### 6. Propose a refreshed Current state
 
-- a `status/` entry, `items/<slug>/status/<end-date>.md` (or `-HHMM` if one
-  exists for that date), summarizing what moved, what's blocked, what's next, in
-  the curated voice `status/` expects; and
-- a refreshed "## Current state" paragraph for the item's front door.
+For each item with *material* progress in the window — material = it has
+`log/` entries or the user's own commits in the range — draft, but do not yet
+write, a refreshed `## Current state` paragraph for the item's front door,
+in the curated voice the front door expects.
 
-Present the drafts and ask the user to confirm per item (write / edit / skip).
+Present the draft and ask the user to confirm per item (write / edit / skip).
 **Write only on confirmation** — judging significance and framing is the whole
 reason this is an LLM skill and not the dumb hook, but the user owns the commit.
 
-**Single-file items** have no `status/` to write to. If one shows sustained
-progress (several breadcrumbs accumulating under its slug), don't write status —
-instead flag it as a **promotion signal**: suggest promoting it to a directory
-item (per `items/CLAUDE.md`). Until then it stays diary-only.
+An item-scoped run only ever has one item to consider here — itself.
 
 ### 7. Update the index pointer
 
@@ -180,7 +212,8 @@ section itself is missing, warn rather than fabricating it.
 
 ### 8. Print
 
-Print the recap to stdout and the saved file path.
+Print the recap to stdout, plus the saved file path for cross-item runs
+(item-scoped runs have no file to point at — the recap itself is the output).
 
 ## Notes
 
@@ -189,10 +222,10 @@ Print the recap to stdout and the saved file path.
   that's the accepted trade of intentional curation.
 - **Propose, don't autonomously mutate.** Step 6 never writes into an item
   without per-item confirmation.
-- **Read-derived.** Source of truth is breadcrumb/jot/status frontmatter and git
-  history; the retrospective ranks and frames, it doesn't invent.
-- **Re-runs are safe.** The retrospective file regenerates; status write-backs
-  are append-only `status/` entries written only on confirmation.
+- **Read-derived.** Source of truth is each item's `log/` frontmatter, `jots/`,
+  and git history; the retrospective ranks and frames, it doesn't invent.
+- **Re-runs are safe.** The retrospective file regenerates for cross-item runs;
+  the `## Current state` write-back happens only on confirmation.
 - **Past windows are immutable.** Regenerating the current window is fine;
   treat regenerating an *old* window as fix-outright-errors-only — a
-  retrospective reflects what the diary captured at the time.
+  retrospective reflects what was captured at the time.
