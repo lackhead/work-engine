@@ -47,39 +47,23 @@ Arguments:
    -d|--debug    Show diagnostic detail (implies --verbose)
 
 Description:
-   create   Non-interactive: takes only a title, no prompts. Always creates
-            items/<slug>/<slug>.md, status active, top-level. A missing
-            title is a usage error, except with -q/--quick (see below).
+   create   Creates items/<slug>/<slug>.md from the title, status active,
+            top-level. -s/--slug sets the slug explicitly. -q/--quick
+            skips the title requirement for a throwaway item (tags:
+            [quick]).
 
-            The slug is kebab-cased from the title, truncated to 30
-            characters at a word boundary (not mid-word) -- a long title
-            doesn't produce an unwieldy slug. -s/--slug gives a deliberate
-            short name instead (sanitized, not truncated). Either way, a
-            collision with an existing slug appends -2, -3, ... rather
-            than refusing -- expected once slugs are short, not an error.
+   list     Display work items: slug, status, due, last update. Defaults
+            to top-level (active + blocked); --backlog/--archived/--all
+            broaden the scope.
 
-            -q/--quick additionally: an untitled item gets a generated
-            timestamp title instead of a usage error, and tags: [quick] is
-            added. `workon` checks this tag itself at session end to decide
-            whether the item was ever used for anything (see `workon --help`).
-
-   list     Display work items, including: slug, status, due, and last
-            update time. Defaults to top-level (active + blocked), with
-            --backlog/--archived/--all available to change the scope.
-
-   show     Prints the item's front door (<slug>.md) as-is — piped through
-            $PAGER if set, else plain output. Looks in every zone.
+   show     Prints the item's front door (<slug>.md) — piped through
+            $PAGER if set, else plain output.
 
    archive  Sets status to completed/cancelled (prompted if not given as a
-            flag) plus the completed: date, moves the item to
-            items/archived/<slug>/, and removes its worktree(s) if any.
-            Looks for <slug> under items/ and items/backlog/.
+            flag) and moves the item to items/archived/<slug>/.
 
-   delete   Removes the item's worktree(s) and its directory outright — no
-            archived/ copy, nothing kept. Refuses unless <slug> is tagged
-            `quick` (--force overrides); this is the one place in the tool
-            that actually destroys content, reserved for quick items that
-            never accumulated any.
+   delete   Removes the item's directory outright. Refuses unless <slug>
+            is tagged `quick` (--force overrides).
 
 Examples:
    workitem create Rework cache host info
