@@ -61,9 +61,11 @@ complete -c workitem -n __fish_use_subcommand -a show    -d 'Print a work item f
 complete -c workitem -n __fish_use_subcommand -a archive -d 'Archive a work item'
 complete -c workitem -n __fish_use_subcommand -a delete  -d 'Delete a work item outright'
 
-# create [-q|--quick] [title...]
+# create [-q|--quick] [-s|--slug <slug>] [title...]
 complete -c workitem -n '__fish_seen_subcommand_from create' -s q -l quick \
     -d 'Skip prompts; active/top-level, tags: [quick]'
+complete -c workitem -n '__fish_seen_subcommand_from create' -s s -l slug \
+    -x -d 'Deliberate short slug (skip auto-truncation)'
 
 # list [--backlog|--archived|--all] [--status <value>]
 complete -c workitem -n '__fish_seen_subcommand_from list' -l backlog  -d 'Show items/backlog/'

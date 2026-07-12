@@ -35,7 +35,7 @@ workitem: create, list, show, archive, and delete work items under ~/work/data/i
 
 Usage:
    workitem [ -h|--help ]
-   workitem [ -v|--verbose ] [ -d|--debug ] create  [-q|--quick] [title...]
+   workitem [ -v|--verbose ] [ -d|--debug ] create  [-q|--quick] [-s|--slug <slug>] [title...]
    workitem [ -v|--verbose ] [ -d|--debug ] list    [--backlog|--archived|--all] [--status <value>]
    workitem [ -v|--verbose ] [ -d|--debug ] show    <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] archive <slug> [--completed|--cancelled]
@@ -47,10 +47,16 @@ Arguments:
    -d|--debug    Show diagnostic detail (implies --verbose)
 
 Description:
-   create   Non-interactive: takes only a title (kebab-cased into the slug),
-            no prompts. Always creates items/<slug>/<slug>.md, status active,
-            top-level. A missing title is a usage error, except with -q/--quick
-            (see below).
+   create   Non-interactive: takes only a title, no prompts. Always creates
+            items/<slug>/<slug>.md, status active, top-level. A missing
+            title is a usage error, except with -q/--quick (see below).
+
+            The slug is kebab-cased from the title, truncated to 30
+            characters at a word boundary (not mid-word) -- a long title
+            doesn't produce an unwieldy slug. -s/--slug gives a deliberate
+            short name instead (sanitized, not truncated). Either way, a
+            collision with an existing slug appends -2, -3, ... rather
+            than refusing -- expected once slugs are short, not an error.
 
             -q/--quick additionally: an untitled item gets a generated
             timestamp title instead of a usage error, and tags: [quick] is
@@ -79,6 +85,7 @@ Examples:
    workitem create Rework cache host info
    workitem create -q
    workitem create --quick Fix the Ansible lint warning
+   workitem create -s ad-backup-crons Remove -n from the AD backup crons once...
    workitem list
    workitem list --backlog
    workitem list --all --status blocked
@@ -89,7 +96,24 @@ Examples:
 EOF
 
 trim()  { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
-kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
+
+# Kebab-case $1, truncated to at most $2 characters (default 30). Truncation
+# snaps back to the last complete word boundary that fits rather than
+# cutting mid-word -- a long title should still read as words, not a
+# ragged fragment. (A single first word longer than the cap is the one
+# case that still gets a hard cut -- nothing left to snap back to.)
+kebab() {
+    local s max cut
+    s=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+    max=${2:-30}
+    if [ ${#s} -le "$max" ]; then
+        printf '%s' "$s"
+        return
+    fi
+    cut="${s:0:$max}"
+    [[ "$cut" == *-* ]] && cut="${cut%-*}"
+    printf '%s' "$cut"
+}
 
 # Truncate to at most $2 chars, marking truncation with a trailing '..'
 # (plain ASCII, not a unicode ellipsis, to avoid locale-dependent character
@@ -118,12 +142,16 @@ file_mtime_date() {
 ### Subcommands
 ###
 wi_create() {
-    local quick=false title_parts=() title made slug itemdir file a
-    for a in "$@"; do
+    local quick=false slug_opt='' title_parts=() title made slug itemdir file a
+    while [ $# -gt 0 ]; do
+        a=$1
         case "$a" in
             -q|--quick) quick=true ;;
+            -s|--slug)  shift; slug_opt=${1:-} ;;
+            --slug=*)   slug_opt=${a#--slug=} ;;
             *)          title_parts+=("$a") ;;
         esac
+        shift
     done
 
     title=''
@@ -131,30 +159,41 @@ wi_create() {
     title="$(trim "$title")"
     if [ -z "$title" ] && [ "$quick" = true ]; then
         # Seconds, not just minutes — two `--quick` runs inside the same
-        # minute would otherwise generate the same slug and the exists-check
-        # below would reject the second one outright.
+        # minute would otherwise generate the same slug before the
+        # collision-suffix loop below even gets a chance to kick in.
         title="Quick task — $(date '+%Y-%m-%d %H:%M:%S')"
     fi
     if [ -z "$title" ]; then
-        print_error "Usage: workitem create [-q|--quick] <title...> — title is required."
+        print_error "Usage: workitem create [-q|--quick] [-s|--slug <slug>] <title...> — title is required."
         return 1
     fi
 
     made=$(date +%Y-%m-%d)
-    slug=$(kebab "$title")
+    # An explicit -s/--slug is sanitized but not truncated -- it's already a
+    # deliberate short name, not something derived from a long title.
+    if [ -n "$slug_opt" ]; then
+        slug=$(kebab "$slug_opt" 200)
+    else
+        slug=$(kebab "$title")
+    fi
     print_debug "Creating item: slug=$slug quick=$quick"
 
-    # Refuse if an item with this slug exists in any zone (file or directory —
-    # the latter check catches legacy single-file items too, just in case).
-    # Still checked against backlog/archived even though create itself never
-    # places an item there anymore — a pre-existing item in either zone must
-    # still block reuse of its slug.
-    local z
-    for z in '' backlog/ archived/; do
-        if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
-            print_error "An item named '$slug' already exists (items/$z)."; return 1
-        fi
+    # Resolve a collision by appending -2, -3, ... rather than refusing --
+    # once slugs are truncated/short, two unrelated titles legitimately
+    # landing on the same slug is expected, not an error.
+    local base="$slug" n=1 z collide
+    while true; do
+        collide=false
+        for z in '' backlog/ archived/; do
+            if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
+                collide=true; break
+            fi
+        done
+        [ "$collide" = true ] || break
+        n=$((n + 1))
+        slug="$base-$n"
     done
+    [ "$slug" != "$base" ] && print_verbose "Slug '$base' taken — using '$slug'"
 
     itemdir="$WORK/data/items/$slug"
     file="$itemdir/$slug.md"

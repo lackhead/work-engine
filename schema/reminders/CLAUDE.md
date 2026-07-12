@@ -110,16 +110,23 @@ Optional fields:
 - **File names:** `<kebab-case-description>.md` — no date prefix. The
   creation date already lives in the `created:` frontmatter field, so
   putting it in the filename too would just be duplication; dropping it
-  also shortens what you type for `show`/`archive`/`delete`/`due`. The
-  description is short enough to be meaningful at a glance:
+  also shortens what you type for `show`/`archive`/`delete`/`due`.
+- **Auto-derived and capped at 30 characters.** `workreminder create`
+  kebab-cases the description into the slug, truncated at a word boundary
+  (never mid-word) — a long description doesn't produce an unwieldy
+  filename:
   - `check-on-mikes-pr-progress.md`
   - `revisit-rocky-firewall-quirk.md`
-  - `ask-lucas-about-q3-staffing.md`
+  - `parse-check-the-bootstrap.md` (from a much longer description)
+- `-s/--slug` gives a deliberate short name instead, when truncation
+  wouldn't land on a good one (e.g. `beta-lm-license-hague` beats whatever
+  the first 30 characters of a long sentence happen to be).
 - Chronological order is no longer free from an alphabetical directory
   listing (that was the date prefix's doing) — `workreminder list` sorts
   by `created:` explicitly instead.
-- `workreminder create` refuses if the kebab-cased slug collides with an
-  existing reminder, rather than silently overwriting it.
+- A collision with an existing slug appends `-2`, `-3`, ... rather than
+  refusing — expected once slugs are short and possibly truncated, not an
+  error.
 - **No spaces** in filenames, per the vault-wide convention.
 
 ## How Claude should engage with reminders
