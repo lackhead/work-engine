@@ -310,7 +310,7 @@ item links never include the zone:
 - **Never put the zone in a link** (`[[items/backlog/foo]]` would rot when foo
   moves). Don't write `[[items/...]]` paths at all; the bare/suffix forms
   resolve regardless of zone.
-- **Reminders:** `[[reminders/<YYYY-MM-DD-name>]]`. **Jots:** full path,
+- **Reminders:** `[[reminders/<name>]]`. **Jots:** full path,
   e.g. `[[jots/2026/04/29/2026-04-29.log]]`. **Documents:**
   `[[docs/<name>]]`. **Repos:** backticked paths, never wikilinks.
 

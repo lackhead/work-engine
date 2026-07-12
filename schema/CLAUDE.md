@@ -160,7 +160,7 @@ ever serve.
 │   │   ├── backlog/          # proposed + deferred items
 │   │   └── archived/         # items out of active circulation
 │   ├── reminders/             # atomic notes that need follow-up (no work session)
-│   │   ├── YYYY-MM-DD-<desc>.md
+│   │   ├── <desc>.md          # created: date lives in frontmatter, not the filename
 │   │   └── archived/          # reminders moved out of active circulation
 │   ├── docs/                  # standalone documents not yet tied to a work item
 │   │   ├── <topic-name>.md    # any document
