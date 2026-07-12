@@ -49,38 +49,21 @@ Arguments:
    -d|--debug    Show diagnostic detail (implies --verbose)
 
 Description:
-   create   Always prompts — for the description, and (unless -i/--item is
-            given) for a related item. Creates reminders/<slug>.md, status
-            active, created: set to today (the date lives in frontmatter
-            only, not the filename).
+   create   Prompts for a description and creates reminders/<slug>.md.
 
-            After the description, proffers a default slug — kebab-cased
-            from the description, truncated to 30 characters at a word
-            boundary (not mid-word) — and lets you type a replacement right
-            there (blank accepts the default). That's the best moment to
-            judge whether the mechanical slug is any good, now that the
-            full description is in front of you. A collision with an
-            existing slug appends -2, -3, ... rather than refusing.
+   list     Display active reminders, sorted by created date; 
+            --archived/--all broaden the scope
 
-   list     Display reminders: due, description, name -- sorted by
-            created: ascending (oldest first). Defaults to active (top
-            level); --archived/--all broaden the scope, and add a STATUS
-            column (addressed/dismissed).
-
-   show     Prints the reminder file as-is — piped through $PAGER if set,
-            else plain output. Looks in both zones.
+   show     Prints the reminder informatio — piped through $PAGER if set,
+            else plain output
 
    archive  Sets status to addressed/dismissed (prompted if not given as a
-            flag) and moves the reminder to reminders/archived/. Mirrors
-            workitem archive --completed/--cancelled.
+            flag) and moves the reminder to reminders/archived/
 
-   delete   Removes a reminder outright — for one created by mistake, not
-            the normal end-of-life path (that's archive, which preserves
-            the body). Always confirms before deleting; no silent path.
+   delete   Removes a reminder outright (delete from inventory)
 
-   due      Sets or changes the optional due: field (bare YYYY-MM-DD, no
-            due-type — reminders stay lower-overhead than items). Omitting
-            the date clears it.
+   due      Sets or changes the (optional) due date (bare YYYY-MM-DD format);
+            omitting the date clears any existing due date.
 
 Examples:
    workreminder create

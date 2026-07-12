@@ -59,41 +59,22 @@ Arguments:
    -d|--debug        Show diagnostic detail (implies --verbose)
 
 Description:
-   create   Always prompts — for the note text, and (unless -i/--item is
-            given) for an item to attribute it to. A jot tagged to an item
-            is written directly into that item's own items/<slug>/log/, the
-            sparse end of its session timeline — at that point it's that
-            item's history, not a jot anymore (see `tag` below). An
-            untagged jot (blank prompt, or -i/--item omitted) goes into the
-            itemless jots/YYYY/MM/DD/<date>.log.md. -r/--repo picks which
-            repo to read the latest commit from for attribution (default:
-            cwd, if it's a real repo — never the vault itself); you're
-            always asked to confirm before a commit is attached.
-
-            Naming an item that doesn't exist warns and falls back to
-            untagged rather than fabricating an item directory.
+   create   Creates a new work entry for a given work item, or if not associated
+            with an item, into the jots/ directory (by date). If --repo is given, 
+            the latest commit in that repo will be included as context.
 
    list     Show untagged jots from jots/, defaulting to today. --on <date>
             shows one specific day; --since <date> shows a range from that
-            day through today. --on/--since are mutually exclusive. Once a
-            jot is tagged into an item's log/ it's no longer shown here —
-            see it via `workitem show` or that item's own log/.
+            day through today. 
 
    edit     Add follow-up context to an existing untagged jot — not a
             rewrite, an append. Lists candidates for the given date
             (default: today), asks which one, then appends the follow-up
-            text. Only ever operates on jots/ — a jot already tagged into
-            an item's log/ isn't a candidate anymore.
+            text. 
 
-   delete   Confirm-gated removal of a single untagged jot, for outright
-            mistakes. Always shows the full entry and asks before
-            deleting — there is no silent path.
+   delete   Deletes an untagged jot outright
 
-   tag      Retroactively attribute an existing untagged jot to an item:
-            picks a candidate the same way edit/delete do, then moves it
-            into that item's own items/<slug>/log/ as a dated jot entry
-            (same shape `create -i` produces) and removes it from jots/.
-            The item-slug can be given positionally or prompted for.
+   tag      Retroactively attribute an existing untagged jot to a work item
 
 Examples:
    workjot create
