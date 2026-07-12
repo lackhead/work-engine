@@ -36,7 +36,7 @@ workreminder: create, list, show, archive, delete, and set due dates on reminder
 
 Usage:
    workreminder [ -h|--help ]
-   workreminder [ -v|--verbose ] [ -d|--debug ] create  [-i|--item <slug>] [-s|--slug <slug>] [description...]
+   workreminder [ -v|--verbose ] [ -d|--debug ] create  [-i|--item <slug>]
    workreminder [ -v|--verbose ] [ -d|--debug ] list    [--archived|--all]
    workreminder [ -v|--verbose ] [ -d|--debug ] show    <name>
    workreminder [ -v|--verbose ] [ -d|--debug ] archive <name> [--addressed|--dismissed]
@@ -49,17 +49,18 @@ Arguments:
    -d|--debug    Show diagnostic detail (implies --verbose)
 
 Description:
-   create   Creates reminders/<slug>.md, status active, created: set to
-            today (the date lives in frontmatter only, not the filename).
-            Prompts for the description if not given positionally, and for
-            a related item if -i/--item isn't given.
+   create   Always prompts — for the description, and (unless -i/--item is
+            given) for a related item. Creates reminders/<slug>.md, status
+            active, created: set to today (the date lives in frontmatter
+            only, not the filename).
 
-            The slug is kebab-cased from the description, truncated to 30
-            characters at a word boundary (not mid-word). -s/--slug gives
-            a deliberate short name instead (sanitized, not truncated).
-            Either way, a collision with an existing slug appends -2, -3,
-            ... rather than refusing -- expected once slugs are short, not
-            an error.
+            After the description, proffers a default slug — kebab-cased
+            from the description, truncated to 30 characters at a word
+            boundary (not mid-word) — and lets you type a replacement right
+            there (blank accepts the default). That's the best moment to
+            judge whether the mechanical slug is any good, now that the
+            full description is in front of you. A collision with an
+            existing slug appends -2, -3, ... rather than refusing.
 
    list     Display reminders: due, description, name -- sorted by
             created: ascending (oldest first). Defaults to active (top
@@ -82,9 +83,8 @@ Description:
             the date clears it.
 
 Examples:
-   workreminder create Check nagios alert thresholds after deploy
-   workreminder create -i nagios Follow up with team on alert runbook
-   workreminder create -s beta-lm-license-hague Ping researcher on 2026-09-01 for...
+   workreminder create
+   workreminder create -i nagios
    workreminder list
    workreminder list --all
    workreminder show check-on-mikes-pr-progress
@@ -140,27 +140,22 @@ resolve_reminder() {
 ### Subcommands
 ###
 wr_create() {
-    local item='' slug_opt='' desc_parts=() desc a
+    local item='' a
     while [ $# -gt 0 ]; do
         a=$1
         case "$a" in
             -i|--item) shift; item=${1:-} ;;
             --item=*)  item=${a#--item=} ;;
-            -s|--slug) shift; slug_opt=${1:-} ;;
-            --slug=*)  slug_opt=${a#--slug=} ;;
             -*)        print_error "Unknown option: $a"; return 1 ;;
-            *)         desc_parts+=("$a") ;;
+            *)         print_error "workreminder create takes no positional arguments — it always prompts for the description."; return 1 ;;
         esac
         shift
     done
 
-    desc=''
-    [ ${#desc_parts[@]} -gt 0 ] && desc="${desc_parts[*]}"
+    # --- description: always prompted, never positional ---
+    local desc
+    read -r -p "reminder: " desc
     desc="$(trim "$desc")"
-    if [ -z "$desc" ]; then
-        read -r -p "reminder: " desc
-        desc="$(trim "$desc")"
-    fi
     if [ -z "$desc" ]; then
         print_error "Empty description — nothing created."; return 1
     fi
@@ -175,14 +170,17 @@ wr_create() {
         print_warning "'$item' isn't an existing item; tagging anyway."
     fi
 
-    local date_str slug file
-    date_str=$(date +%Y-%m-%d)
-    # An explicit -s/--slug is sanitized but not truncated -- it's already a
-    # deliberate short name, not something derived from a long description.
-    if [ -n "$slug_opt" ]; then
-        slug=$(kebab "$slug_opt" 200)
+    # --- slug: proffer a truncated default, let the user override it right
+    # here -- now that the description is fully written out, this is the
+    # best moment to judge whether the mechanical slug is any good. ---
+    local default_slug slug
+    default_slug=$(kebab "$desc")
+    read -r -p "slug [$default_slug]: " slug
+    slug="$(trim "$slug")"
+    if [ -n "$slug" ]; then
+        slug=$(kebab "$slug" 200)
     else
-        slug=$(kebab "$desc")
+        slug="$default_slug"
     fi
 
     # Resolve a collision by appending -2, -3, ... rather than refusing --
@@ -195,6 +193,8 @@ wr_create() {
     done
     [ "$slug" != "$base" ] && print_verbose "Slug '$base' taken — using '$slug'"
 
+    local date_str file
+    date_str=$(date +%Y-%m-%d)
     file="$WORK/data/reminders/$slug.md"
     print_verbose "Creating reminder: $file"
 

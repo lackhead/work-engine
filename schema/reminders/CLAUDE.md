@@ -111,16 +111,19 @@ Optional fields:
   creation date already lives in the `created:` frontmatter field, so
   putting it in the filename too would just be duplication; dropping it
   also shortens what you type for `show`/`archive`/`delete`/`due`.
-- **Auto-derived and capped at 30 characters.** `workreminder create`
-  kebab-cases the description into the slug, truncated at a word boundary
-  (never mid-word) — a long description doesn't produce an unwieldy
-  filename:
+- **Auto-derived and capped at 30 characters, confirmed interactively.**
+  `workreminder create` kebab-cases the description into a default slug,
+  truncated at a word boundary (never mid-word), then proffers it for you
+  to accept (blank) or override right there — the best moment to judge
+  whether the mechanical slug is any good, since the full description is
+  already in front of you:
   - `check-on-mikes-pr-progress.md`
   - `revisit-rocky-firewall-quirk.md`
-  - `parse-check-the-bootstrap.md` (from a much longer description)
-- `-s/--slug` gives a deliberate short name instead, when truncation
-  wouldn't land on a good one (e.g. `beta-lm-license-hague` beats whatever
-  the first 30 characters of a long sentence happen to be).
+  - `parse-check-the-bootstrap.md` (mechanical, from a much longer
+    description)
+  - `beta-lm-license-hague.md` (hand-typed at the prompt, replacing a
+    mechanical default that would have landed on a less meaningful part
+    of a long sentence)
 - Chronological order is no longer free from an alphabetical directory
   listing (that was the date prefix's doing) — `workreminder list` sorts
   by `created:` explicitly instead.
@@ -133,12 +136,14 @@ Optional fields:
 
 ### Adding a reminder
 
-`workreminder create` is the tool: it creates a single file with `created:`
-set to today and `status: active`, prompting for the description (used in
-both the filename and the body heading) and, optionally, `-i/--item` to set
-`related-item`. It does not prompt for other optional fields unless brought
-up. The body is added only when there's context worth capturing — most
-reminders are frontmatter-only.
+`workreminder create` is the tool: always interactive, never takes the
+description on the command line (only `-i/--item` is a flag). It prompts
+for the description (used in both the body heading and, kebab-cased, the
+default slug), then a related item if `-i/--item` wasn't given, then
+proffers the default slug for you to accept or override before writing
+`created:` (today) and `status: active`. It does not prompt for other
+optional fields unless brought up. The body is added only when there's
+context worth capturing — most reminders are frontmatter-only.
 
 Adding a reminder is the act of saying "this needs follow-up,"
 which is why `active` is the default — there is no `proposed` for

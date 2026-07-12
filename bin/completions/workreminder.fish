@@ -69,11 +69,9 @@ complete -c workreminder -n __fish_use_subcommand -a archive -d 'Archive a remin
 complete -c workreminder -n __fish_use_subcommand -a delete  -d 'Delete a reminder outright'
 complete -c workreminder -n __fish_use_subcommand -a due     -d 'Set or clear a due date'
 
-# create [-i|--item <slug>] [-s|--slug <slug>] [description...]
+# create [-i|--item <slug>] -- always prompts for description + slug confirm
 complete -c workreminder -n '__fish_seen_subcommand_from create' -s i -l item \
     -x -a '(__workreminder_item_slugs)' -d 'related work item'
-complete -c workreminder -n '__fish_seen_subcommand_from create' -s s -l slug \
-    -x -d 'Deliberate short slug (skip auto-truncation)'
 
 # list [--archived|--all]
 complete -c workreminder -n '__fish_seen_subcommand_from list' -l archived -d 'Show reminders/archived/'
