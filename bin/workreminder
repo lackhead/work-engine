@@ -291,6 +291,13 @@ wr_archive() {
     sed "s/^status:.*/status: $newstatus/" "$src" > "$tmp"
     mv "$tmp" "$src"
     print_debug "Frontmatter updated: status=$newstatus"
+    # Stage the edit now, at its current path, before the `git mv` below --
+    # otherwise `git mv` can stage the rename using the index's stale
+    # (pre-edit) blob instead of this file's current content, silently
+    # dropping the frontmatter edit from the eventual commit.
+    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1; then
+        git -C "$WORK/data" add "$src" 2>/dev/null || true
+    fi
 
     mkdir -p "$root/archived"
     local dest="$root/archived/$name.md"

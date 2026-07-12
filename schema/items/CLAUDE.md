@@ -137,19 +137,22 @@ convention as the old diary breadcrumbs):
   `## Commits` / `## Files changed` lists. No interpretation — that's the
   front door's job. Multiple sessions for the item in a day stack as `01`,
   `02`, ….
-- **`<YYYY-MM-DD>.<name>.jot.NN.md`** — a jot tagged to this item, written by
-  `workjot create` when given this item's slug at the attribution prompt.
-  Minimal frontmatter (a timestamp, an optional commit reference); a
-  one-line hand-written body. The sparse end of the same timeline — same
-  directory, same per-event-file granularity, just less populated. An
-  *untagged* jot never appears here — it lands in `jots/` instead (see
-  `jots/CLAUDE.md`).
+- **`<YYYY-MM-DD>.<name>.jot.NN.md`** — a jot attributed to this item, either
+  written directly here by `workjot create` (given this item's slug at the
+  attribution prompt) or moved here retroactively by `workjot tag` from an
+  originally-untagged jot in `jots/` (see `jots/CLAUDE.md`). Minimal
+  frontmatter (a timestamp, an optional commit reference); a one-line
+  hand-written body. The sparse end of the same timeline — same directory,
+  same per-event-file granularity, just less populated.
 
-**Lifecycle:** session breadcrumbs are immutable once written — machine
-facts, never hand-edited. Jot entries follow the same append-only-with-two-
-exceptions rule as `jots/`: `workjot edit` (add follow-up context later) and
-`workjot delete` (confirm-gated removal for a mistake) are the only tooled
-mutations; nothing else in `log/` gets rewritten.
+**Lifecycle:** everything in `log/` is immutable once written, session
+breadcrumbs and jot entries alike. The moment a jot is attributed to an
+item — at creation via `create -i`, or retroactively via `tag` — it stops
+being "a jot" in any tooled sense and becomes that item's history like any
+other `log/` entry; `workjot edit`/`delete` only ever operate on jots still
+sitting in `jots/`, never on one already here. A typo in a `log/` jot entry
+is corrected by hand, same as a session breadcrumb would be (rare, and not
+tooled).
 
 There is no `status/` directory. A prior schema kept dated, curated
 snapshots there, written by the `retrospective` skill after confirmation —
