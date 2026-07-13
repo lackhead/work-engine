@@ -1,9 +1,13 @@
-# Completions for `workreminder` (create/list/archive/delete/due/promote subcommands).
+# Completions for `workreminder` (create/list/show/archive/delete/due/promote subcommands).
 # Canonical location: ~/work/engine/bin/completions/workreminder.fish (the work-engine repo);
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
 
 function __workreminder_root
-    echo $HOME/work
+    if set -q WORK_ROOT; and test -n "$WORK_ROOT"
+        echo $WORK_ROOT
+    else
+        echo $HOME/work
+    end
 end
 
 # How many positionals are already completed after the subcommand.
