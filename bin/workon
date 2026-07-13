@@ -339,6 +339,12 @@ cd "$start" || { print_error "Cannot cd to $start"; exit 1; }
 export CLAUDE_CODE_DISABLE_TERMINAL_TITLE
 printf '\033]1;%s\007\033]2;workon: %s\007' "$slug" "$slug"
 
+# Start of THIS run, in UTC to match the container-computed `end` (the box runs
+# on UTC). Handed to the breadcrumb below so it measures this run, not the
+# transcript's first timestamp (which for a resumed session is the original
+# session's start).
+session_start=$(date -u +%Y-%m-%dT%H:%M:%S%z | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')
+
 dexec=(docker exec -it --user clake -w "$start"
        -e TERM -e CLAUDE_CODE_DISABLE_TERMINAL_TITLE "$CONTAINER")
 if [ -n "$existing" ]; then
@@ -349,6 +355,27 @@ else
     "${dexec[@]}" claude ${flags[@]+"${flags[@]}"}
 fi
 rc=$?
+
+###
+### Post-session: write the session breadcrumb
+###
+# workon owns this now instead of a SessionEnd hook, which fired unreliably on
+# some exit paths (a long session ended by a hard exit could leave no
+# breadcrumb at all). Runs the breadcrumb script inside the box (the transcript
+# lives on the container volume; the item log/ it writes is bind-mounted, so the
+# result shows up host-side). The session's transcript is the newest .jsonl in
+# its project dir, and Claude names transcripts <session-id>.jsonl — so the
+# basename is the session id. `start` is workon's own launch time (above).
+bc_tp=$(docker exec "$CONTAINER" sh -c "ls -t '$HOME/.claude/projects/$enc'/*.jsonl 2>/dev/null | head -1" 2>/dev/null)
+if [ -n "$bc_tp" ]; then
+    bc_sid=$(basename "$bc_tp" .jsonl)
+    print_verbose "Writing breadcrumb for $slug (session $bc_sid)"
+    printf '{"cwd":"%s","session_id":"%s","transcript_path":"%s","start":"%s"}' \
+        "$start" "$bc_sid" "$bc_tp" "$session_start" \
+        | docker exec -i --user clake "$CONTAINER" "$WORK/engine/bin/work-session-breadcrumb"
+else
+    print_verbose "No transcript found for this session — no breadcrumb written."
+fi
 
 ###
 ### Post-session: the --quick sweep

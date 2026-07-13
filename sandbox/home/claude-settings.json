@@ -13,17 +13,5 @@
     ]
   },
   "statusLine": { "type": "command", "command": "bash ~/work/engine/bin/claude-statusline" },
-  "effortLevel": "high",
-  "hooks": {
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/work/engine/bin/work-session-breadcrumb"
-          }
-        ]
-      }
-    ]
-  }
+  "effortLevel": "high"
 }
