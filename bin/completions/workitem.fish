@@ -1,4 +1,4 @@
-# Completions for `workitem` (create/list/show/append/activate/defer/block/
+# Completions for `workitem` (create/list/show/log/activate/defer/block/
 # unblock/archive/delete subcommands).
 # Canonical location: ~/work/engine/bin/completions/workitem.fish (the work-engine repo);
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
@@ -112,7 +112,7 @@ complete -c workitem -s h -l help    -d 'Show help'
 complete -c workitem -n __fish_use_subcommand -a create   -d 'Create a work item'
 complete -c workitem -n __fish_use_subcommand -a list     -d 'List work items'
 complete -c workitem -n __fish_use_subcommand -a show     -d 'Print a work item front door'
-complete -c workitem -n __fish_use_subcommand -a append   -d 'Record a note into the item log'
+complete -c workitem -n __fish_use_subcommand -a log      -d 'Record a note (existing item, or a new completed item)'
 complete -c workitem -n __fish_use_subcommand -a activate -d 'Move a backlog item to top-level (active)'
 complete -c workitem -n __fish_use_subcommand -a defer    -d 'Move a top-level item to backlog (deferred)'
 complete -c workitem -n __fish_use_subcommand -a block    -d 'Mark a top-level item blocked'
@@ -139,10 +139,10 @@ complete -c workitem -n '__fish_seen_subcommand_from list' -l status -x \
 complete -c workitem -n '__fish_seen_subcommand_from show; and test (__workitem_nargs) -eq 0' \
     -a '(__workitem_deletable_slugs)' -d item
 
-# append <slug> [-r|--repo <repo>]
-complete -c workitem -n '__fish_seen_subcommand_from append; and test (__workitem_nargs) -eq 0' \
-    -a '(__workitem_deletable_slugs)' -d item
-complete -c workitem -n '__fish_seen_subcommand_from append' -s r -l repo \
+# log [-r|--repo <repo>] [item-slug] -- never archived, matching wi_log's own restriction
+complete -c workitem -n '__fish_seen_subcommand_from log; and test (__workitem_nargs) -eq 0' \
+    -a '(__workitem_archivable_slugs)' -d item
+complete -c workitem -n '__fish_seen_subcommand_from log' -s r -l repo \
     -x -a '(__workitem_repos)' -d 'repo for git facts'
 
 # activate <slug>

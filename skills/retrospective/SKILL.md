@@ -1,14 +1,16 @@
 ---
 name: retrospective
-description: Roll up what was accomplished over a window — day, week, month, quarter, or an explicit range — cross-item or scoped to a single item — by reading each item's own log/ (session breadcrumbs + tagged jots), jots/, and worktree git history. Purely local and read-derived (no Slack/calendar). Saves a dated cross-item retrospective to ~/work/data/retrospectives/ and proposes a refreshed Current state for items with material progress.
+description: Roll up what was accomplished over a window — day, week, month, quarter, or an explicit range — cross-item or scoped to a single item — by reading each item's own log/ (session breadcrumbs + logged notes) and worktree git history. Purely local and read-derived (no Slack/calendar). Saves a dated cross-item retrospective to ~/work/data/retrospectives/ and proposes a refreshed Current state for items with material progress.
 user_invocable: true
 ---
 
 Summarize what got done over a requested window, optionally scoped to a
 single item, and (for cross-item runs) save it to
 `~/work/data/retrospectives/`. The retrospective is **read-derived and
-local**: it reads each item's own `log/`, the `jots/` tree, and git history
-across the worktrees — nothing else. The system is curated by intention, so
+local**: it reads each item's own `log/`, plus every item's front door (for
+the instant `log-<timestamp>` items born straight to `completed` — see
+below), and git history across the worktrees — nothing else. The system is
+curated by intention, so
 there is **no Slack or calendar ingestion**; the retrospective recaps what's
 already been captured, it doesn't go looking outside the tree.
 
@@ -90,27 +92,40 @@ to `retrospectives/` for these anyway (see step 5).
 
 **Item-scoped run:** walk just `items/<slug>/log/` (wherever that item
 currently sits — top level, `backlog/`, or `archived/`), filtering entries to
-the window by their `start`/`end` (breadcrumbs) or timestamp (jots). Collect:
+the window by their `start`/`end` (breadcrumbs) or `time` (logged notes).
+Collect:
 
 - **Session breadcrumbs** — `<date>.<slug>.session.<NN>.md`. Parse frontmatter
   (`slug`, `repo`, `branch`, `commits`, `files-changed`, `start`/`end`) and the
   one-line body.
-- **Tagged jots** — `<date>.<slug>.jot.<NN>.md`. Sparse, hand-written entries;
-  same directory, same per-event granularity.
+- **Logged notes** — `<date>.<slug>.log.<NN>.md` (`type: workitem-log`), and
+  any legacy `<date>.<slug>.jot.<NN>.md` (`type: jot`, from before `workitem
+  log` — see `items/CLAUDE.md`'s "Session log" section) — same shape, keep
+  recognizing both. Sparse, hand-written entries; same directory, same
+  per-event granularity.
 - **The user's own commits** in that item's worktree(s), filtered by author
   and date range (see the git filtering rule below).
 
 **Cross-item run:** for every date in the window, walk every item's
 `items/**/log/` (including `archived/`, since an item's activity during the
-window doesn't care where it sits today) and collect the same two file types
+window doesn't care where it sits today) and collect the same file types
 across all of them, plus:
 
-- **Jots in `jots/YYYY/MM/DD/<date>.log.md`** — itemless activity; these are
-  the only jots that stay ungrouped by slug (see below).
+- **Instant `log-<timestamp>` items** — activity with no existing item to
+  attach to is now an item in its own right, born directly into
+  `items/archived/` with no `log/` of its own (see `items/CLAUDE.md`'s
+  "Recording out-of-band work"). Recognize these among `items/archived/**` by
+  **both** signals together (avoids misreading a legitimately-titled item
+  that happens to start with "log-"): `made == completed` **and** slug
+  matching `^log-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$`.
+  Filter by their `made`/`completed` date falling in the window; their body
+  note (and optional `Commit:` line) is the entry — these are the only
+  entries that stay ungrouped by slug (see below), same role `jots/` used to
+  play before it retired.
 - **Git history — the user's own commits only, across every repo.**
-  Breadcrumbs and jots are the *intent* layer but they're lossy: the user
-  sometimes commits without jotting, so git is a primary source, not just
-  supporting detail. The catch is that the repos are **shared** —
+  Breadcrumbs and logged notes are the *intent* layer but they're lossy: the
+  user sometimes commits without logging it, so git is a primary source, not
+  just supporting detail. The catch is that the repos are **shared** —
   `~/work/repos/<repo>` and every worktree's `main` mix several admins'
   commits, and a worktree `git log` shows the *whole* shared history. So
   **always filter by author**:
@@ -139,9 +154,9 @@ already one slug). Then **cross-reference the two layers**:
 - A `log/` entry with **no** commit → still counts (planning, non-code
   work, investigations).
 
-For cross-item runs, untagged jots and the user's commits not tied to any item
-collect under an "ad-hoc" bucket. **When attribution is genuinely ambiguous,
-ask the user rather than guessing.**
+For cross-item runs, instant `log-<timestamp>` items and the user's commits
+not tied to any item collect under an "ad-hoc" bucket. **When attribution is
+genuinely ambiguous, ask the user rather than guessing.**
 
 ### 4. Synthesize the recap
 
@@ -158,8 +173,8 @@ useful. No "By item"/"Ad-hoc" split; there's only one item.
 - **By item** — one subsection per slug that saw activity: what progressed
   (from that item's `log/` entries + commits), with a light commit/files
   tally where useful. Link the item (`[[<slug>]]`).
-- **Ad-hoc** — untagged jots and the user's stray (item-less) commits, as a
-  short list.
+- **Ad-hoc** — instant `log-<timestamp>` items and the user's stray
+  (item-less) commits, as a short list.
 
 Keep it backward-looking. Outstanding / blocked / coming-due is the dashboard's
 job — don't duplicate it here.
@@ -218,12 +233,13 @@ Print the recap to stdout, plus the saved file path for cross-item runs
 ## Notes
 
 - **Local only — no Slack, no calendar.** The retrospective recaps captured
-  work. Things never captured (a hallway ask you didn't `workjot`) won't appear;
-  that's the accepted trade of intentional curation.
+  work. Things never captured (a hallway ask you didn't `workitem log`) won't
+  appear; that's the accepted trade of intentional curation.
 - **Propose, don't autonomously mutate.** Step 6 never writes into an item
   without per-item confirmation.
-- **Read-derived.** Source of truth is each item's `log/` frontmatter, `jots/`,
-  and git history; the retrospective ranks and frames, it doesn't invent.
+- **Read-derived.** Source of truth is each item's `log/` frontmatter (plus
+  instant `log-<timestamp>` items' front-door bodies) and git history; the
+  retrospective ranks and frames, it doesn't invent.
 - **Re-runs are safe.** The retrospective file regenerates for cross-item runs;
   the `## Current state` write-back happens only on confirmation.
 - **Past windows are immutable.** Regenerating the current window is fine;

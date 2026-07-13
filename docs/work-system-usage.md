@@ -29,7 +29,7 @@ and "A typical day," then dip into the task sections as needed.
   however you like (this instance does it automatically; see "Backups" below).
 
 A note on *where* commands run: `sandbox` and `workon` drive Docker, so they run
-on the **host**. The capture commands (`workjot` / `workreminder` / `workitem`),
+on the **host**. The capture commands (`workreminder` / `workitem`),
 `worktree`, and the skills just operate on vault files and work anywhere the
 vault is mounted — host or inside a session.
 
@@ -41,8 +41,9 @@ Every `work*` command takes `-h/--help`, `-v/--verbose`, and `-d/--debug`.
    `sandbox status` to check, `sandbox up` if needed.
 2. **Pick up work:** `workon nagios` → a Claude session opens in that item's
    worktree, resuming the last session if there was one.
-3. **Quick thing outside a session?** `workjot "bumped the alert threshold,
-   restarted nagios"` — captured to today's log without ceremony.
+3. **Quick thing outside a session?** `workitem log` — captured without
+   ceremony, either into an existing item's `log/` or as a new completed
+   item if there isn't one.
 4. **Something to not lose?** `workreminder "check the threshold held overnight"`.
 5. **New piece of work?** `workitem create Rework the cache host info`.
 6. **What should I be doing?** Run the `dashboard` skill — it ranks in-flight
@@ -55,24 +56,24 @@ generated snapshot. Update the *item*, then re-run `dashboard`.
 
 ## Capturing things
 
-Three commands, matched to three weights of work. When in doubt: a fact about
-*what you did* is a jot; a *follow-up* is a reminder; a *thing to work on* is an
-item.
+Two commands, matched to two weights of work. When in doubt: a fact about
+*what you did* is a log entry; a *follow-up* is a reminder; a *thing to work
+on* is an item.
 
-### `workjot` — record ad-hoc work
+### `workitem log` — record work done outside a session
 
 For work that never gets a session: quick fixes, hallway debugging, "Kate
-flagged X and I sorted it." Appends a timestamped line to today's jot log
-(`diary/YYYY/MM/DD/<date>.log.md`).
+flagged X and I sorted it." Writes into an existing item's `log/` if one
+applies, or creates a new, already-completed item to hold the note if not.
 
 ```bash
-workjot Restarted the stuck backup job on paris
-workjot -r Ansible Fixed the hostname template typo   # attach repo's latest commit
+workitem log nagios              # existing item, by slug — then prompts for the note
+workitem log -r Ansible           # attach repo's latest commit, then asks or creates
+workitem log                      # no context at all — asks interactively
 ```
 
-With `-r <repo>` (or when run from inside a repo's worktree) it offers to append
-the latest commit. Tag a jot to an item by mentioning its `[[slug]]` so the
-retrospective can fold it in.
+With `-r <repo>` (or when run from inside one of an item's worktrees) it
+offers to attach the latest commit alongside the note.
 
 ### `workreminder` — capture a follow-up
 
@@ -183,8 +184,8 @@ retrospective this quarter
 retrospective 2026-06-01..2026-06-15
 ```
 
-It reads breadcrumbs, jots, status entries, and *your own* git commits across
-the worktrees, writes a dated file to `retrospectives/`, and **proposes**
+It reads breadcrumbs, logged notes, status entries, and *your own* git commits
+across the worktrees, writes a dated file to `retrospectives/`, and **proposes**
 curated `status/` write-backs for items that saw real progress (writing only on
 your per-item confirmation). A standup is just a retrospective over the
 since-last-standup window plus a dashboard glance — no separate tool.
@@ -257,7 +258,7 @@ scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
 
 | Command | Does | Runs on |
 |---------|------|---------|
-| `workjot <note>` | Log ad-hoc work to today's jot log | vault |
+| `workitem log [-r\|--repo <repo>] [item-slug]` | Log ad-hoc work outside a session | vault |
 | `workreminder <desc>` | Capture a follow-up reminder | vault |
 | `workitem create [title...]` | Create a work item | vault |
 | `workitem list [--backlog\|--archived\|--all] [--status <v>]` | Quick glance at items | vault |
@@ -276,6 +277,6 @@ also take `-v/--verbose` and `-d/--debug`.
 
 - **Why it's built this way:** `~/work/engine/docs/work-system-architecture.md`.
 - **The precise rules for a content type:** that area's `CLAUDE.md` under
-  `~/work/engine/schema/` (`items/`, `reminders/`, `docs/`, `diary/`).
+  `~/work/engine/schema/` (`items/`, `reminders/`, `docs/`, `retrospectives/`).
 - **Setting up a new host/instance:** `~/work/engine/docs/work-system-setup.md`.
 - **This instance's backup + recovery:** `~/work/data/docs/work-data-backup.md`.

@@ -7,7 +7,7 @@ tags: [standards, tooling]
 # Coding standards for work-engine bin scripts
 
 Conventions for scripts in `~/work/engine/bin/` — the engine tooling for this
-work-management system (`workon`, `worktree`, `workinit`, `sandbox`, `workjot`,
+work-management system (`workon`, `worktree`, `workinit`, `sandbox`,
 `workitem`, `workreminder`, and any future scripts). The goal is a
 consistent experience: the same help format, the same color-coded output,
 the same option flags, regardless of which script you're using.
@@ -243,7 +243,7 @@ while [ $# -gt 0 ]; do
 done
 ```
 
-### Pattern 2: subcommand scripts (sandbox, worktree, workitem, workjot, workreminder)
+### Pattern 2: subcommand scripts (sandbox, worktree, workitem, workreminder)
 
 Parse global flags first with a `while` that `break`s at the first
 non-flag token, then dispatch to subcommand functions with the remaining
@@ -314,7 +314,7 @@ kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-
 `data/docs/`, or the vault root, because git walks upward to the nearest
 `.git`. That makes a planning session look like code work: the breadcrumb
 hook would record the vault's branch and its automated `backup:` commits,
-`workjot` would offer to attach them, and so on.
+`workitem log` would offer to attach them, and so on.
 
 Guard cwd-based git detection by comparing the repo's toplevel to the vault
 root (`$WORK/data`, not `$WORK` — `$WORK` is the plain outer directory that
@@ -331,7 +331,7 @@ Worktrees are exempt for free: each has its own `.git` that shadows the vault,
 so `git -C <worktree>` resolves to the worktree, not `~/work/data`. Tools that
 only ever use explicit `repos/<repo>` or worktree paths (`workon`, `worktree`)
 need no guard — the rule is specifically for tools that *infer* the repo from
-the current directory (`work-session-breadcrumb`, `workjot`).
+the current directory (`work-session-breadcrumb`, `workitem log`).
 
 ---
 

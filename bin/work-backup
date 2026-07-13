@@ -22,7 +22,7 @@ Arguments:
 
 Description:
    Stages all changes under ~/work/data (the vault — items, reminders, docs,
-   diary, retrospectives, index.md; never engine/ or repos/worktrees), commits
+   retrospectives, index.md; never engine/ or repos/worktrees), commits
    them, and pushes to the `origin` remote (work-backup:work-vault.git on
    sec.sci.utah.edu). A no-op when nothing changed. Built to run unattended
    from launchd every 4 hours; safe to run by hand anytime. Output is plain

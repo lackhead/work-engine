@@ -7,7 +7,7 @@ user_invocable: true
 Generate the curated front-page view of the work system and write it to
 `~/work/data/index.md`. The dashboard is **read-derived and local**: it computes
 everything from the tree (item frontmatter, reminders), each item's own `log/`
-(session breadcrumbs and tagged jots), and git (worktree activity). It never
+(session breadcrumbs and logged notes), and git (worktree activity). It never
 invents state — the source of truth is frontmatter and git history, and the
 dashboard only ranks and presents it. Capture is manual (the `work*` commands);
 the dashboard reflects what's been captured, it doesn't scrape external sources.
@@ -58,10 +58,11 @@ stale.
 For each in-flight item, find its most recent activity from two sources:
 
 - **The item's own `log/`:** the newest-dated file in `items/<slug>/log/`
-  (either a `.session.NN.md` or a `.jot.NN.md`, whichever sorts latest by
-  filename date) — read its `end:` (breadcrumb) or timestamp (jot). A single
-  directory listing per item; no cross-referencing anything outside the
-  item.
+  (`.session.NN.md`, `.log.NN.md`, or legacy `.jot.NN.md` — whichever sorts
+  latest by filename date; recognize all three, since real items still carry
+  `.jot.NN.md` history from before `workitem log`) — read its `end:`
+  (breadcrumb) or `time:` (logged note / legacy jot). A single directory
+  listing per item; no cross-referencing anything outside the item.
 - **Worktree commits:** if the item has a worktree, the newest commit date from
   `git -C ~/work/worktrees/<slug>/<repo> log -1 --format=%cI` (across each repo
   the item has a worktree for).

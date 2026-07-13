@@ -77,7 +77,7 @@ git clone <your-vault-remote> ~/work/data
 workinit -v
 ```
 
-Creates `~/work/{repos,worktrees}` and `data/{items,reminders,docs,diary,
+Creates `~/work/{repos,worktrees}` and `data/{items,reminders,docs,
 retrospectives,.claude}` if missing, and the two symlinks
 (`data/CLAUDE.md`, `data/.claude/skills`) into `engine/`. Never overwrites
 unexpected state — it flags anything odd instead (exit code `2`) so you can
@@ -154,9 +154,9 @@ workon <any-active-item>    # drops into a containerized Claude session
 ```
 
 From inside that session, confirm `dashboard` and `retrospective` show up as
-available skills, and that ending the session writes a breadcrumb into
-`data/diary/`. If you restored an existing vault, also run `dashboard` once
-to regenerate `index.md` against the current host.
+available skills, and that ending the session writes a breadcrumb into that
+item's own `log/`. If you restored an existing vault, also run `dashboard`
+once to regenerate `index.md` against the current host.
 
 ## Team-code repos
 

@@ -9,7 +9,7 @@
 #
 # On session start it reads the SessionStart JSON from stdin, and IF the
 # session's cwd is inside an item folder, checks that item's log/ for
-# `workitem append` entries (type: workitem-append) written since the item's
+# `workitem log` entries (type: workitem-log) written since the item's
 # last known session-breadcrumb `end:` timestamp — i.e. out-of-band notes
 # recorded from a phone, another terminal, or a hallway conversation, that no
 # prior Claude Code session ever saw. If any exist, they're printed to stdout
@@ -18,7 +18,7 @@
 # Session breadcrumbs themselves are never re-surfaced here: every one is
 # written automatically by the SessionEnd hook the moment its session ends,
 # so the newest one *is* the cutoff by construction — nothing can ever be
-# newer than the max of itself. Only append entries have no such automatic
+# newer than the max of itself. Only log entries have no such automatic
 # visibility, so they're the only thing this hook looks for.
 #
 # It is a user-global hook, so it fires for every Claude Code session start;
@@ -74,9 +74,9 @@ for f in "$log_dir"/*.session.*.md; do
     fi
 done
 
-# --- find append entries newer than the cutoff -----------------------------
+# --- find log entries newer than the cutoff -----------------------------
 # note_text: the first non-blank, non-heading line after the frontmatter —
-# workitem append always writes exactly one line of note text there.
+# workitem log always writes exactly one line of note text there.
 note_text() {
     awk '
         /^---$/ { fm++; next }
@@ -88,7 +88,7 @@ note_text() {
 }
 
 hits=()
-for f in "$log_dir"/*.append.*.md; do
+for f in "$log_dir"/*.log.*.md; do
     [ -e "$f" ] || continue
     t="$(sed -n 's/^time: *//p' "$f" | head -1)"
     [ -n "$t" ] || continue
@@ -111,7 +111,7 @@ while IFS='|' read -r t f; do
     disp_time="${disp_time%:*}"      # HH:MM:SS -> HH:MM
     note="$(note_text "$f")"
     [ "$first" = true ] || echo
-    echo "$disp_date $disp_time — append: $note"
+    echo "$disp_date $disp_time — log: $note"
     first=false
 done < <(printf '%s\n' "${hits[@]}" | sort)
 echo "---"
