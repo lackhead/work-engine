@@ -90,11 +90,12 @@ end_ts="$(iso_now)"
 # line. NOT necessarily line 1 — Claude Code now leads a transcript with a
 # few untimestamped metadata records (mode, permission-mode,
 # file-history-snapshot, ...) before the first real message, so a bare
-# `head -n1` silently yields empty here. An empty start_ts just zeroes out
-# this session's reported commit/file counts in the breadcrumb body below
-# (the `[ -n "$start_ts" ]` guards) — no longer safety-critical the way it
-# used to be, now that the quick-item sweep decision lives in `workon`
-# instead of here.
+# `head -n1` silently yields empty here. An empty start_ts zeroes out this
+# session's reported commit/file counts in the breadcrumb body below (the
+# `[ -n "$start_ts" ]` guards) — no longer safety-critical the way it used to
+# be, now that the quick-item sweep decision lives in `workon` instead of here,
+# but still worth catching if it regresses: the silent-zero guard just below
+# flags the anomalous case rather than letting it pass as "0 commits".
 start_ts=""
 if [ -n "$transcript" ] && [ -r "$transcript" ]; then
     if command -v jq >/dev/null 2>&1; then
@@ -102,6 +103,20 @@ if [ -n "$transcript" ] && [ -r "$transcript" ]; then
     else
         start_ts="$(sed -n 's/.*"timestamp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$transcript" 2>/dev/null | head -n1)"
     fi
+fi
+
+# Silent-zero guard. An empty start_ts zeroes every commit/file count below, so
+# distinguish two cases: a session that never had message turns (immediate exit
+# — only leading metadata records in the transcript, legitimately no timestamp,
+# stay quiet) from one that DID have turns yet still yielded no start (the
+# extraction is broken — e.g. a transcript-format change — and the zeros are
+# lying). Flag only the latter, in the breadcrumb itself, so a future regression
+# of this class surfaces instead of masquerading as "0 commits" on every item.
+# user/assistant records carry timestamps; the metadata preamble does not.
+start_unresolved=false
+if [ -z "$start_ts" ] && [ -n "$transcript" ] && [ -r "$transcript" ] \
+   && grep -qE '"type"[[:space:]]*:[[:space:]]*"(user|assistant)"' "$transcript" 2>/dev/null; then
+    start_unresolved=true
 fi
 
 # --- git facts across every worktree the item has -------------------------
@@ -186,12 +201,20 @@ file="$log_dir/$date_str.$slug.session.$nn.md"
     echo "dirty: $agg_dirty"
     echo "commits: $agg_commits"
     echo "files-changed: $agg_files"
+    [ "$start_unresolved" = true ] && echo "start-unresolved: true"
     [ -n "$reason" ] && echo "reason: $reason"
     [ -n "$transcript" ] && echo "transcript: $transcript"
     echo "---"
     echo
     echo "# Session — $slug"
     echo
+
+    if [ "$start_unresolved" = true ]; then
+        echo "> ⚠ Session start could not be parsed from the transcript despite"
+        echo "> recorded turns, so the commit/file counts below may be understated"
+        echo "> (likely a transcript-format change — check the breadcrumb hook)."
+        echo
+    fi
 
     if [ ${#repos_touched[@]} -gt 0 ]; then
         printf 'Session on `%s` — %d repo(s), %s commit(s), %s file(s) changed' \
