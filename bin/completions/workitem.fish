@@ -4,7 +4,11 @@
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
 
 function __workitem_root
-    echo $HOME/work
+    if set -q WORK_ROOT; and test -n "$WORK_ROOT"
+        echo $WORK_ROOT
+    else
+        echo $HOME/work
+    end
 end
 
 function __workitem_repos

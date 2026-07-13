@@ -71,8 +71,8 @@ There are exactly two things you *act on*, and the line between them is
 operational, not about size:
 
 - **Work item** — something you sit down and work in a dedicated session. Lives
-  in `items/`. Scales from a single file to a directory (with `plan.md` and a
-  `status/` log) as it earns the scaffolding.
+  in `items/` as a directory (front door `<slug>/<slug>.md`), accreting
+  `plan.md` and a `log/` as it earns the scaffolding.
 - **Reminder** — an atomic "do this / check this / don't lose this" note you
   action or flip *without* a work session. Lives in `reminders/`. Usually
   frontmatter-only, with the filename as the description.
@@ -112,8 +112,8 @@ Shell-agnostic `bash` executables on `PATH`, tracked in the `work-engine` repo
 tracked" below). These are the verbs of the system:
 
 - **`workreminder`** — capture a reminder.
-- **`workitem`** — create, list, and archive work items (subcommands
-  `create`/`list`/`archive`).
+- **`workitem`** — create, list, and manage work items (subcommands
+  `create`/`list`/`show`/`log`/`activate`/`defer`/`block`/`unblock`/`archive`/`delete`).
 - **`workon`** — open a Claude Code session for an item, in the right place (its
   worktree, or its folder), resume-aware.
 - **`worktree`** — create/list/remove the per-item git worktrees.
@@ -141,8 +141,8 @@ Two LLM skills do the work that needs judgment rather than a fixed script:
   leaves the hand-written "Notes / current focus" block and the retrospective
   pointer alone.)
 - **`retrospective`** — rolls up a time window (day, week, quarter, range) from
-  breadcrumbs, logged notes, status entries, and your own git commits; writes a dated
-  retrospective and *proposes* curated `status/` write-backs for items that saw
+  breadcrumbs, logged notes, and your own git commits; writes a dated
+  retrospective and *proposes* a refreshed `## Current state` for items that saw
   real progress (never writing without confirmation).
 
 The division of labor is deliberate: the **hook is dumb** (records git/session

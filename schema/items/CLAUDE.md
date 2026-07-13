@@ -140,7 +140,10 @@ breadcrumbs):
   item-folder planning session). Frontmatter: `type: session-breadcrumb`,
   `slug`, `session-id`, `session-num` (quoted, `"01"`, `"02"`, ...), `start`,
   `end`, `repo`/`branch`/`dirty`/`commits`/`files-changed` (worktree sessions
-  only), `reason`, `transcript`. Body: a one-line summary, optional
+  only), `reason`, `transcript`, and `start-unresolved: true` (diagnostic,
+  present only when the hook recorded message turns but couldn't parse a start
+  timestamp from the transcript — a signal that `commits`/`files-changed` are
+  understated and the extraction may have regressed). Body: a one-line summary, optional
   `## Commits` / `## Files changed` lists. No interpretation — that's the
   front door's job. Multiple sessions for the item in a day stack as `01`,
   `02`, ….

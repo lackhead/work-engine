@@ -3,7 +3,11 @@
 # Symlinked into ~/.config/fish/completions/ so fish autoloads it.
 
 function __worktree_root
-    echo $HOME/work
+    if set -q WORK_ROOT; and test -n "$WORK_ROOT"
+        echo $WORK_ROOT
+    else
+        echo $HOME/work
+    end
 end
 
 # Nth positional (1-based) after the subcommand, skipping options.
@@ -94,6 +98,7 @@ complete -c worktree -f   # no filename completion by default
 
 complete -c worktree -s v -l verbose -d 'Show what is happening as it happens'
 complete -c worktree -s d -l debug   -d 'Show diagnostic detail (implies --verbose)'
+complete -c worktree -s h -l help    -d 'Show help'
 
 complete -c worktree -n __fish_use_subcommand -a add     -d 'Create a worktree'
 complete -c worktree -n __fish_use_subcommand -a rm      -d 'Remove worktree(s)'

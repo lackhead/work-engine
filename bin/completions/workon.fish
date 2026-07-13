@@ -2,8 +2,16 @@
 # Canonical location: ~/work/engine/bin/completions/workon.fish (the work-engine repo).
 # Symlinked into ~/.config/fish/completions/ so fish autoloads it.
 
+function __workon_root
+    if set -q WORK_ROOT; and test -n "$WORK_ROOT"
+        echo $WORK_ROOT
+    else
+        echo $HOME/work
+    end
+end
+
 function __workon_item_slugs
-    set -l items $HOME/work/data/items
+    set -l items (__workon_root)/data/items
     test -d $items; or return
     # Active (top-level) items only.
     for p in $items/*
@@ -31,7 +39,7 @@ end
 
 # Canonical clones under ~/work/repos/ — used for -r/--repo completion.
 function __workon_repos
-    set -l repos $HOME/work/repos
+    set -l repos (__workon_root)/repos
     test -d $repos; or return
     for p in $repos/*
         test -d $p; and basename $p

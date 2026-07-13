@@ -83,10 +83,10 @@ Arguments:
                      it's left exactly as any other active item.
 
 Description:
-   Opens Claude Code with the item's folder as the working directory,­with
-   each repo attached alongside it using --add-dir, Flags branch drift behind
-   the integration branch, per repo, and offers to sync. Resumes the item's
-   last session if one exists.
+   Opens Claude Code with the item's folder as the working directory, with
+   each repo's worktree attached alongside it via --add-dir. Flags branch
+   drift behind the integration branch, per repo, and offers to sync. Resumes
+   the item's last session if one exists.
 
 Examples:
    workon nagios
@@ -380,8 +380,15 @@ if grep -qE '^tags:.*\bquick\b' "$front" 2>/dev/null; then
             sweep_unique_known=false
         fi
     done
+    # log/ is excluded deliberately: the SessionEnd breadcrumb hook writes a
+    # session breadcrumb into log/ for every session (including a do-nothing
+    # one), and it fires *inside* the session — before this host-side sweep
+    # runs — so counting log/ as "extra" would defeat the sweep for every quick
+    # item that ever opened a session. Only content outside log/ (plan.md,
+    # notes, artifacts the user actually added) signals real work worth keeping.
     sweep_has_extra=false
-    find "$itemdir" -mindepth 1 ! -name "$slug.md" 2>/dev/null | grep -q . && sweep_has_extra=true
+    find "$itemdir" -mindepth 1 -path "$itemdir/log" -prune -o ! -name "$slug.md" -print 2>/dev/null \
+        | grep -q . && sweep_has_extra=true
 
     if [ "$sweep_dirty" != true ] && [ "$sweep_unique_commits" -eq 0 ] \
        && { [ ${#wt_repos[@]} -eq 0 ] || [ "$sweep_unique_known" = true ]; } \
