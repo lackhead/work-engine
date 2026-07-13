@@ -44,7 +44,7 @@ Every `work*` command takes `-h/--help`, `-v/--verbose`, and `-d/--debug`.
 3. **Quick thing outside a session?** `workitem log` — captured without
    ceremony, either into an existing item's `log/` or as a new completed
    item if there isn't one.
-4. **Something to not lose?** `workreminder "check the threshold held overnight"`.
+4. **Something to not lose?** `workreminder create check the threshold held overnight`.
 5. **New piece of work?** `workitem create Rework the cache host info`.
 6. **What should I be doing?** Run the `dashboard` skill — it ranks in-flight
    work and rewrites [[index]].
@@ -75,18 +75,23 @@ workitem log                      # no context at all — asks interactively
 With `-r <repo>` (or when run from inside one of an item's worktrees) it
 offers to attach the latest commit alongside the note.
 
-### `workreminder` — capture a follow-up
+### `workreminder create` — capture a follow-up
 
-An atomic "don't lose this." Creates `reminders/<date>-<desc>.md` with
-`status: active`.
+An atomic "don't lose this." Creates `reminders/<slug>.md` with
+`status: active` (no date prefix — the date lives in `created:`).
 
 ```bash
-workreminder Check nagios alert thresholds after the deploy
-workreminder -i nagios Follow up with the team on the alert runbook
+workreminder create Check nagios alert thresholds after the deploy
+workreminder create -i nagios Follow up with the team on the alert runbook
+workreminder create           # no description — full interactive flow instead
 ```
 
-`-i <slug>` attributes it to a work item. If a "reminder" actually needs a
-working session, make it an item instead.
+`-i <slug>` attributes it to a work item. Given a description on the command
+line it fires immediately, no prompts; with none, it prompts for the
+description, whether to attach an existing item (picked interactively), and
+a slug to confirm. If a "reminder" actually needs a working session,
+`workreminder promote <name>` turns it into a work item and archives the
+reminder in one step.
 
 ### `workitem` — create, list, and archive work items
 
@@ -259,7 +264,8 @@ scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
 | Command | Does | Runs on |
 |---------|------|---------|
 | `workitem log [-r\|--repo <repo>] [item-slug]` | Log ad-hoc work outside a session | vault |
-| `workreminder <desc>` | Capture a follow-up reminder | vault |
+| `workreminder create [-i\|--item <slug>] [desc...]` | Capture a follow-up reminder | vault |
+| `workreminder promote <name> [workitem create args...]` | Turn a reminder into a work item | vault |
 | `workitem create [title...]` | Create a work item | vault |
 | `workitem list [--backlog\|--archived\|--all] [--status <v>]` | Quick glance at items | vault |
 | `workitem archive <slug> [--completed\|--cancelled]` | Close out an item | vault |

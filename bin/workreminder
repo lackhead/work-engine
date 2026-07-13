@@ -32,16 +32,17 @@ print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workreminder: create, list, show, archive, delete, and set due dates on reminders
+workreminder: create, list, show, archive, delete, promote, and set due dates on reminders
 
 Usage:
    workreminder [ -h|--help ]
-   workreminder [ -v|--verbose ] [ -d|--debug ] create  [-i|--item <slug>]
+   workreminder [ -v|--verbose ] [ -d|--debug ] create  [-i|--item <slug>] [description...]
    workreminder [ -v|--verbose ] [ -d|--debug ] list    [--archived|--all]
    workreminder [ -v|--verbose ] [ -d|--debug ] show    <name>
    workreminder [ -v|--verbose ] [ -d|--debug ] archive <name> [--addressed|--dismissed]
    workreminder [ -v|--verbose ] [ -d|--debug ] delete  <name>
    workreminder [ -v|--verbose ] [ -d|--debug ] due     <name> [date]
+   workreminder [ -v|--verbose ] [ -d|--debug ] promote <name> [workitem create args...]
 
 Arguments:
    -h|--help     Show what you are seeing right now
@@ -49,9 +50,12 @@ Arguments:
    -d|--debug    Show diagnostic detail (implies --verbose)
 
 Description:
-   create   Prompts for a description and creates reminders/<slug>.md.
+   create   With a description given, creates reminders/<slug>.md
+            immediately, no prompts. With none, prompts for the
+            description, whether to attach an existing item (picked
+            interactively), and a slug to confirm.
 
-   list     Display active reminders, sorted by created date; 
+   list     Display active reminders, sorted by created date;
             --archived/--all broaden the scope
 
    show     Prints the reminder informatio — piped through $PAGER if set,
@@ -65,15 +69,22 @@ Description:
    due      Sets or changes the (optional) due date (bare YYYY-MM-DD format);
             omitting the date clears any existing due date.
 
+   promote  Creates a work item (title defaults to the reminder's own
+            heading unless overridden by trailing args) and archives the
+            reminder as addressed, in one step.
+
 Examples:
    workreminder create
    workreminder create -i nagios
+   workreminder create Call John back about the firewall exception
    workreminder list
    workreminder list --all
    workreminder show check-on-mikes-pr-progress
    workreminder archive check-on-mikes-pr-progress --addressed
    workreminder due check-on-mikes-pr-progress 2026-05-15
    workreminder due check-on-mikes-pr-progress
+   workreminder promote check-on-mikes-pr-progress
+   workreminder promote check-on-mikes-pr-progress -b Review Mike's PR properly
 
 EOF
 
@@ -122,48 +133,134 @@ resolve_reminder() {
 ###
 ### Subcommands
 ###
+# Interactive picker over item slugs across all three zones (top-level,
+# backlog/, archived/) -- a reminder's related-item is a soft cross-
+# reference, not a write target the way workitem log's resolution is, so
+# unlike wi_log_pick_item this deliberately doesn't exclude backlog/archived.
+# fzf if available, else a numbered-menu fallback (copied, not shared --
+# see docs/bin-coding-standards.md's no-shared-library convention -- this is
+# a different script from workitem, so it gets its own copy of the same
+# shape wi_log_pick_item uses). Echoes the chosen slug on stdout; a clean
+# cancel (empty fzf selection, or a blank fallback answer) prints a status
+# line and returns 1 with nothing echoed -- never an error.
+wr_pick_item() {
+    local root="$WORK/data/items" slugs=() titles=() zones=() p slug title_f z dir
+    for z in '' backlog/ archived/; do
+        dir="$root/$z"
+        [ -d "$dir" ] || continue
+        for p in "$dir"*/; do
+            [ -d "$p" ] || continue
+            slug=$(basename "$p")
+            case "$slug" in backlog|archived) continue ;; esac
+            [ -f "$p$slug.md" ] || continue
+            title_f=$(sed -n 's/^title: *//p' "$p$slug.md" | head -1)
+            slugs+=("$slug")
+            titles+=("${title_f:-$slug}")
+            zones+=("$z")
+        done
+    done
+    if [ ${#slugs[@]} -eq 0 ]; then
+        print_status "No items to attach to." >&2
+        return 1
+    fi
+
+    # Archived entries get a visual tag -- a combined-zone list shouldn't
+    # silently blur "currently active" with "already closed".
+    local i tag entries=()
+    for i in "${!slugs[@]}"; do
+        tag=''
+        [ "${zones[$i]}" = "archived/" ] && tag=' (archived)'
+        entries+=("${slugs[$i]}  —  ${titles[$i]}${tag}")
+    done
+
+    if command -v fzf >/dev/null 2>&1; then
+        local choice
+        choice=$(printf '%s\n' "${entries[@]}" | fzf --prompt='item> ') || true
+        if [ -z "$choice" ]; then
+            print_status "No item selected." >&2
+            return 1
+        fi
+        printf '%s' "${choice%% *}"
+    else
+        local choice
+        for i in "${!entries[@]}"; do
+            printf '%2d) %s\n' "$((i + 1))" "${entries[$i]}" >&2
+        done
+        read -r -p "Which item? [1-${#slugs[@]}, blank for none] " choice
+        if [ -z "$choice" ]; then
+            print_status "No item selected." >&2
+            return 1
+        fi
+        if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#slugs[@]}" ]; then
+            print_error "Invalid selection."
+            return 1
+        fi
+        printf '%s' "${slugs[$((choice - 1))]}"
+    fi
+}
+
 wr_create() {
-    local item='' a
+    local item='' desc_parts=() a
     while [ $# -gt 0 ]; do
         a=$1
         case "$a" in
             -i|--item) shift; item=${1:-} ;;
             --item=*)  item=${a#--item=} ;;
             -*)        print_error "Unknown option: $a"; return 1 ;;
-            *)         print_error "workreminder create takes no positional arguments — it always prompts for the description."; return 1 ;;
+            *)         desc_parts+=("$a") ;;
         esac
         shift
     done
 
-    # --- description: always prompted, never positional ---
-    local desc
-    read -r -p "reminder: " desc
+    # --- description: positional args make this a fire-and-forget quick
+    # add (skips every remaining prompt below); otherwise fall back to the
+    # original always-prompted flow, unchanged. ---
+    local desc=''
+    [ ${#desc_parts[@]} -gt 0 ] && desc="${desc_parts[*]}"
     desc="$(trim "$desc")"
-    if [ -z "$desc" ]; then
-        print_error "Empty description — nothing created."; return 1
+
+    local quick=false
+    if [ -n "$desc" ]; then
+        quick=true
+    else
+        read -r -p "reminder: " desc
+        desc="$(trim "$desc")"
+        if [ -z "$desc" ]; then
+            print_error "Empty description — nothing created."; return 1
+        fi
     fi
 
-    if [ -z "$item" ]; then
-        read -r -p "related item (slug, blank for none): " item
-        item="$(trim "$item")"
+    if [ -z "$item" ] && [ "$quick" = false ]; then
+        read -r -p "Attach to an existing item? [y/N] " reply
+        if printf '%s' "$reply" | grep -qiE '^y'; then
+            item=$(wr_pick_item) || item=''
+        fi
     fi
+    # Unconditional on $item being non-empty, exactly as before -- quick
+    # mode can only populate $item via -i, so this still fires correctly
+    # for -i in quick mode with zero special-casing.
     if [ -n "$item" ] && [ ! -f "$WORK/data/items/$item/$item.md" ] \
        && [ ! -f "$WORK/data/items/backlog/$item/$item.md" ] \
        && [ ! -f "$WORK/data/items/archived/$item/$item.md" ]; then
         print_warning "'$item' isn't an existing item; tagging anyway."
     fi
 
-    # --- slug: proffer a truncated default, let the user override it right
-    # here -- now that the description is fully written out, this is the
-    # best moment to judge whether the mechanical slug is any good. ---
+    # --- slug: in quick mode, auto-generate silently; otherwise proffer a
+    # truncated default and let the user override it right here -- now that
+    # the description is fully written out, this is the best moment to
+    # judge whether the mechanical slug is any good. ---
     local default_slug slug
     default_slug=$(kebab "$desc")
-    read -r -p "slug [$default_slug]: " slug
-    slug="$(trim "$slug")"
-    if [ -n "$slug" ]; then
-        slug=$(kebab "$slug" 200)
-    else
+    if [ "$quick" = true ]; then
         slug="$default_slug"
+    else
+        read -r -p "slug [$default_slug]: " slug
+        slug="$(trim "$slug")"
+        if [ -n "$slug" ]; then
+            slug=$(kebab "$slug" 200)
+        else
+            slug="$default_slug"
+        fi
     fi
 
     # Resolve a collision by appending -2, -3, ... rather than refusing --
@@ -358,6 +455,55 @@ wr_archive() {
     print_success "Archived → reminders/archived/$name.md ($newstatus)"
 }
 
+# Argument parsing here is deliberately different from every other
+# subcommand in this file: consume exactly one positional (name), then
+# treat everything remaining as an opaque pass-through array for
+# `workitem create` with zero interpretation -- those are workitem's own
+# flags, not this command's, so this is a one-shift-then-take-the-rest
+# parse, not a case-loop rejecting `-*`.
+wr_promote() {
+    if [ $# -eq 0 ]; then
+        print_error "Usage: workreminder promote <name> [workitem create args...]"; return 1
+    fi
+    local name=$1
+    shift
+    local create_args=("$@")
+
+    local root="$WORK/data/reminders"
+    if [ -f "$root/archived/$name.md" ]; then
+        print_error "'$name' is archived — promote only applies to active reminders."
+        return 1
+    fi
+    local src="$root/$name.md"
+    if [ ! -f "$src" ]; then
+        print_error "No reminder '$name' found."
+        return 1
+    fi
+
+    if [ ${#create_args[@]} -eq 0 ]; then
+        local heading
+        heading=$(sed -n 's/^# *//p' "$src" | head -1)
+        # An empty heading here just means wi_create sees an empty title
+        # and errors "title is required" -- already safe by construction,
+        # surfaces through the same abort path below.
+        create_args=("$heading")
+    fi
+
+    # Uncaptured (not wrapped in $(...)) so workitem create's own
+    # "Created -> ..." banner reaches the user directly; only the exit
+    # status is checked. Subprocess call (found via $PATH), not duplicated
+    # inline -- same precedent as wi_archive/wi_delete calling `worktree rm`.
+    if ! workitem create "${create_args[@]}"; then
+        print_error "workitem create failed — '$name' left untouched."
+        return 1
+    fi
+
+    wr_archive "$name" --addressed || {
+        print_error "Work item was created, but archiving '$name' failed (see above) — archive it manually."
+        return 1
+    }
+}
+
 wr_delete() {
     local name='' a
     for a in "$@"; do
@@ -459,6 +605,7 @@ case "$cmd" in
     archive) wr_archive "$@" ;;
     delete)  wr_delete "$@" ;;
     due)     wr_due "$@" ;;
+    promote) wr_promote "$@" ;;
     '')      printf '%s\n' "$usage" ;;
     *)       print_error "Unknown command '$cmd' (try: workreminder help)"; exit 1 ;;
 esac

@@ -1,4 +1,4 @@
-# Completions for `workreminder` (create/list/archive/delete/due subcommands).
+# Completions for `workreminder` (create/list/archive/delete/due/promote subcommands).
 # Canonical location: ~/work/engine/bin/completions/workreminder.fish (the work-engine repo);
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
 
@@ -68,8 +68,10 @@ complete -c workreminder -n __fish_use_subcommand -a show    -d 'Print a reminde
 complete -c workreminder -n __fish_use_subcommand -a archive -d 'Archive a reminder'
 complete -c workreminder -n __fish_use_subcommand -a delete  -d 'Delete a reminder outright'
 complete -c workreminder -n __fish_use_subcommand -a due     -d 'Set or clear a due date'
+complete -c workreminder -n __fish_use_subcommand -a promote -d 'Promote to a work item'
 
-# create [-i|--item <slug>] -- always prompts for description + slug confirm
+# create [-i|--item <slug>] [description...] -- description given -> fires
+# immediately, no prompts; description omitted -> full interactive flow
 complete -c workreminder -n '__fish_seen_subcommand_from create' -s i -l item \
     -x -a '(__workreminder_item_slugs)' -d 'related work item'
 
@@ -96,3 +98,8 @@ complete -c workreminder -n '__fish_seen_subcommand_from due; and test (__workre
     -a '(__workreminder_all_names)' -d reminder
 complete -c workreminder -n '__fish_seen_subcommand_from due; and test (__workreminder_nargs) -eq 1' \
     -x -d 'YYYY-MM-DD (omit to clear)'
+
+# promote <name> [workitem create args...] -- no completion attempt for the
+# pass-through args, achieved by simply not adding a rule for nargs >= 1
+complete -c workreminder -n '__fish_seen_subcommand_from promote; and test (__workreminder_nargs) -eq 0' \
+    -a '(__workreminder_active_names)' -d reminder
