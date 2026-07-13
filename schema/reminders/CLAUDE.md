@@ -111,12 +111,14 @@ Optional fields:
   creation date already lives in the `created:` frontmatter field, so
   putting it in the filename too would just be duplication; dropping it
   also shortens what you type for `show`/`archive`/`delete`/`due`.
-- **Auto-derived and capped at 30 characters, confirmed interactively.**
-  `workreminder create` kebab-cases the description into a default slug,
-  truncated at a word boundary (never mid-word), then proffers it for you
-  to accept (blank) or override right there — the best moment to judge
-  whether the mechanical slug is any good, since the full description is
-  already in front of you:
+- **Auto-derived and capped at 30 characters.** `workreminder create`
+  kebab-cases the description into a default slug, truncated at a word
+  boundary (never mid-word). In the interactive flow (no description given
+  on the command line) it's proffered for you to accept (blank) or override
+  right there — the best moment to judge whether the mechanical slug is any
+  good, since the full description is already in front of you. Quick add
+  (description given positionally) uses the mechanical default outright,
+  no confirmation step:
   - `check-on-mikes-pr-progress.md`
   - `revisit-rocky-firewall-quirk.md`
   - `parse-check-the-bootstrap.md` (mechanical, from a much longer
@@ -136,14 +138,24 @@ Optional fields:
 
 ### Adding a reminder
 
-`workreminder create` is the tool: always interactive, never takes the
-description on the command line (only `-i/--item` is a flag). It prompts
-for the description (used in both the body heading and, kebab-cased, the
-default slug), then a related item if `-i/--item` wasn't given, then
-proffers the default slug for you to accept or override before writing
-`created:` (today) and `status: active`. It does not prompt for other
-optional fields unless brought up. The body is added only when there's
-context worth capturing — most reminders are frontmatter-only.
+`workreminder create` has two modes, chosen by whether a description is
+given on the command line:
+
+- **Quick add** — `workreminder create <description...>` creates the
+  reminder immediately, no prompts at all (a fire-and-forget one-liner).
+  `-i/--item <slug>` still works as a flag if given; otherwise the reminder
+  has no related item. The slug is auto-generated from the description via
+  the same `kebab()` + collision-suffix logic as the interactive path, with
+  no confirmation step.
+- **Interactive** — `workreminder create` (no description) prompts for the
+  description, then whether to attach an existing item — if yes, picks one
+  interactively (`fzf`, or a numbered-menu fallback if `fzf` isn't
+  installed) across all three item zones, archived entries marked
+  `(archived)` — then proffers the default slug to accept or override.
+
+Either way it writes `created:` (today) and `status: active`. It does not
+prompt for other optional fields unless brought up. The body is added only
+when there's context worth capturing — most reminders are frontmatter-only.
 
 Adding a reminder is the act of saying "this needs follow-up,"
 which is why `active` is the default — there is no `proposed` for
@@ -196,16 +208,22 @@ is distinct from `workitem archive`.
 ### Promoting a reminder to a work item
 
 If a reminder grows enough shape that it earns its own working session, it
-should become a work item. Workflow:
+should become a work item. `workreminder promote <name> [workitem create
+args...]` does this atomically: creates the work item (title defaults to
+the reminder's own `#` heading; pass trailing args — a different title,
+`-b/--backlog`, `-s/--slug`, etc. — to override what `workitem create`
+receives instead), then archives the reminder as `addressed` in the same
+step (the coupled transition described under "Archiving"). If item creation
+fails, the reminder is left untouched — nothing archives on a failed
+promotion. `promote` only applies to active reminders — an already-archived
+one refuses with a clear error, since promoting something already closed
+doesn't make sense.
 
-1. Create the work item under `~/work/data/items/<name>.md` (or a directory item)
-   with appropriate frontmatter, in the right attention zone.
-2. Set the reminder's `status:` to `addressed` (the reminder did its
-   job — it surfaced something that became real work) and move it to
-   `archived/` — the coupled transition described under "Archiving".
-3. Note the relationship in the item's frontmatter via
-   `tags: [from-reminder]` or similar if it matters; usually it
-   doesn't.
+There's no automatic cross-link back into the created item — `workitem
+create` has no flag to set arbitrary `tags:` at creation, and per this
+schema's own guidance, noting the relationship (`tags: [from-reminder]` or
+similar) usually doesn't matter enough to be worth doing by hand afterward
+either.
 
 ## Cross-references
 
