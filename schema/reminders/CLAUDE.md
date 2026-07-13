@@ -100,7 +100,7 @@ Optional fields:
 
 | Field | Notes |
 |-------|-------|
-| `source` | Where the reminder came from. Common values: `daily-summary` (proposed by the daily-summary skill), `backfill-from-jots` (added retrospectively from a jot), `manual` (added by hand), `slack-thread`, `meeting`. Free-form text — pick a value that lets future-me trace the origin. |
+| `source` | Where the reminder came from. Common values: `daily-summary` (proposed by the daily-summary skill), `backfill-from-log` (added retrospectively from a logged item), `manual` (added by hand), `slack-thread`, `meeting`. Free-form text — pick a value that lets future-me trace the origin. |
 | `related-item` | Wikilink to a work item, e.g. `[[ad-upgrade]]`, when the reminder is tied to or adjacent to a specific work item. Single value, not a list — if a reminder spans several items, that's a sign it's actually a work item of its own. |
 | `due` | `YYYY-MM-DD` deadline. Bare date only — no `due-type` (`hard`/`soft`) the way work items have; reminders stay deliberately lower-overhead. Omit when there isn't one. |
 | `tags` | Inline list of short kebab-case tags. |
@@ -209,12 +209,10 @@ should become a work item. Workflow:
 
 ## Cross-references
 
-- **Work items:** `[[<name>]]`.
+- **Work items:** `[[<name>]]`. Useful for reminders backfilled from a
+  logged item — that's where the underlying context lives.
 - **Other reminders:** `[[reminders/<name>]]`.
 - **Documents:** `[[docs/<name>]]`.
-- **Jots:** by full path to a specific file, e.g.
-  `[[jots/2026/04/29/2026-04-29.log]]`. Useful for reminders backfilled
-  from a jot — that's where the underlying context lives.
 - **Repositories:** plain backticked paths, e.g. `~/work/repos/Ansible`.
   Repos are git working trees nested in the vault but conceptually
   separate — reference by path, never wikilink.
@@ -244,7 +242,7 @@ related-item: [[auto-update-backstop]]
 ---
 created: 2026-04-30
 status: active
-source: backfill-from-jots
+source: backfill-from-log
 tags: [rocky-linux]
 ---
 

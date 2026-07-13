@@ -38,7 +38,7 @@ Usage:
    workitem [ -v|--verbose ] [ -d|--debug ] create   [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [title...]
    workitem [ -v|--verbose ] [ -d|--debug ] list     [--backlog|--archived|--all] [--status <value>]
    workitem [ -v|--verbose ] [ -d|--debug ] show     <slug>
-   workitem [ -v|--verbose ] [ -d|--debug ] append   <slug> [-r|--repo <repo>]
+   workitem [ -v|--verbose ] [ -d|--debug ] log      [-r|--repo <repo>] [item-slug]
    workitem [ -v|--verbose ] [ -d|--debug ] activate <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] defer    <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] block    <slug>
@@ -65,10 +65,14 @@ Description:
    show     Prints the item's front door (<slug>.md) — piped through
             $PAGER if set, else plain output.
 
-   append   Records a note directly into the item's log/, for work done
-            outside a Claude Code session. Prompts for the latest commit
-            (in the given -r/--repo, or the current directory's repo if
-            inside one) and for note text.
+   log      Records a note for work done outside a Claude Code session.
+            Prompts for the latest commit (in the given -r/--repo, or the
+            current directory's repo if inside one) and for note text.
+            Writes to item-slug's log/ if given (top-level or backlog
+            only, never archived); else auto-detects the item if the
+            current directory is one of its worktrees; else asks whether
+            it belongs to an existing item (top-level items only, picked
+            interactively) or creates a new completed item to hold it.
 
    activate Moves a backlog item to items/<slug>/, status active.
 
@@ -97,8 +101,9 @@ Examples:
    workitem list --backlog
    workitem list --all --status blocked
    workitem show nagios
-   workitem append nagios
-   workitem append nagios --repo Ansible
+   workitem log nagios
+   workitem log --repo Ansible nagios
+   workitem log
    workitem activate some-backlog-item
    workitem defer some-active-item
    workitem block some-active-item
@@ -414,8 +419,161 @@ wi_show() {
     fi
 }
 
-wi_append() {
-    local slug='' repo_opt='' a
+# Create a brand-new, itemless archived item as the container for a `log`
+# entry that has no existing item to attach to. Mirrors wi_create's
+# --quick timestamp-fallback (title) and collision-suffix loop (slug)
+# exactly, but the slug is a fixed "log-<timestamp>" shape rather than a
+# kebab-cased title -- there's no title to derive it from, and a fixed
+# shape is what lets retrospective recognize these later.
+wi_log_create_itemless() {
+    local note=$1 repo=$2 commit_disp=$3
+
+    local ts; ts=$(date +%Y-%m-%d-%H-%M-%S)
+    local ts_title="${ts:0:10} ${ts:11:2}:${ts:14:2}:${ts:17:2}"
+
+    local slug="log-$ts"
+    local base="$slug" n=1 z collide
+    while true; do
+        collide=false
+        for z in '' backlog/ archived/; do
+            if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
+                collide=true; break
+            fi
+        done
+        [ "$collide" = true ] || break
+        n=$((n + 1))
+        slug="$base-$n"
+    done
+    [ "$slug" != "$base" ] && print_verbose "Slug '$base' taken — using '$slug'"
+
+    local today; today=$(date +%Y-%m-%d)
+    local title="Logged note — $ts_title"
+    local itemdir="$WORK/data/items/archived/$slug"
+    local file="$itemdir/$slug.md"
+    mkdir -p "$itemdir"
+    {
+        echo "---"
+        echo "title: $title"
+        echo "status: completed"
+        echo "made: $today"
+        echo "completed: $today"
+        [ -n "$repo" ] && echo "related-repos: [$repo]"
+        echo "---"
+        echo
+        echo "# $title"
+        echo
+        echo "$note"
+        if [ -n "$commit_disp" ]; then
+            echo
+            echo "Commit: $commit_disp"
+        fi
+    } > "$file"
+    print_success "Recorded → ${file/#$HOME/\~}"
+}
+
+# Interactive picker over top-level (active/blocked) item slugs only -- not
+# backlog/, not archived/. fzf if available, else a numbered-menu fallback
+# in the same shape as workjot's retired choose_candidate() (copied, not
+# shared -- see docs/bin-coding-standards.md's no-shared-library
+# convention). Echoes the chosen slug on stdout. A clean cancel (empty fzf
+# selection, or a blank answer in the fallback) prints a status line and
+# returns 1 with nothing echoed -- never an error.
+wi_log_pick_item() {
+    local root="$WORK/data/items" slugs=() titles=() p slug title_f
+    for p in "$root"/*/; do
+        [ -d "$p" ] || continue
+        slug=$(basename "$p")
+        case "$slug" in backlog|archived) continue ;; esac
+        [ -f "$p$slug.md" ] || continue
+        title_f=$(sed -n 's/^title: *//p' "$p$slug.md" | head -1)
+        slugs+=("$slug")
+        titles+=("${title_f:-$slug}")
+    done
+    if [ ${#slugs[@]} -eq 0 ]; then
+        print_status "No top-level items to attach to." >&2
+        return 1
+    fi
+
+    if command -v fzf >/dev/null 2>&1; then
+        local i entries=() choice
+        for i in "${!slugs[@]}"; do
+            entries+=("${slugs[$i]}  —  ${titles[$i]}")
+        done
+        choice=$(printf '%s\n' "${entries[@]}" | fzf --prompt='item> ') || true
+        if [ -z "$choice" ]; then
+            print_status "Cancelled — nothing recorded." >&2
+            return 1
+        fi
+        printf '%s' "${choice%% *}"
+    else
+        local i choice
+        for i in "${!slugs[@]}"; do
+            printf '%2d) %s\n' "$((i + 1))" "${slugs[$i]} — ${titles[$i]}" >&2
+        done
+        read -r -p "Which item? [1-${#slugs[@]}, blank to cancel] " choice
+        if [ -z "$choice" ]; then
+            print_status "Cancelled — nothing recorded." >&2
+            return 1
+        fi
+        if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#slugs[@]}" ]; then
+            print_error "Invalid selection."
+            return 1
+        fi
+        printf '%s' "${slugs[$((choice - 1))]}"
+    fi
+}
+
+# Prompt for note text; trim; error-and-return-1 if empty. Factors out a
+# block that would otherwise repeat three times inside wi_log() -- a
+# same-file simplification (not cross-script), so it doesn't conflict with
+# the no-shared-library convention.
+wi_log_read_note() {
+    local note
+    read -r -p "note: " note
+    note="$(trim "$note")"
+    if [ -z "$note" ]; then
+        print_error "Empty note — nothing recorded."
+        return 1
+    fi
+    printf '%s' "$note"
+}
+
+# Write a note into an already-resolved item's log/. Shared by both ways a
+# slug can be pinned down (explicit/worktree-cwd, and picked interactively)
+# so the write itself only lives in one place. Takes item_dir directly
+# rather than recomputing it from slug -- a backlog/archived item's
+# directory isn't $WORK/data/items/<slug>, and re-deriving that here would
+# silently write to the wrong (nonexistent) path for anything not top-level.
+wi_log_write_to_item() {
+    local item_dir=$1 slug=$2 commit=$3
+    local note; note=$(wi_log_read_note) || return 1
+
+    local date_str; date_str=$(date +%Y-%m-%d)
+    local log_dir="$item_dir/log" n nn file
+    mkdir -p "$log_dir"
+    n=1
+    while [ -e "$log_dir/$date_str.$slug.log.$(printf '%02d' "$n").md" ]; do
+        n=$((n + 1))
+    done
+    nn="$(printf '%02d' "$n")"
+    file="$log_dir/$date_str.$slug.log.$nn.md"
+    {
+        echo "---"
+        echo "type: workitem-log"
+        echo "slug: $slug"
+        echo "time: $(iso_now)"
+        [ -n "$commit" ] && echo "commit: \"$commit\""
+        echo "---"
+        echo
+        echo "# Log — $slug"
+        echo
+        echo "$note"
+    } > "$file"
+    print_success "Recorded → ${file/#$HOME/\~}"
+}
+
+wi_log() {
+    local repo_opt='' slug_opt='' a
     while [ $# -gt 0 ]; do
         a=$1
         case "$a" in
@@ -423,29 +581,17 @@ wi_append() {
             --repo=*)  repo_opt=${a#--repo=} ;;
             -*) print_error "Unknown option: $a"; return 1 ;;
             *)
-                if [ -z "$slug" ]; then slug=$a
+                if [ -z "$slug_opt" ]; then slug_opt=$a
                 else print_error "Too many arguments."; return 1
                 fi ;;
         esac
         shift
     done
-    if [ -z "$slug" ]; then
-        print_error "Usage: workitem append <slug> [-r|--repo <repo>]"; return 1
-    fi
 
-    local root="$WORK/data/items" item_dir='' z
-    for z in '' backlog/ archived/; do
-        if [ -f "$root/$z$slug/$slug.md" ]; then
-            item_dir="$root/$z$slug"
-            break
-        fi
-    done
-    if [ -z "$item_dir" ]; then
-        print_error "No item '$slug' found."; return 1
-    fi
-
-    # --- git context (same vault-git guard as workjot/the SessionEnd hook) ---
-    local gitdir='' top
+    # --- Step 1: repo/commit context (same vault-git guard as the
+    # SessionEnd hook). Independent of item resolution below -- gathered
+    # here regardless of whether a slug ends up resolved at all. ---
+    local gitdir='' from_cwd=false top
     if [ -n "$repo_opt" ]; then
         gitdir="$WORK/repos/$repo_opt"
         if ! git -C "$gitdir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -455,17 +601,17 @@ wi_append() {
         top="$(git -C "$(pwd)" rev-parse --show-toplevel 2>/dev/null)"
         if [ -n "$top" ] && [ "$top" != "$WORK/data" ]; then
             gitdir="$(pwd)"
+            from_cwd=true
         fi
     fi
 
-    local commit=''
+    local commit='' rname='' br='' h='' subj=''
     if [ -n "$gitdir" ]; then
-        local h subj br rname
+        rname=$(basename "$(git -C "$gitdir" rev-parse --show-toplevel 2>/dev/null)")
+        br=$(git -C "$gitdir" rev-parse --abbrev-ref HEAD 2>/dev/null)
         h=$(git -C "$gitdir" log -1 --format=%h 2>/dev/null)
         if [ -n "$h" ]; then
             subj=$(git -C "$gitdir" log -1 --format=%s 2>/dev/null)
-            br=$(git -C "$gitdir" rev-parse --abbrev-ref HEAD 2>/dev/null)
-            rname=$(basename "$(git -C "$gitdir" rev-parse --show-toplevel 2>/dev/null)")
             print_status "Latest commit in $rname@$br:"
             echo "    $h  $subj"
             read -r -p "  Record this commit with the entry? [Y/n] " yn
@@ -475,35 +621,53 @@ wi_append() {
         fi
     fi
 
-    local note
-    read -r -p "note: " note
-    note="$(trim "$note")"
-    if [ -z "$note" ]; then
-        print_error "Empty note — nothing recorded."; return 1
+    # --- Step 2: target item. Explicit slug wins; else, only when context
+    # came from cwd (not --repo), check whether cwd is inside a worktree
+    # path -- that's the only case with a slug baked into the path at all. ---
+    local slug="$slug_opt"
+    if [ -z "$slug" ] && [ "$from_cwd" = true ]; then
+        case "$gitdir" in
+            "$WORK/worktrees/"*)
+                local rest="${gitdir#"$WORK"/worktrees/}"
+                slug="${rest%%/*}"
+                ;;
+        esac
     fi
 
-    local date_str; date_str=$(date +%Y-%m-%d)
-    local log_dir="$item_dir/log" n nn file
-    mkdir -p "$log_dir"
-    n=1
-    while [ -e "$log_dir/$date_str.$slug.append.$(printf '%02d' "$n").md" ]; do
-        n=$((n + 1))
-    done
-    nn="$(printf '%02d' "$n")"
-    file="$log_dir/$date_str.$slug.append.$nn.md"
-    {
-        echo "---"
-        echo "type: workitem-append"
-        echo "slug: $slug"
-        echo "time: $(iso_now)"
-        [ -n "$commit" ] && echo "commit: \"$commit\""
-        echo "---"
-        echo
-        echo "# Append — $slug"
-        echo
-        echo "$note"
-    } > "$file"
-    print_success "Appended → ${file/#$HOME/\~}"
+    if [ -n "$slug" ]; then
+        local root="$WORK/data/items" item_dir='' z
+        for z in '' backlog/; do
+            if [ -f "$root/$z$slug/$slug.md" ]; then
+                item_dir="$root/$z$slug"
+                break
+            fi
+        done
+        if [ -z "$item_dir" ]; then
+            if [ -f "$root/archived/$slug/$slug.md" ]; then
+                print_error "'$slug' is archived — can't log to a closed item."
+            else
+                print_error "No item '$slug' found."
+            fi
+            return 1
+        fi
+        wi_log_write_to_item "$item_dir" "$slug" "$commit"
+        return $?
+    fi
+
+    # --- Step 3: no slug resolved either way -- ask ---
+    local reply
+    read -r -p "Does this belong to an existing work item? [y/N] " reply
+    if printf '%s' "$reply" | grep -qiE '^y'; then
+        slug=$(wi_log_pick_item) || return 0
+        # wi_log_pick_item only ever offers top-level slugs, so this path
+        # is safe unlike the explicit-slug branch above.
+        wi_log_write_to_item "$WORK/data/items/$slug" "$slug" "$commit"
+    else
+        local note; note=$(wi_log_read_note) || return 1
+        local commit_disp=''
+        [ -n "$commit" ] && commit_disp="\`$rname@$br $h\` — \"$subj\""
+        wi_log_create_itemless "$note" "$rname" "$commit_disp"
+    fi
 }
 
 # activate/defer/block/unblock deliberately never touch worktrees, unlike
@@ -772,7 +936,7 @@ case "$cmd" in
     create)   wi_create "$@" ;;
     list)     wi_list "$@" ;;
     show)     wi_show "$@" ;;
-    append)   wi_append "$@" ;;
+    log)      wi_log "$@" ;;
     activate) wi_activate "$@" ;;
     defer)    wi_defer "$@" ;;
     block)    wi_block "$@" ;;

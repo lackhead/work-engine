@@ -46,7 +46,7 @@ Arguments:
 
 Description:
    Creates whatever's missing from the ~/work skeleton — the data/
-   subdirectories (items/, reminders/, docs/, diary/, retrospectives/,
+   subdirectories (items/, reminders/, docs/, retrospectives/,
    .claude/) and the two symlinks into engine/ (data/CLAUDE.md,
    data/.claude/skills). Requires engine/ to already be cloned; never clones
    engine/ or data/ itself.
@@ -96,7 +96,7 @@ print_debug "Engine found at $WORK/engine"
 ### Directories — mkdir -p is naturally idempotent
 ###
 for d in repos worktrees \
-         data/items data/reminders data/docs data/diary data/retrospectives data/.claude; do
+         data/items data/reminders data/docs data/retrospectives data/.claude; do
     if [ -d "$WORK/$d" ]; then
         print_verbose "Already present: $d/"
     else

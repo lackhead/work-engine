@@ -111,7 +111,7 @@ The front-door file is named **`<name>.md`** (matching the directory), *not*
   rejected alternatives, success criteria, rollback criteria. Edited in place
   as the plan evolves.
 - **`log/`** — the raw, auto-populated record: session breadcrumbs and
-  tagged jots, dated, one file per event. See "Session log" below.
+  logged notes, dated, one file per event. See "Session log" below.
 
 Optional, added only when earned: **`docs/`** (item-specific documentation —
 not a duplicate of repo docs), **`artifacts/`** (diagrams, exports, binaries),
@@ -120,12 +120,13 @@ complex items), **`risks.md`** (formal risk tracking).
 
 ## Session log (`log/`)
 
-Every event that pertains to an item — a real Claude Code session *and* a
-jot tagged to this item — lands in `log/` as a dated per-event file, one
-unified timeline running from rich (a full session breadcrumb) to sparse (a
-one-line jot), rather than two separate mechanisms. `log/` is **raw and
-machine/tool-written**, never hand-authored prose — it's the factual layer
-underneath the front door's curated `## Current state`.
+Every event that pertains to an item — a real Claude Code session *and* an
+out-of-band note recorded against this item — lands in `log/` as a dated
+per-event file, one unified timeline running from rich (a full session
+breadcrumb) to sparse (a one-line logged note), rather than two separate
+mechanisms. `log/` is **raw and machine/tool-written**, never hand-authored
+prose — it's the factual layer underneath the front door's curated
+`## Current state`.
 
 `type:` in a `log/` entry's frontmatter is a **provenance** field, not a
 fidelity field — it names which of the mechanisms below wrote the entry, and
@@ -143,27 +144,25 @@ breadcrumbs):
   `## Commits` / `## Files changed` lists. No interpretation — that's the
   front door's job. Multiple sessions for the item in a day stack as `01`,
   `02`, ….
-- **`<YYYY-MM-DD>.<name>.append.NN.md`** — an out-of-band note recorded
-  directly against this item via `workitem append <slug>`, for work done
-  outside a Claude Code session (a phone, a hallway conversation, another
-  terminal). Frontmatter: `type: workitem-append`, `slug`, `time`, optional
-  `commit`. Body: a one-line hand-written note. The `SessionStart` hook
-  (`work-session-catchup`) surfaces any entry here newer than the item's last
-  known session breadcrumb, so a fresh session picks it up as context
-  unprompted — see that script's header comment.
-- **`<YYYY-MM-DD>.<name>.jot.NN.md`** — a jot attributed to this item via
-  `workjot` (its item-attribution path — `create -i` or retroactive `tag` —
-  is expected to be retired once `workitem append` fully covers this case;
-  see `jots/CLAUDE.md`). Frontmatter: `type: jot`. Same shape as an append
-  entry otherwise — minimal frontmatter, one-line hand-written body.
+- **`<YYYY-MM-DD>.<name>.log.NN.md`** — an out-of-band note recorded directly
+  against this item via `workitem log`, for work done outside a Claude Code
+  session (a phone, a hallway conversation, another terminal). Frontmatter:
+  `type: workitem-log`, `slug`, `time`, optional `commit`. Body: a one-line
+  hand-written note. The `SessionStart` hook (`work-session-catchup`)
+  surfaces any entry here newer than the item's last known session
+  breadcrumb, so a fresh session picks it up as context unprompted — see
+  that script's header comment.
 
-**Lifecycle:** everything in `log/` is immutable once written, across all
-three shapes. The moment a jot is attributed to an item — at creation via
-`create -i`, or retroactively via `tag` — it stops being "a jot" in any
-tooled sense and becomes that item's history like any other `log/` entry;
-`workjot edit`/`delete` only ever operate on jots still sitting in `jots/`,
-never on one already here. A typo in a `log/` entry is corrected by hand,
-same as a session breadcrumb would be (rare, and not tooled).
+Historical items may still carry a `<YYYY-MM-DD>.<name>.jot.NN.md` file
+(`type: jot`) — the shape `workjot`'s now-retired item-attribution path used
+to write. Nothing writes that shape anymore; existing ones are left exactly
+as they are (archived-adjacent content is read-only by convention), and
+anything reading `log/` should keep recognizing it alongside `.session.` and
+`.log.` files rather than assuming only the current two shapes exist.
+
+**Lifecycle:** everything in `log/` is immutable once written, across every
+shape above. A typo in a `log/` entry is corrected by hand, same as a
+session breadcrumb would be (rare, and not tooled).
 
 There is no `status/` directory. A prior schema kept dated, curated
 snapshots there, written by the `retrospective` skill after confirmation —
@@ -327,8 +326,7 @@ item links never include the zone:
 - **Never put the zone in a link** (`[[items/backlog/foo]]` would rot when foo
   moves). Don't write `[[items/...]]` paths at all; the bare/suffix forms
   resolve regardless of zone.
-- **Reminders:** `[[reminders/<name>]]`. **Jots:** full path,
-  e.g. `[[jots/2026/04/29/2026-04-29.log]]`. **Documents:**
+- **Reminders:** `[[reminders/<name>]]`. **Documents:**
   `[[docs/<name>]]`. **Repos:** backticked paths, never wikilinks.
 
 ## How Claude should engage with work items
@@ -359,13 +357,22 @@ by `due:` ascending (undated last), with `blocked` flagged. `backlog/`
 
 ### Recording out-of-band work
 
-`workitem append <slug>` records a note into an item's `log/` for work that
+`workitem log [-r|--repo <repo>] [item-slug]` records a note for work that
 happened outside a Claude Code session — no need to open one just to leave a
-breadcrumb. It prompts for the latest commit (in a given `-r/--repo`, or the
-current directory's repo) and for note text, then writes a
-`type: workitem-append` entry. The `SessionStart` catch-up hook surfaces any
-such entry newer than the item's last known session the next time a session
-starts there, so nothing appended this way goes unseen.
+breadcrumb. Repo/commit context (from `-r/--repo`, or the current directory's
+repo) and target-item resolution are independent: whichever commit is found
+gets offered for recording regardless of where the note ends up. The target
+item resolves, in order: the explicit `item-slug` if given (top-level or
+backlog only — never `archived/`, since an archived item is closed and
+anything after that point is an operational fix, not a log entry); else, if
+the current directory is one of that item's worktrees, the item it belongs
+to; else an interactive prompt asking whether the note belongs to an existing
+top-level item (picked via `fzf` or a numbered fallback) or should become a
+new, already-`completed` item created just to hold it (`log-<timestamp>`
+slug, no `log/` of its own — the note is the entire content). The
+`SessionStart` catch-up hook surfaces any `type: workitem-log` entry newer
+than an item's last known session the next time a session starts there, so
+nothing logged this way goes unseen.
 
 ### Changing status
 

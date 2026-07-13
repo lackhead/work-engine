@@ -16,7 +16,7 @@ into that item's directory and stops being a top-level document.
 The broader principle: `~/work/` is where all of my managed work
 lives. Code goes in repos and some work happens directly on machines,
 but at some point all of it is referred to from a work item,
-document, reminder, or diary entry within `~/work/`. `~/work/data/docs/`
+document, or reminder within `~/work/`. `~/work/data/docs/`
 exists so that work artifacts that don't yet fit any other content
 type still have a home here rather than scattering across
 `~/Documents/` or random places.
@@ -24,11 +24,12 @@ type still have a home here rather than scattering across
 Documents are not:
 
 - **Work items** — things you sit down and work in a session. A
-  document might *seed* a work item but isn't itself one.
+  document might *seed* a work item but isn't itself one. (Dated activity
+  capture with no topic to organize around is also a work item now — see
+  `items/CLAUDE.md`'s "Recording out-of-band work" — not a separate content
+  type to contrast against here.)
 - **Reminders** — low-overhead "this exists, don't lose it" pointers.
   A document has substantive content; a reminder usually doesn't.
-- **Diary entries** — dated activity capture. A document is
-  topic-first and not pegged to a specific day's work.
 - **Item-internal docs** — those live at `items/<name>/docs/`
   and are part of a specific work item. The directory name is shared
   with this directory by design; the location and the per-directory
@@ -215,8 +216,6 @@ cross-references. The original file leaves `~/work/data/docs/`.
   inside a specific work item.
 - **Reminders:** `[[reminders/<name>]]`.
 - **Other documents:** `[[docs/<name>]]`.
-- **Diary entries:** by full path, e.g.
-  `[[diary/2026/04/29/2026-04-29.daily-summary]]`.
 - **Repositories:** plain backticked paths, e.g. `~/work/repos/Ansible`
   or `Ansible/bin/update-hosts`. Repos are git working trees nested in
   the vault but conceptually separate — reference by path, never

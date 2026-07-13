@@ -82,21 +82,20 @@ reminder that grows enough to earn a session graduates into a work item.
 
 ## The content types
 
-Five kinds of content, each with its own `CLAUDE.md` defining filenames,
+Four kinds of content, each with its own `CLAUDE.md` defining filenames,
 frontmatter, and lifecycle:
 
 | Type | Lives in | What it is | Schema |
 |------|----------|-----------|--------|
-| **Work items** | `data/items/` | Work you sit down and do | `engine/schema/items/CLAUDE.md` |
+| **Work items** | `data/items/` | Work you sit down and do (or an instant record of already-done work) | `engine/schema/items/CLAUDE.md` |
 | **Reminders** | `data/reminders/` | Atomic follow-ups, no session | `engine/schema/reminders/CLAUDE.md` |
 | **Documents** | `data/docs/` | Standalone writing not yet tied to an item | `engine/schema/docs/CLAUDE.md` |
-| **Diary** | `data/diary/` | Dated stream of activity, accretes | `engine/schema/diary/CLAUDE.md` |
-| **Retrospectives** | `data/retrospectives/` | Window roll-ups of the diary | `engine/schema/retrospectives/CLAUDE.md` |
+| **Retrospectives** | `data/retrospectives/` | Window roll-ups of every item's activity | `engine/schema/retrospectives/CLAUDE.md` |
 
-The **diary** and **retrospectives** are kept distinct on purpose: the diary is
-the raw, append-only activity stream (fed automatically), and retrospectives are
-the curated consolidations *derived* from it. Keeping the raw record separate
-from its summaries means each stays easy to read on its own.
+Each item's own `log/` and `retrospectives/` are kept distinct on purpose: an
+item's `log/` is the raw, auto-populated activity stream, and retrospectives
+are the curated consolidations *derived* from it. Keeping the raw record
+separate from its summaries means each stays easy to read on its own.
 
 The curated front page is [[index]] — a generated snapshot of current state, not
 a hand-maintained file (see "Skills" below).
@@ -112,8 +111,6 @@ Shell-agnostic `bash` executables on `PATH`, tracked in the `work-engine` repo
 (deployed to `~/work/engine/`, never hand-edited in place — see "How it's all
 tracked" below). These are the verbs of the system:
 
-- **`workjot`** — append a timestamped one-liner to today's jot log (ad-hoc work
-  that never gets a session).
 - **`workreminder`** — capture a reminder.
 - **`workitem`** — create, list, and archive work items (subcommands
   `create`/`list`/`archive`).
@@ -126,7 +123,7 @@ tracked" below). These are the verbs of the system:
 - **`work-backup`** — commit the vault (`~/work/data`) and push it offsite (run
   by launchd).
 - **`work-session-breadcrumb`** — the `SessionEnd` hook that writes a factual
-  breadcrumb to the diary when a session ends.
+  breadcrumb to that item's own `log/` when a session ends.
 
 Capture is **manual and deliberate** — you run a `work*` command to record
 something. Nothing scrapes Slack or your calendar. The system only ever reflects
@@ -144,7 +141,7 @@ Two LLM skills do the work that needs judgment rather than a fixed script:
   leaves the hand-written "Notes / current focus" block and the retrospective
   pointer alone.)
 - **`retrospective`** — rolls up a time window (day, week, quarter, range) from
-  breadcrumbs, jots, status entries, and your own git commits; writes a dated
+  breadcrumbs, logged notes, status entries, and your own git commits; writes a dated
   retrospective and *proposes* curated `status/` write-backs for items that saw
   real progress (never writing without confirmation).
 
@@ -209,7 +206,7 @@ part of the engine, so it's documented with the vault rather than here:
 independent repos and scratch space, each owning a distinct subtree so no two
 tools ever contend for the same path:
 
-1. **`data/`** (`items/`, `reminders/`, `docs/`, `diary/`, `retrospectives/`,
+1. **`data/`** (`items/`, `reminders/`, `docs/`, `retrospectives/`,
    `index.md`) → the vault git repo, pushed to `work-vault.git` offsite. This
    is the backup described above. Private, per-instance — never shared between
    a job vault and a personal one.

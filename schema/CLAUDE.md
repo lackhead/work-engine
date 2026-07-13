@@ -22,16 +22,19 @@ ever serve.
    understand the system, read these files; nothing else is required.
 3. **One level of depth at the root.** This file points at per-directory
    schemas for the specifics; subdirectory rules don't get repeated here.
-4. **An item's own directory is its complete raw record; `jots/`,
-   retrospectives, and the index are the layers around it.** Every work item
-   owns its full session-by-session history in `items/<name>/log/` — dated
-   entries running from rich (an auto-written session breadcrumb, git facts
-   only) to sparse (a hand-written jot tagged to that item), one unified
-   timeline, no separate "curated" layer living apart from it. `jots/` is the
-   much narrower leftover: dated activity with **no item to attach to** —
-   genuinely ad-hoc notes, fed by hand via `workjot`. The `retrospective`
-   skill reads across both (an item's `log/`, or `jots/` for anything
-   itemless) to produce window consolidations, which live separately under
+4. **An item's own directory is its complete raw record; retrospectives and
+   the index are the layers around it.** Every work item owns its full
+   session-by-session history in `items/<name>/log/` — dated entries running
+   from rich (an auto-written session breadcrumb, git facts only) to sparse
+   (a hand-written `workitem log` entry), one unified timeline, no separate
+   "curated" layer living apart from it. Genuinely itemless activity — work
+   with no existing item to attach to — isn't a separate tree either: it's
+   just an item whose entire lifecycle (born, worked, done) collapsed into
+   one instant, created directly into `items/archived/`, born already
+   `completed` (see `workitem log`'s "no existing item" path in
+   `items/CLAUDE.md`). The `retrospective` skill reads across every item's
+   `log/`, recognizing these instant-archived items as their own "ad-hoc"
+   category, to produce window consolidations, which live separately under
    `retrospectives/` (kept apart from the raw activity so each is easy to
    read on its own); it can also scope to a single item, in which case it
    reads only that item's own `log/`. The index is the curated overview of
@@ -72,8 +75,9 @@ ever serve.
    sitting down to work it. A work item is something you sit down and work in
    a dedicated session; it's always a directory (front door `<name>.md`,
    always present), with `plan.md` added only as it's earned and `log/`
-   populated automatically the first time a session or a tagged jot happens
-   for it (no deliberate "add this" step the way `plan.md` gets one). The
+   populated automatically the first time a session or a `workitem log`
+   entry happens for it (no deliberate "add this" step the way `plan.md`
+   gets one). The
    split is operational — *does it get a session?* — not about size or
    promise. Whether work is promised to another person, to oneself, or
    unpromised is a separate dimension captured in the optional `to:` field on
@@ -89,7 +93,7 @@ ever serve.
    `log/` / git) and `retrospective` (rolls up a window, cross-item or
    scoped to one item, and proposes a refreshed `## Current state` for items
    with material progress). Capture is manual via the `work*` shell commands
-   (`workjot`, `workreminder`, `workitem`) — engine tooling that lives in
+   (`workreminder`, `workitem`) — engine tooling that lives in
    `~/work/engine/bin/` (shell-agnostic, on PATH), not skills. Coding
    conventions for these scripts (output functions, help format, argument
    parsing, completions) are documented at
@@ -102,7 +106,7 @@ ever serve.
 10. **The engine (this schema, the skills, the tooling) and the data (this
     vault's actual content) are separate sibling repos under `~/work`, not one
     tree.** `~/work/data/` is this instance's private content — items,
-    reminders, docs, jots, retrospectives, `index.md` — usually its own git
+    reminders, docs, retrospectives, `index.md` — usually its own git
     repo for offsite backup, and never shared between instances (a personal
     instance gets its own `data/`, on its own machine). `~/work/engine/` is the
     shared, versioned `work-engine` repo — this file's canonical source, the
@@ -158,18 +162,17 @@ ever serve.
 │   ├── items/                # work items — things you sit down and work on
 │   │   ├── <name>/           # every item is a directory: front door <name>.md
 │   │   │                     #   (always) + plan.md (if earned) + log/ (auto-populated)
-│   │   │                     #   log/ holds dated session breadcrumbs + tagged jots
+│   │   │                     #   log/ holds dated session breadcrumbs + workitem log entries
 │   │   ├── backlog/          # proposed + deferred items
-│   │   └── archived/         # items out of active circulation
+│   │   └── archived/         # items out of active circulation, including instant
+│   │                         #   "log-<timestamp>" items born straight to completed
 │   ├── reminders/             # atomic notes that need follow-up (no work session)
 │   │   ├── <desc>.md          # created: date lives in frontmatter, not the filename
 │   │   └── archived/          # reminders moved out of active circulation
 │   ├── docs/                  # standalone documents not yet tied to a work item
 │   │   ├── <topic-name>.md    # any document
 │   │   └── archived/          # documents moved out of active circulation
-│   ├── jots/                  # itemless ad-hoc activity only, by date
-│   │   └── YYYY/MM/DD/        # one folder per day with any untagged activity
-│   └── retrospectives/        # window roll-ups (consolidations of item log/ + jots/)
+│   └── retrospectives/        # window roll-ups (consolidations of every item's log/)
 │       └── YYYY-MM-DD.retrospective-<N>d.md  # flat; dated by window end, <N>d = span
 ├── repos/                  # canonical clones — team-shared code AND repos/work-engine (edit clone)
 │   └── <repo-name>/         # one per repo; kept on the integration branch, not worked in directly
@@ -219,7 +222,7 @@ shape is described here.
   extension:
   - `[[index]]`
   - `[[ad-upgrade]]`
-  - `[[jots/2026/04/29/2026-04-29.log]]`
+  - `[[ad-upgrade/log/2026-05-04.ad-upgrade.session.01]]`
 
   Bare-basename wikilinks (`[[index]]`) are fine when the basename is
   unique in the vault. Otherwise use the full path — most subdirectories
@@ -250,8 +253,7 @@ shape is described here.
 - Lowercase kebab-case for general files: `plan.md`,
   `auto-update-proposal.md`.
 - `CLAUDE.md` and `index.md` keep their conventional names exactly.
-- `jots/` and an item's `log/` use strict dated patterns; see
-  `~/work/engine/schema/jots/CLAUDE.md` and
+- An item's `log/` uses strict dated patterns; see
   `~/work/engine/schema/items/CLAUDE.md`.
 - No spaces in filenames anywhere in the tree.
 
@@ -312,14 +314,10 @@ scope, but the root conventions still apply.
 - Documents have their own per-directory index at [[docs/index]] (not the root
   [[index]]) and carry no `status:` field, so archiving is purely a directory
   move. Otherwise they follow the same lifecycle conventions.
-- An item's `log/` is immutable once written — session breadcrumbs always,
-  and jot entries too from the moment they land there (whether tagged at
-  creation or moved in later). Jots still sitting in `jots/` are
-  append-only by default, with narrow, tooled exceptions via `workjot`:
-  `edit` (add follow-up context after the fact), `delete` (confirm-gated
-  removal for outright mistakes), and `tag` (retroactively move one into an
-  item's `log/`, at which point it stops being a jot workjot manages).
-  Nothing else in the tree gets rewritten this way.
+- An item's `log/` is immutable once written — session breadcrumbs and
+  `workitem log` entries alike, from the moment they land there. Nothing in
+  the tree gets rewritten after the fact; a typo is corrected by hand, same
+  as any other historical record.
 - If content needs a field the existing schema doesn't describe, revise
   the subdirectory's `CLAUDE.md` first, then add the content. Silent
   schema drift is worse than either changing the schema or omitting the
@@ -335,6 +333,6 @@ window — cross-item or scoped to a single item — and proposes a refreshed
 `SKILL.md` before invoking it. The old `daily-summary`, `session-capture`,
 and `standup-prep` skills are retired — superseded by the `SessionEnd`
 breadcrumb hook, `retrospective`, and `dashboard`. Capture is manual via the
-`work*` commands (`workjot` / `workreminder` / `workitem`) in
+`work*` commands (`workreminder` / `workitem`) in
 `~/work/engine/bin/`. General work-practice skills (useful outside this
 system) also live at `~/.claude/skills/` in dotfiles, not here.
