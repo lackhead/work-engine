@@ -40,7 +40,7 @@ Every `work*` command takes `-h/--help`, `-v/--verbose`, and `-d/--debug`.
 1. **Start the box once** (usually already running from login):
    `sandbox status` to check, `sandbox up` if needed.
 2. **Pick up work:** `workon nagios` → a Claude session opens in that item's
-   worktree, resuming the last session if there was one.
+   folder (with any worktrees attached), resuming the last session if there was one.
 3. **Quick thing outside a session?** `workitem log` — captured without
    ceremony, either into an existing item's `log/` or as a new completed
    item if there isn't one.
@@ -93,18 +93,22 @@ a slug to confirm. If a "reminder" actually needs a working session,
 `workreminder promote <name>` turns it into a work item and archives the
 reminder in one step.
 
-### `workitem` — create, list, and archive work items
+### `workitem` — create, list, and manage work items
 
-Every item is a directory (front door `<slug>/<slug>.md`); `plan.md` and
-`status/` are added later, only when the item earns them.
+Every item is a directory (front door `<slug>/<slug>.md`); `plan.md` and the
+`log/` come later — `plan.md` when the item earns it, `log/` automatically on
+the first session or logged note.
 
 ```bash
-workitem create                                # interactive
-workitem create Update nagios push notifications
+workitem create Update nagios push notifications   # title only — non-interactive
+workitem create -b Investigate the new vendor API  # into backlog/ (status proposed)
 ```
 
-Prompts for a one/two-sentence description, placement (active top-level vs.
-`backlog/`), and optionally `to:` / `due:`. See [[items/CLAUDE]].
+`create` is non-interactive: it takes the title, sets `status: active`
+top-level (or `proposed` in `backlog/` with `-b`), and stamps `made:`. Optional
+frontmatter (`to:`, `due:`, a description) is added afterward — by hand or by
+asking Claude. Beyond create/list/archive there are also `show`, `log`,
+`activate`, `defer`, `block`, `unblock`, and `delete`; see [[items/CLAUDE]].
 
 `workitem list` is a quick terminal-native glance — slug, status, due,
 last-updated — no LLM session needed:
@@ -129,26 +133,29 @@ workitem archive nagios --completed
 ### `workon` — open a session
 
 ```bash
-workon nagios                  # opens the item's worktree (or its folder)
-workon ad-upgrade Ansible      # pick a specific repo's worktree directly
-workon isolated-claude-workspace
+workon nagios                            # opens the item folder; attaches any worktrees
+workon ad-upgrade -r Ansible             # ensure/attach the Ansible worktree, then open
+workon new-idea -r Ansible -r Internal   # multi-repo: attach both
 ```
 
 What it does:
 
 - Resolves the item (must be an **active, top-level** item — not `backlog/` or
-  `archived/`).
-- Picks the worktree: if the item has one, opens it; several → prompts; none →
-  opens the item folder for planning.
-- Runs a **branch-drift check** against the integration branch and offers to
-  rebase/merge if you're behind.
-- Adds the item folder via `--add-dir` for shared cross-repo context.
+  `archived/`; offers to create it if the slug doesn't exist).
+- Opens the session with the **item's own folder** as the working directory —
+  always, never a specific repo's worktree.
+- Attaches **every** worktree the item has via `--add-dir`, all equally
+  reachable (there's no "pick one"). `-r/--repo` (repeatable) ensures a worktree
+  exists for a repo — creating it if missing — and attaches it.
+- Runs a **branch-drift check** per attached repo against the integration
+  branch and offers to rebase/merge if you're behind.
 - **Resumes** the last session for that directory if one exists, else starts
-  fresh — and runs it all inside the `work-sandbox` container, auto-starting the
-  box if it's down.
+  fresh — all inside the `work-sandbox` container, auto-starting the box if
+  it's down.
 
-One worktree = one session. An item touching several repos gets one worktree
-(and one session) per repo; the shared item folder carries cross-repo context.
+The item folder is the session's home and carries cross-repo context; a
+multi-repo item is one session with several worktrees attached, not several
+sessions.
 
 ### `worktree` — manage per-item worktrees
 
@@ -269,12 +276,12 @@ scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
 | `workitem create [title...]` | Create a work item | vault |
 | `workitem list [--backlog\|--archived\|--all] [--status <v>]` | Quick glance at items | vault |
 | `workitem archive <slug> [--completed\|--cancelled]` | Close out an item | vault |
-| `workon <slug> [repo]` | Open a Claude session for an item | host → container |
+| `workon <slug> [-r <repo>]...` | Open a Claude session for an item | host → container |
 | `worktree add/rm/list/refresh` | Manage per-item git worktrees | vault/repos |
 | `sandbox up/down/restart/status/shell/rebuild` | Container lifecycle | host |
 | `work-backup` | Commit + push the vault offsite now | host |
 | `dashboard` (skill) | Rank in-flight work, regenerate `index.md` | vault |
-| `retrospective [window]` (skill) | Recap a window, propose status write-backs | vault |
+| `retrospective [window]` (skill) | Recap a window, propose Current state write-backs | vault |
 
 All commands accept `-h/--help`; the `work*` family and `worktree`/`sandbox`
 also take `-v/--verbose` and `-d/--debug`.
