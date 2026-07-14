@@ -242,6 +242,61 @@ transition_status() {
 }
 
 ###
+### Shared item helpers
+###
+
+# Parse exactly one positional <slug> from "$@" (no options accepted) and echo
+# it. $1 is the subcommand name, used only in the usage error. Prints an error
+# and returns 1 on an unknown option, a second positional, or a missing slug —
+# so callers use:  slug=$(wi_one_slug <cmd> "$@") || return 1
+wi_one_slug() {
+    local cmd=$1; shift
+    local slug='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$slug" ]; then slug=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    [ -n "$slug" ] || { print_error "Usage: workitem $cmd <slug>"; return 1; }
+    printf '%s' "$slug"
+}
+
+# Echo which attention zone an item's directory lives in — top | backlog |
+# archived — or nothing if it doesn't exist anywhere. That's all a caller needs;
+# the directory is "$WORK/data/items[/<zone>]/<slug>". Centralizes the existence
+# ladder every slug-taking subcommand shares — the tailored "wrong zone" error
+# wording stays with each subcommand.
+wi_locate() {
+    local slug=$1 root="$WORK/data/items"
+    if   [ -d "$root/$slug" ];          then echo top
+    elif [ -d "$root/backlog/$slug" ];  then echo backlog
+    elif [ -d "$root/archived/$slug" ]; then echo archived
+    fi
+}
+
+# Echo a slug colliding with no existing item in any zone: <base> if free, else
+# <base>-2, <base>-3, ... Checks both the legacy <slug>.md file and <slug>/ dir.
+wi_unique_slug() {
+    local base=$1 slug=$1 n=1 z collide
+    while true; do
+        collide=false
+        for z in '' backlog/ archived/; do
+            if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
+                collide=true; break
+            fi
+        done
+        [ "$collide" = true ] || break
+        n=$((n + 1))
+        slug="$base-$n"
+    done
+    printf '%s' "$slug"
+}
+
+###
 ### Subcommands
 ###
 wi_create() {
@@ -290,18 +345,8 @@ wi_create() {
     # Resolve a collision by appending -2, -3, ... rather than refusing --
     # once slugs are truncated/short, two unrelated titles legitimately
     # landing on the same slug is expected, not an error.
-    local base="$slug" n=1 z collide
-    while true; do
-        collide=false
-        for z in '' backlog/ archived/; do
-            if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
-                collide=true; break
-            fi
-        done
-        [ "$collide" = true ] || break
-        n=$((n + 1))
-        slug="$base-$n"
-    done
+    local base="$slug"
+    slug=$(wi_unique_slug "$base")
     [ "$slug" != "$base" ] && print_verbose "Slug '$base' taken — using '$slug'"
 
     local zone='' status='active'
@@ -385,30 +430,14 @@ wi_list() {
 }
 
 wi_show() {
-    local slug='' a
-    for a in "$@"; do
-        case "$a" in
-            -*) print_error "Unknown option: $a"; return 1 ;;
-            *)
-                if [ -z "$slug" ]; then slug=$a
-                else print_error "Too many arguments."; return 1
-                fi ;;
-        esac
-    done
-    if [ -z "$slug" ]; then
-        print_error "Usage: workitem show <slug>"; return 1
-    fi
+    local slug; slug=$(wi_one_slug show "$@") || return 1
 
-    local root="$WORK/data/items" front='' z
-    for z in '' backlog/ archived/; do
-        if [ -f "$root/$z$slug/$slug.md" ]; then
-            front="$root/$z$slug/$slug.md"
-            break
-        fi
-    done
-    if [ -z "$front" ]; then
+    local root="$WORK/data/items" zone; zone=$(wi_locate "$slug")
+    if [ -z "$zone" ]; then
         print_error "No item '$slug' found."; return 1
     fi
+    local dir="$root/$slug"; [ "$zone" != top ] && dir="$root/$zone/$slug"
+    local front="$dir/$slug.md"
 
     if [ -n "${PAGER:-}" ]; then
         # Intentionally unquoted: $PAGER commonly carries flags (e.g. "less -R"),
@@ -432,18 +461,8 @@ wi_log_create_itemless() {
     local ts_title="${ts:0:10} ${ts:11:2}:${ts:14:2}:${ts:17:2}"
 
     local slug="log-$ts"
-    local base="$slug" n=1 z collide
-    while true; do
-        collide=false
-        for z in '' backlog/ archived/; do
-            if [ -e "$WORK/data/items/$z$slug.md" ] || [ -d "$WORK/data/items/$z$slug" ]; then
-                collide=true; break
-            fi
-        done
-        [ "$collide" = true ] || break
-        n=$((n + 1))
-        slug="$base-$n"
-    done
+    local base="$slug"
+    slug=$(wi_unique_slug "$base")
     [ "$slug" != "$base" ] && print_verbose "Slug '$base' taken — using '$slug'"
 
     local today; today=$(date +%Y-%m-%d)
@@ -675,29 +694,15 @@ wi_log() {
 # not leaving active circulation.
 
 wi_activate() {
-    local slug='' a
-    for a in "$@"; do
-        case "$a" in
-            -*) print_error "Unknown option: $a"; return 1 ;;
-            *)
-                if [ -z "$slug" ]; then slug=$a
-                else print_error "Too many arguments."; return 1
-                fi ;;
-        esac
-    done
-    if [ -z "$slug" ]; then
-        print_error "Usage: workitem activate <slug>"; return 1
-    fi
+    local slug; slug=$(wi_one_slug activate "$@") || return 1
 
-    local root="$WORK/data/items"
-    if [ ! -d "$root/backlog/$slug" ]; then
-        if [ -d "$root/$slug" ]; then
-            print_error "'$slug' is already top-level (not in backlog)."
-        elif [ -d "$root/archived/$slug" ]; then
-            print_error "'$slug' is archived — not in backlog."
-        else
-            print_error "No item '$slug' found in items/backlog/."
-        fi
+    local root="$WORK/data/items" zone; zone=$(wi_locate "$slug")
+    if [ "$zone" != backlog ]; then
+        case "$zone" in
+            top)      print_error "'$slug' is already top-level (not in backlog)." ;;
+            archived) print_error "'$slug' is archived — not in backlog." ;;
+            *)        print_error "No item '$slug' found in items/backlog/." ;;
+        esac
         return 1
     fi
 
@@ -707,29 +712,15 @@ wi_activate() {
 }
 
 wi_defer() {
-    local slug='' a
-    for a in "$@"; do
-        case "$a" in
-            -*) print_error "Unknown option: $a"; return 1 ;;
-            *)
-                if [ -z "$slug" ]; then slug=$a
-                else print_error "Too many arguments."; return 1
-                fi ;;
-        esac
-    done
-    if [ -z "$slug" ]; then
-        print_error "Usage: workitem defer <slug>"; return 1
-    fi
+    local slug; slug=$(wi_one_slug defer "$@") || return 1
 
-    local root="$WORK/data/items"
-    if [ ! -d "$root/$slug" ]; then
-        if [ -d "$root/backlog/$slug" ]; then
-            print_error "'$slug' is already in backlog."
-        elif [ -d "$root/archived/$slug" ]; then
-            print_error "'$slug' is archived — not top-level."
-        else
-            print_error "No item '$slug' found at top level."
-        fi
+    local root="$WORK/data/items" zone; zone=$(wi_locate "$slug")
+    if [ "$zone" != top ]; then
+        case "$zone" in
+            backlog)  print_error "'$slug' is already in backlog." ;;
+            archived) print_error "'$slug' is archived — not top-level." ;;
+            *)        print_error "No item '$slug' found at top level." ;;
+        esac
         return 1
     fi
 
@@ -739,33 +730,19 @@ wi_defer() {
 }
 
 wi_block() {
-    local slug='' a
-    for a in "$@"; do
-        case "$a" in
-            -*) print_error "Unknown option: $a"; return 1 ;;
-            *)
-                if [ -z "$slug" ]; then slug=$a
-                else print_error "Too many arguments."; return 1
-                fi ;;
-        esac
-    done
-    if [ -z "$slug" ]; then
-        print_error "Usage: workitem block <slug>"; return 1
-    fi
+    local slug; slug=$(wi_one_slug block "$@") || return 1
 
-    local root="$WORK/data/items"
-    local srcdir="$root/$slug"
-    if [ ! -d "$srcdir" ]; then
-        if [ -d "$root/backlog/$slug" ]; then
-            print_error "'$slug' is in backlog — block only applies to top-level items."
-        elif [ -d "$root/archived/$slug" ]; then
-            print_error "'$slug' is archived — block only applies to top-level items."
-        else
-            print_error "No item '$slug' found at top level."
-        fi
+    local root="$WORK/data/items" zone; zone=$(wi_locate "$slug")
+    if [ "$zone" != top ]; then
+        case "$zone" in
+            backlog)  print_error "'$slug' is in backlog — block only applies to top-level items." ;;
+            archived) print_error "'$slug' is archived — block only applies to top-level items." ;;
+            *)        print_error "No item '$slug' found at top level." ;;
+        esac
         return 1
     fi
 
+    local srcdir="$root/$slug"
     local front="$srcdir/$slug.md"
     local status; status=$(sed -n 's/^status: *//p' "$front" | head -1)
     case "$status" in
@@ -779,33 +756,19 @@ wi_block() {
 }
 
 wi_unblock() {
-    local slug='' a
-    for a in "$@"; do
-        case "$a" in
-            -*) print_error "Unknown option: $a"; return 1 ;;
-            *)
-                if [ -z "$slug" ]; then slug=$a
-                else print_error "Too many arguments."; return 1
-                fi ;;
-        esac
-    done
-    if [ -z "$slug" ]; then
-        print_error "Usage: workitem unblock <slug>"; return 1
-    fi
+    local slug; slug=$(wi_one_slug unblock "$@") || return 1
 
-    local root="$WORK/data/items"
-    local srcdir="$root/$slug"
-    if [ ! -d "$srcdir" ]; then
-        if [ -d "$root/backlog/$slug" ]; then
-            print_error "'$slug' is in backlog — unblock only applies to top-level items."
-        elif [ -d "$root/archived/$slug" ]; then
-            print_error "'$slug' is archived — unblock only applies to top-level items."
-        else
-            print_error "No item '$slug' found at top level."
-        fi
+    local root="$WORK/data/items" zone; zone=$(wi_locate "$slug")
+    if [ "$zone" != top ]; then
+        case "$zone" in
+            backlog)  print_error "'$slug' is in backlog — unblock only applies to top-level items." ;;
+            archived) print_error "'$slug' is archived — unblock only applies to top-level items." ;;
+            *)        print_error "No item '$slug' found at top level." ;;
+        esac
         return 1
     fi
 
+    local srcdir="$root/$slug"
     local front="$srcdir/$slug.md"
     local status; status=$(sed -n 's/^status: *//p' "$front" | head -1)
     case "$status" in
@@ -837,16 +800,13 @@ wi_archive() {
         print_error "Usage: workitem archive <slug> [--completed|--cancelled]"; return 1
     fi
 
-    local root="$WORK/data/items" srcdir=''
-    if [ -d "$root/$slug" ]; then
-        srcdir="$root/$slug"
-    elif [ -d "$root/backlog/$slug" ]; then
-        srcdir="$root/backlog/$slug"
-    elif [ -d "$root/archived/$slug" ]; then
-        print_error "'$slug' is already archived."; return 1
-    else
-        print_error "No item '$slug' found (checked items/ and items/backlog/)."; return 1
-    fi
+    local root="$WORK/data/items" srcdir='' zone; zone=$(wi_locate "$slug")
+    case "$zone" in
+        top)      srcdir="$root/$slug" ;;
+        backlog)  srcdir="$root/backlog/$slug" ;;
+        archived) print_error "'$slug' is already archived."; return 1 ;;
+        *)        print_error "No item '$slug' found (checked items/ and items/backlog/)."; return 1 ;;
+    esac
     print_verbose "Found item at ${srcdir/#$HOME/\~}"
 
     if [ -z "$newstatus" ]; then
@@ -886,16 +846,13 @@ wi_delete() {
         print_error "Usage: workitem delete <slug> [--force]"; return 1
     fi
 
-    local root="$WORK/data/items" srcdir=''
-    if [ -d "$root/$slug" ]; then
-        srcdir="$root/$slug"
-    elif [ -d "$root/backlog/$slug" ]; then
-        srcdir="$root/backlog/$slug"
-    elif [ -d "$root/archived/$slug" ]; then
-        srcdir="$root/archived/$slug"
-    else
-        print_error "No item '$slug' found."; return 1
-    fi
+    local root="$WORK/data/items" srcdir='' zone; zone=$(wi_locate "$slug")
+    case "$zone" in
+        top)      srcdir="$root/$slug" ;;
+        backlog)  srcdir="$root/backlog/$slug" ;;
+        archived) srcdir="$root/archived/$slug" ;;
+        *)        print_error "No item '$slug' found."; return 1 ;;
+    esac
     print_verbose "Found item at ${srcdir/#$HOME/\~}"
 
     # Deletion (not archiving) is a deliberate, narrow exception — see the
