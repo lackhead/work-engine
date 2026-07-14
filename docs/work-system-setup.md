@@ -22,10 +22,15 @@ your data takes.
 Assumes Homebrew is already installed.
 
 ```bash
-brew install git fish
+brew install git fish fzf jq
 brew install --cask docker
 mkdir -p ~/work
 ```
+
+`git`, `fish`, and Docker Desktop are required. `fzf` and `jq` are recommended
+but optional: `fzf` drives the interactive item picker in `workitem log` and
+`workreminder` (both fall back to a numbered menu without it), and `jq` speeds
+up the session breadcrumb's JSON parsing (a `sed` fallback covers its absence).
 
 `~/work` is just the default — any directory works as long as `$WORK_ROOT`
 points at it (see `~/work/engine/schema/CLAUDE.md`). The rest of this doc
