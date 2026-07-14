@@ -10,25 +10,11 @@
 
 set -u
 
-WORK="${WORK_ROOT:-$HOME/work}"
-
-###
-### Output functions
-###
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NORMAL='\033[0m'
-VERBOSE=false
-DEBUG=false
-
-print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
-print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
-print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
-print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
-print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
-print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
+# Shared boilerplate: WORK root, print_* output functions, trim/kebab/trunc/
+# iso_now. Resolves to lib.sh in this script's own bin/ dir. See
+# docs/bin-coding-standards.md.
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 IFS='' read -r -d '' usage <<"EOF"
 
@@ -87,36 +73,6 @@ Examples:
    workreminder promote check-on-mikes-pr-progress -b Review Mike's PR properly
 
 EOF
-
-trim()  { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
-
-# Kebab-case $1, truncated to at most $2 characters (default 30). Truncation
-# snaps back to the last complete word boundary that fits rather than
-# cutting mid-word -- a long description should still read as words, not a
-# ragged fragment. (A single first word longer than the cap is the one
-# case that still gets a hard cut -- nothing left to snap back to.)
-kebab() {
-    local s max cut
-    s=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
-    max=${2:-30}
-    if [ ${#s} -le "$max" ]; then
-        printf '%s' "$s"
-        return
-    fi
-    cut="${s:0:$max}"
-    [[ "$cut" == *-* ]] && cut="${cut%-*}"
-    printf '%s' "$cut"
-}
-
-# Truncate to at most $2 chars, marking truncation with a trailing '..'.
-trunc() {
-    local s=$1 max=$2
-    if [ ${#s} -le "$max" ]; then
-        printf '%s' "$s"
-    else
-        printf '%s..' "${s:0:$((max - 2))}"
-    fi
-}
 
 # Resolve a reminder name to its full path, checking both zones. Echoes the
 # path and returns 0 if found; returns 1 with no output otherwise.
@@ -587,6 +543,7 @@ wr_due() {
 ###
 # Parse global options before the subcommand so `workreminder -v list` works.
 # -d implies -v.
+# shellcheck disable=SC2034  # VERBOSE/DEBUG are read by print_* in lib.sh
 while [ $# -gt 0 ]; do
     case "$1" in
         -v|--verbose) VERBOSE=true; shift ;;
