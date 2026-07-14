@@ -38,8 +38,9 @@ assumes the default.
 
 Dotfiles (shell config, `PATH` wiring for `~/work/engine/bin`) should already
 be deployed before starting below — `workon`/`worktree`/`sandbox` aren't
-resolvable by bare name until they are, and the global `SessionEnd` hook +
-statusline entries in `~/.claude/settings.json` come from there too.
+resolvable by bare name until they are. (Claude Code's in-sandbox settings —
+the statusline and the `SessionStart` catch-up hook — are seeded into the
+container by the image itself, not from host dotfiles; see step 5.)
 
 ## 1. Clone the engine
 
