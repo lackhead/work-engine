@@ -247,6 +247,25 @@ it if it's down. You need it mainly when:
 Recreating the container loses nothing — login and transcripts live on the
 `claude-home` named volume, the vault is a bind-mount.
 
+### Getting files into a session
+
+Dragging a file onto the terminal (or pasting from Finder) only inserts a
+*host* path the container can't read — the Mac filesystem isn't mounted in the
+box, except `~/work`. So to hand a file (a screenshot, a PDF, an export) to a
+session, drop it in **`~/work/incoming/`** and tell Claude it's there:
+
+```
+> I dropped foo.png in incoming
+```
+
+Because `~/work` is bind-mounted at the same path inside the box, Claude reads
+it directly and can move it into the relevant item
+(`items/<slug>/artifacts/` or `docs/`) if it's worth keeping. `incoming/` is
+scratch, not storage — ungit'd, never backed up, and the sandbox auto-purges
+anything older than a week on start. (Clipboard *image* paste still won't
+work — there's no clipboard bridge into the container — so the
+drop-in-`incoming` path is the way.)
+
 ## Backups
 
 `~/work/data` is the only thing that needs backing up (`engine/` is a clone

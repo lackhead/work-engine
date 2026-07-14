@@ -279,7 +279,8 @@ call itself, host-side, once its `docker exec` into the session returns
 (deliberately not `exec`'d into it — see `bin/workon`'s header comment): if
 nothing ever landed — no commits unique to the branch in any attached
 worktree, no uncommitted changes, nothing added to the item folder beyond its
-front-door file — it runs `workitem delete <slug>` on it: worktree(s) removed,
+front-door file (its auto-written `log/` breadcrumb doesn't count) — it runs
+`workitem delete <slug>` on it: worktree(s) removed,
 item directory gone outright, no `archived/` copy. There's nothing to
 preserve for a placeholder that was never used, which is why this is
 deletion and not archiving — see the root `CLAUDE.md`'s note on that
@@ -293,13 +294,14 @@ graduated to real work in an earlier session is never at risk from a later
 session that happens to add nothing new.
 
 Either way, `workon` prints one line reporting what it decided before
-exiting. The `SessionEnd` breadcrumb hook (`work-session-breadcrumb`) still
-runs independently and still writes the item's `log/` breadcrumb as usual,
-but has no say in a quick item's fate — see that script's header comment
-for why the sweep decision moved out of it. A quick item deleted before
-anything landed takes its (nonexistent) `log/` with it; one whose slug
-already has breadcrumbs elsewhere from an earlier session is, by
-definition, past the "nothing landed" bar and won't be deleted.
+exiting. `workon` writes the item's `log/` breadcrumb itself (host-side, just
+before this sweep — see `bin/work-session-breadcrumb`'s header), so a quick
+item deleted for having nothing landed takes that freshly-written breadcrumb
+with it when its directory is removed. Breadcrumbs never enter into the
+decision: the sweep's file check ignores `log/` entirely, so neither this
+session's breadcrumb nor any from earlier sessions keeps a quick item alive —
+only landed work does (cumulative commits, uncommitted changes, or files in
+the item folder outside `log/`).
 
 ## Naming conventions
 
