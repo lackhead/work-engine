@@ -134,23 +134,20 @@ that alone tells a reader how much detail to expect. Filename shapes,
 distinguished by their dot-separated parts (same convention as the old diary
 breadcrumbs):
 
-- **`<YYYY-MM-DD>.<name>.session.NN.md`** — a session breadcrumb, written
-  automatically by `work-session-breadcrumb`, which `workon` invokes when a
-  Claude Code session against this item ends (a worktree session or an
-  item-folder planning session). Frontmatter: `type: session-breadcrumb`,
-  `slug`, `session-id`, `session-num` (quoted, `"01"`, `"02"`, ...), `start`
-  (this run's start, from `workon`) / `end`, `repos` (inline list of the
-  worktrees touched; per-repo branch and counts live in the body),
-  `dirty`/`commits`/`files-changed` (aggregated across those worktrees),
-  `item-files-changed` (count of files touched in the item's own folder,
-  excluding `log/`), `transcript`, and `start-unresolved: true` (diagnostic,
-  present only when the start timestamp couldn't be parsed from the transcript
-  despite recorded turns — a signal that `commits`/`files-changed` are
-  understated and the extraction may have regressed). Body: a one-line summary,
-  optional per-repo `## <repo>` sections (`### Commits` / `### Files changed`)
-  and an `## Item-folder files touched` list. No interpretation — that's the
-  front door's job. Multiple sessions for the item in a day stack as `01`,
-  `02`, ….
+- **`<YYYY-MM-DD>.<name>.session.NN.md`** — a session breadcrumb, written by
+  `work-session-breadcrumb`, which `workon` invokes host-side once a session
+  against this item ends (a worktree session or an item-folder planning
+  session). Frontmatter: `type: session-breadcrumb`, `slug`, `session-num`
+  (quoted, `"01"`, `"02"`, ...), `start`/`end` (this run's span, stamped by
+  `workon` in local time), `repos` (inline list of the worktrees touched;
+  per-repo branch and counts live in the body),
+  `dirty`/`commits`/`files-changed` (aggregated across those worktrees), and
+  `item-files-changed` (count of files touched in the item's own folder this
+  session, excluding `log/`). Body: a one-line summary, optional per-repo
+  `## <repo>` sections (`### Commits` / `### Files changed`) and an
+  `## Item-folder files touched` list. No interpretation — that's the front
+  door's job. The filename date is the local date of `end`. Multiple sessions
+  for the item in a day stack as `01`, `02`, ….
 - **`<YYYY-MM-DD>.<name>.log.NN.md`** — an out-of-band note recorded directly
   against this item via `workitem log`, for work done outside a Claude Code
   session (a phone, a hallway conversation, another terminal). Frontmatter:
