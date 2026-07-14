@@ -176,15 +176,26 @@ ever serve.
 │       └── YYYY-MM-DD.retrospective-<N>d.md  # flat; dated by window end, <N>d = span
 ├── repos/                  # canonical clones — team-shared code AND repos/work-engine (edit clone)
 │   └── <repo-name>/         # one per repo; kept on the integration branch, not worked in directly
-└── worktrees/              # per-item git worktrees off the canonical clones
-    └── <slug>/<repo>/        # one checkout per active item per repo it touches
+├── worktrees/              # per-item git worktrees off the canonical clones
+│   └── <slug>/<repo>/        # one checkout per active item per repo it touches
+└── incoming/               # transient host→sandbox file drop zone (ungit'd, auto-purged weekly)
 ```
 
-`engine/` and `data/` are separate git repos (see principle 10); `repos/` and
-`worktrees/` are ungit'd scratch space. For each major `data/` subdirectory,
-see its schema at `engine/schema/<name>/CLAUDE.md` for content rules, filename
-conventions, and frontmatter fields. The root file deliberately stops at one
-level of depth.
+`engine/` and `data/` are separate git repos (see principle 10); `repos/`,
+`worktrees/`, and `incoming/` are ungit'd scratch space. For each major `data/`
+subdirectory, see its schema at `engine/schema/<name>/CLAUDE.md` for content
+rules, filename conventions, and frontmatter fields. The root file deliberately
+stops at one level of depth.
+
+`incoming/` is a **transfer buffer** for handing files from the host into a
+sandbox session: a drag-drop or paste only inserts a host path the container
+can't read, but anything under `~/work` is readable at the *same* path inside
+the box. So drop a file in `incoming/`, tell Claude it's there, and it can read
+it or move it into a work item. It's scratch, not storage — files are meant to
+be consumed (moved into an item's `artifacts/`/`docs/`) as they're used, and
+the sandbox sweeps anything older than a week on every start. That auto-deletion
+is a deliberate, narrow exception to "nothing is deleted" (principle 5), like
+`--quick` items: a transfer buffer holds nothing worth preserving.
 
 ## Conventions
 
