@@ -19,10 +19,11 @@ ARG HOME_DIR=/Users/clake
 
 # Surrounding kit only: the native Claude binary is self-contained (ripgrep
 # bundled) on glibc, so this is git+ssh (the channels out), fish (interactive
-# shell), jq (hook + statusline), fd/python3/less for day-to-day.
+# shell), jq (catch-up hook + statusline), fzf (workitem/workreminder pickers),
+# fd/python3/less for day-to-day.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl git openssh-client \
-        fish jq fd-find python3 python3-venv python3-pip pipx make shellcheck \
+        fish jq fzf fd-find python3 python3-venv python3-pip pipx make shellcheck \
         less procps rsync vim \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd
