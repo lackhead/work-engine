@@ -2,35 +2,37 @@
 #
 # work-session-breadcrumb — write a factual session breadcrumb into an item's log/.
 #
-# Invoked by `workon` once a session returns — host-side orchestration, but
-# executed inside the sandbox container (`docker exec`) so it can read the
-# session transcript off the container volume. Reads a small JSON payload on
-# stdin — {cwd, session_id, transcript_path, start} — and IF cwd is inside an
-# item folder, writes:
+# Invoked by `workon` on the host once a session returns. Everything it records
+# is available host-side — the item folder and the item's worktrees are all
+# bind-mounted, and `workon` supplies the session's start/end times — so this
+# runs directly (no `docker exec`, no dependency on the Claude transcript).
+#
+# Reads a small JSON payload on stdin:
+#
+#   {cwd, start, end, since_ref}
+#     cwd        the session's working directory (an item folder)
+#     start/end  ISO 8601 timestamps for THIS run, stamped by workon (local TZ)
+#     since_ref  path to a marker file whose mtime == the session start, used to
+#                find item-folder files touched during the session with portable
+#                `find -newer` (avoids GNU-only `-newermt`)
+#
+# IF cwd is inside an item folder it writes:
 #
 #   ~/work/data/items/<zone>/<slug>/log/<date>.<slug>.session.NN.md
 #
 # aggregated across every worktree the item has, plus any files touched in the
-# item's own folder this session. For a cwd not under an item folder it exits
+# item's own folder this session. For a cwd not under an item folder, exits
 # silently.
 #
 # This used to be a Claude Code SessionEnd hook, but SessionEnd fires
-# unreliably on some exit paths (a long session ended by a hard exit may never
-# fire it), so `workon` drives it deterministically instead — see workon's
-# post-session section. It still reads its payload from stdin, so it can also
-# be run by hand for recovery.
+# unreliably on some exit paths (a long session ended by a hard exit could
+# leave no breadcrumb at all), so `workon` drives it deterministically. It
+# still reads its payload from stdin, so it can be run by hand for recovery.
 #
 # Deliberately dumb: records git/session/file facts only. Curated, human-framed
 # progress is written separately (the retrospective skill), never here.
 
-# Never let a failure be noisy or disruptive (workon ignores our exit code and
-# carries on regardless); just be tidy.
 set -u
-# Vault root: honor $WORK_ROOT if set, else default to ~/work. The default is
-# the permanent mechanism — the var only needs setting if a second instance
-# coexists on one machine. The hook runs under Claude Code's environment (not
-# your interactive shell), so it cannot assume $WORK_ROOT is exported — hence
-# the fallback.
 WORK="${WORK_ROOT:-$HOME/work}"
 
 # --- read stdin payload --------------------------------------------------
@@ -49,23 +51,15 @@ field() {
 }
 
 cwd="$(field cwd)"
-session_id="$(field session_id)"
-transcript="$(field transcript_path)"
-# workon passes the true start of THIS run (its own launch time). It takes
-# precedence over the transcript's first timestamp, which for a resumed session
-# is the ORIGINAL session's start — using it would over-count commits/files back
-# to the item's first-ever session. Falls back to the transcript when absent
-# (a hand/legacy invocation with no start in the payload).
-payload_start="$(field start)"
+start_ts="$(field start)"
+end_ts="$(field end)"
+since_ref="$(field since_ref)"
 [ -n "$cwd" ] || exit 0
 
 # --- derive the slug + item directory from the cwd -------------------------
-# cwd is always an item folder now — workon never launches a session with cwd
-# inside a worktree directly. (A hand-launched session started that way,
-# bypassing workon, would simply not match any case below and fall through
-# to the catch-all — nothing has ever actually done this.) Capture the zone
-# prefix too, not just the slug, so the breadcrumb can be written into that
-# item's own log/ wherever it currently sits (top level, backlog/, archived/).
+# cwd is an item folder (workon launches sessions there). Capture the zone
+# prefix too, not just the slug, so the breadcrumb lands in that item's own
+# log/ wherever it currently sits (top level, backlog/, archived/).
 slug=""
 zone_prefix=""
 case "$cwd" in
@@ -78,51 +72,21 @@ esac
 item_dir="$zone_prefix/$slug"
 
 # --- timestamps ----------------------------------------------------------
-# ISO 8601 with a colon in the TZ offset (matches the vault convention).
+# workon supplies start/end (local). end falls back to "now" for a hand
+# invocation that omitted it; start has no sensible fallback (the git/file
+# windows below are measured from it), so bail if it's missing.
 iso_now() {
     local t
     t="$(date +%Y-%m-%dT%H:%M:%S%z)"
     printf '%s' "$t" | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/'
 }
-end_ts="$(iso_now)"
-
-# Session window start. Prefer workon's payload start (the true start of this
-# run). Only if it's absent do we fall back to the transcript's first
-# *timestamped* line — NOT necessarily line 1, since Claude Code leads a
-# transcript with a few untimestamped metadata records (mode, permission-mode,
-# file-history-snapshot, ...) before the first real message, so a bare
-# `head -n1` silently yields empty. An empty start_ts zeroes out this session's
-# reported commit/file counts below (the `[ -n "$start_ts" ]` guards); the
-# silent-zero guard further down flags that case rather than letting it pass as
-# a lying "0 commits".
-start_ts="$payload_start"
-if [ -z "$start_ts" ] && [ -n "$transcript" ] && [ -r "$transcript" ]; then
-    if command -v jq >/dev/null 2>&1; then
-        start_ts="$(jq -r '.timestamp // empty' "$transcript" 2>/dev/null | grep -m1 .)"
-    else
-        start_ts="$(sed -n 's/.*"timestamp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$transcript" 2>/dev/null | head -n1)"
-    fi
-fi
-
-# Silent-zero guard. An empty start_ts zeroes every commit/file count below, so
-# distinguish two cases: a session that never had message turns (immediate exit
-# — only leading metadata records in the transcript, legitimately no timestamp,
-# stay quiet) from one that DID have turns yet still yielded no start (the
-# extraction is broken — e.g. a transcript-format change — and the zeros are
-# lying). Flag only the latter, in the breadcrumb itself, so a future regression
-# of this class surfaces instead of masquerading as "0 commits" on every item.
-# user/assistant records carry timestamps; the metadata preamble does not.
-start_unresolved=false
-if [ -z "$start_ts" ] && [ -n "$transcript" ] && [ -r "$transcript" ] \
-   && grep -qE '"type"[[:space:]]*:[[:space:]]*"(user|assistant)"' "$transcript" 2>/dev/null; then
-    start_unresolved=true
-fi
+[ -n "$end_ts" ] || end_ts="$(iso_now)"
+[ -n "$start_ts" ] || exit 0
 
 # --- git facts across every worktree the item has -------------------------
-# No vault-git guard needed here (unlike an item-folder cwd, which can
-# resolve *up* into ~/work/data's own git repo) — each worktree directory has
-# its own .git that shadows the vault, so `git -C <worktree>` always resolves
-# to the worktree itself. See docs/bin-coding-standards.md.
+# The worktrees are bind-mounted host paths, so this reads them directly. Each
+# worktree has its own .git that shadows the vault, so `git -C <worktree>`
+# always resolves to the worktree itself (no vault-git guard needed).
 wtbase="$WORK/worktrees/$slug"
 repos_touched=()
 agg_dirty=false
@@ -137,13 +101,9 @@ if [ -d "$wtbase" ]; then
         repo_dirty=false
         [ -n "$(git -C "$d" status --porcelain 2>/dev/null)" ] && repo_dirty=true
 
-        repo_commits=''
-        repo_files=''
-        if [ -n "$start_ts" ]; then
-            repo_commits="$(git -C "$d" log --since="$start_ts" --pretty=format:'%h %s' 2>/dev/null)"
-            repo_files="$(git -C "$d" log --since="$start_ts" --name-only --pretty=format: 2>/dev/null \
-                         | sed '/^[[:space:]]*$/d' | sort -u)"
-        fi
+        repo_commits="$(git -C "$d" log --since="$start_ts" --pretty=format:'%h %s' 2>/dev/null)"
+        repo_files="$(git -C "$d" log --since="$start_ts" --name-only --pretty=format: 2>/dev/null \
+                     | sed '/^[[:space:]]*$/d' | sort -u)"
         repo_commit_count=0
         [ -n "$repo_commits" ] && repo_commit_count="$(printf '%s\n' "$repo_commits" | grep -c .)"
         repo_files_count=0
@@ -176,22 +136,24 @@ fi
 # --- item-folder artifacts touched this session ---------------------------
 # Files created/modified in the item's own directory since the session start —
 # plan.md, the front door, docs/, artifacts/, files/, etc. — the non-repo
-# output of a session. log/ is excluded: it's auto-written bookkeeping
-# (breadcrumbs, logged notes), not a session artifact. `-newermt` needs GNU
-# find, which the container has (this runs in the box).
+# output of a session. log/ is excluded: it's auto-written bookkeeping, not a
+# session artifact. `find -newer <marker>` is portable (BSD + GNU), unlike
+# `-newermt`; the marker's mtime is the session start (dropped by workon).
 item_files=""
 item_files_count=0
-if [ -n "$start_ts" ]; then
-    item_files="$(find "$item_dir" -type f -newermt "$start_ts" \
+if [ -n "$since_ref" ] && [ -e "$since_ref" ]; then
+    item_files="$(find "$item_dir" -type f -newer "$since_ref" \
                     -not -path "$item_dir/log/*" 2>/dev/null \
                   | sed "s#^${item_dir}/##" | sort)"
     [ -n "$item_files" ] && item_files_count="$(printf '%s\n' "$item_files" | grep -c .)"
 fi
 
 # --- choose the item's log/ path + NN -------------------------------------
+# Date comes from end (local), so the filename matches local wall-clock day
+# rather than rolling over early on a UTC boundary.
 log_dir="$item_dir/log"
 mkdir -p "$log_dir" 2>/dev/null || exit 0
-date_str="$(date +%Y-%m-%d)"
+date_str="${end_ts%%T*}"
 n=1
 while [ -e "$log_dir/$date_str.$slug.session.$(printf '%02d' "$n").md" ]; do
     n=$((n + 1))
@@ -204,9 +166,8 @@ file="$log_dir/$date_str.$slug.session.$nn.md"
     echo "---"
     echo "type: session-breadcrumb"
     echo "slug: $slug"
-    [ -n "$session_id" ] && echo "session-id: $session_id"
     echo "session-num: \"$nn\""
-    [ -n "$start_ts" ] && echo "start: $start_ts"
+    echo "start: $start_ts"
     echo "end: $end_ts"
     if [ ${#repos_touched[@]} -gt 0 ]; then
         present=$(printf '%s, ' "${repos_touched[@]}"); present=${present%, }
@@ -216,19 +177,10 @@ file="$log_dir/$date_str.$slug.session.$nn.md"
     echo "commits: $agg_commits"
     echo "files-changed: $agg_files"
     echo "item-files-changed: $item_files_count"
-    [ "$start_unresolved" = true ] && echo "start-unresolved: true"
-    [ -n "$transcript" ] && echo "transcript: $transcript"
     echo "---"
     echo
     echo "# Session — $slug"
     echo
-
-    if [ "$start_unresolved" = true ]; then
-        echo "> ⚠ Session start could not be parsed from the transcript despite"
-        echo "> recorded turns, so the commit/file counts below may be understated"
-        echo "> (likely a transcript-format change — check the breadcrumb hook)."
-        echo
-    fi
 
     if [ ${#repos_touched[@]} -gt 0 ]; then
         printf 'Session on `%s` — %d repo(s), %s commit(s), %s repo file(s) changed' \
