@@ -13,26 +13,11 @@
 
 set -u
 
-# Vault root: honor $WORK_ROOT if set, else default to ~/work.
-work_root() { echo "${WORK_ROOT:-$HOME/work}"; }
-
-###
-### Output functions
-###
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NORMAL='\033[0m'
-VERBOSE=false
-DEBUG=false
-
-print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
-print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
-print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
-print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
-print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
-print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
+# Shared boilerplate: WORK root, print_* output functions, trim/kebab/trunc/
+# iso_now. Resolves to lib.sh in this script's own bin/ dir. See
+# docs/bin-coding-standards.md.
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 IFS='' read -r -d '' usage <<"EOF"
 
@@ -91,19 +76,6 @@ remote_ref() {
     [ "$(printf '%s\n' "$matches" | grep -c .)" -eq 1 ] && printf '%s\n' "$matches"
 }
 
-# Truncate to at most $2 chars, marking truncation with a trailing '..'
-# (plain ASCII, not a unicode ellipsis, to avoid locale-dependent character
-# counting in ${#s} throwing the width off). Keeps table columns aligned
-# regardless of how long a slug/repo/branch name is.
-trunc() {
-    local s=$1 max=$2
-    if [ ${#s} -le "$max" ]; then
-        printf '%s' "$s"
-    else
-        printf '%s..' "${s:0:$((max - 2))}"
-    fi
-}
-
 ###
 ### Subcommands
 ###
@@ -127,7 +99,7 @@ wt_add() {
     fi
     [ -n "$branch" ] || branch=$slug
 
-    local root; root=$(work_root)
+    local root; root=$WORK
     print_verbose "Adding worktree: slug=$slug repo=$repo branch=$branch"
     print_debug   "Work root: $root"
 
@@ -172,7 +144,7 @@ wt_rm() {
     local slug=${1:-} repo=${2:-}
     if [ -z "$slug" ]; then print_error "Usage: worktree rm <slug> [repo]"; return 1; fi
 
-    local root; root=$(work_root)
+    local root; root=$WORK
     local slug_dir=$root/worktrees/$slug
     if [ ! -d "$slug_dir" ]; then print_error "No worktrees for slug '$slug'"; return 1; fi
 
@@ -202,7 +174,7 @@ wt_rm() {
 
 wt_list() {
     local want=${1:-}
-    local root; root=$(work_root)
+    local root; root=$WORK
     local wt=$root/worktrees
 
     printf '%-28s %-10s %-32s %s\n' SLUG REPO BRANCH STATE
@@ -261,7 +233,7 @@ wt_refresh() {
     local gate_min=$(( gate_h * 60 ))
     print_debug "refresh params: if_stale=$if_stale gate=${gate_h}h (${gate_min}min) target='${want:-all}'"
 
-    local root; root=$(work_root)
+    local root; root=$WORK
     local repos="$root/repos"
     [ -d "$repos" ] || { print_error "No repos/ directory at $repos"; return 1; }
 
@@ -316,6 +288,7 @@ wt_refresh() {
 ###
 # Parse global options before the subcommand so `worktree -v refresh` works.
 # -d implies -v.
+# shellcheck disable=SC2034  # VERBOSE/DEBUG are read by print_* in lib.sh
 while [ $# -gt 0 ]; do
     case "$1" in
         -v|--verbose) VERBOSE=true; shift ;;

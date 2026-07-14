@@ -26,12 +26,16 @@ Every script follows this order:
 
 1. Shebang + file-header comment block
 2. `set -u`
-3. Constants (WORK root, script-specific vars)
-4. Output functions
+3. `source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"` — shared boilerplate (WORK
+   root, output functions, common helpers); see "The shared library" below
+4. Script-specific constants
 5. Usage heredoc
 6. Helper functions
 7. Subcommand functions (if applicable)
 8. Argument parsing and dispatch
+
+(Self-contained scripts that don't source `lib.sh` — the hooks, `work-backup`,
+`claude-statusline` — inline what little they need at step 3 instead.)
 
 ---
 
@@ -55,30 +59,30 @@ explicitly where it matters.
 
 ## Work root
 
+`lib.sh` sets the vault root once, honoring `$WORK_ROOT` so a second instance
+can coexist without collisions:
+
 ```bash
 WORK="${WORK_ROOT:-$HOME/work}"
 ```
 
-Honor `$WORK_ROOT` so a second instance of the vault can coexist without
-collisions. Most scripts set this as a plain variable. Scripts with
-subcommands (like `worktree`) use a function instead so the override is
-visible in every context:
-
-```bash
-work_root() { echo "${WORK_ROOT:-$HOME/work}"; }
-```
+Any script that sources `lib.sh` gets `$WORK` for free — don't redefine it. The
+self-contained scripts (hooks, `work-backup`, `claude-statusline`) carry their
+own copy of this one line.
 
 ---
 
 ## Output functions
 
-Paste this block verbatim at the top of every user-facing script. These
-are the canonical six functions — don't add, rename, or remove without
-updating all scripts.
+The canonical six output functions — plus the colour constants and the
+`VERBOSE`/`DEBUG` flags — live in `lib.sh` and come in when a script sources it
+(see "The shared library"). They're a shared contract: don't add, rename, or
+remove one without weighing every caller, but the change is now a single edit
+in one place. The block, for reference:
 
 ```bash
 ###
-### Output functions
+### Output functions  (defined in lib.sh)
 ###
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -133,16 +137,48 @@ troubleshooter always wants the context layer too. The implementation:
 function always exits 0 — `[ cond ] && cmd` exits 1 if the condition
 is false, which can confuse callers in some contexts.
 
+Because `print_verbose`/`print_debug` live in `lib.sh`, a script *sets*
+`VERBOSE`/`DEBUG` but never reads them directly — `shellcheck` then flags the
+assignments as unused (`SC2034`). Silence it with a scoped directive on the
+flag-parse loop (scoped, so it doesn't mask genuine unused vars elsewhere):
+
+```bash
+# shellcheck disable=SC2034  # VERBOSE/DEBUG are read by print_* in lib.sh
+while [ $# -gt 0 ]; do
+```
+
 There is no `print_quiet` or `QUIET` flag in these scripts. If quiet mode
-becomes useful, add it then (and add it to all scripts at once).
+becomes useful, add it once, in `lib.sh`.
 
-### No shared library
+### The shared library
 
-The functions are duplicated in each script by design. A sourced
-`common.sh` would introduce a runtime dependency that can fail (wrong
-`$WORK`, wrong container path, scripts copied outside the tree). The block
-is only ~10 lines; inline duplication is the right call here. If the
-functions ever grow substantially, revisit.
+The output block, the `WORK` root, and the small helpers (`trim`, `kebab`,
+`trunc`, `iso_now`) live in **`bin/lib.sh`**, sourced by every user-facing
+script:
+
+```bash
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+```
+
+`$(dirname "${BASH_SOURCE[0]}")` resolves to the script's own `bin/` directory
+however it was invoked — bare name on `$PATH`, an explicit path, host or sandbox
+container — and `lib.sh` always ships alongside the scripts (same repo, same
+`git pull`), so the resolution can't fail short of copying a lone script out of
+the tree (not a supported workflow).
+
+This replaces the older "paste the block into every script" rule. That rule was
+justified while the shared code was ~10 lines, but it grew past that (the output
+block × six scripts, plus `kebab`/`trunc`/`iso_now`) and inline copies had begun
+to drift. One source of truth means a change to the output convention — or a
+future `print_quiet` — is a single edit.
+
+**What does *not* source it:** the hooks (`work-session-breadcrumb`,
+`work-session-catchup`), `work-backup`, and `claude-statusline`. They run in the
+most constrained contexts, don't use the `print_*` block, and stay fully
+self-contained — carrying their own `WORK` line inline (and `iso_now`, in the
+breadcrumb's case). Self-containedness matters most there; the lib is for the
+interactive `work*`/`sandbox` tools.
 
 ---
 
@@ -292,16 +328,26 @@ arguments before dereferencing `$2`.
 
 ## Common helpers
 
-Two small functions appear in multiple scripts. Paste them where needed —
-don't import from a shared file.
+`lib.sh` provides the small helpers the tools tend to want; sourcing it brings
+them in — don't re-inline them:
 
-```bash
-# Strip leading/trailing whitespace from $1.
-trim()  { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+- **`trim <s>`** — strip leading/trailing whitespace.
+- **`kebab <s> [max]`** — lowercase-kebab-case, truncated to `max` characters
+  (default 30) at a word boundary (never mid-word), so a long title still reads
+  as words rather than a ragged fragment. Pass a large `max` (e.g. `200`) to
+  sanitize without truncating — what an explicit `-s/--slug` does.
+- **`trunc <s> <max>`** — truncate to `max` chars with a trailing `..`, keeping
+  table columns aligned regardless of value length.
+- **`iso_now`** — ISO 8601 timestamp with a colon in the TZ offset (the vault
+  convention).
 
-# Lowercase-kebab-case from $1 (for slugs and filenames).
-kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
-```
+A self-contained script that needs just one of these (the breadcrumb hook uses
+`iso_now`) keeps its own copy inline rather than sourcing `lib.sh`.
+
+Larger repetition *within* a single script is factored into that script's own
+helpers rather than the shared lib — e.g. `workitem`'s `wi_one_slug` (parse one
+positional slug), `wi_locate` (resolve an item's zone), and `wi_unique_slug`
+(collision-suffix loop), which several of its subcommands share.
 
 ---
 

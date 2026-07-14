@@ -29,25 +29,11 @@
 
 set -u
 
-WORK="${WORK_ROOT:-$HOME/work}"
-
-###
-### Output functions
-###
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NORMAL='\033[0m'
-VERBOSE=false
-DEBUG=false
-
-print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
-print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
-print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
-print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
-print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
-print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
+# Shared boilerplate: WORK root, print_* output functions, trim/kebab/trunc/
+# iso_now. Resolves to lib.sh in this script's own bin/ dir. See
+# docs/bin-coding-standards.md.
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 IFS='' read -r -d '' usage <<"EOF"
 
@@ -111,13 +97,6 @@ mid_sync() {
     [ -d "$g/rebase-merge" ] || [ -d "$g/rebase-apply" ] || [ -e "$g/MERGE_HEAD" ]
 }
 
-# Lowercase-kebab-case from $1 (for slugs) — duplicated from workitem's copy
-# by house convention (docs/bin-coding-standards.md: no shared library).
-# Idempotent, so re-kebabing an already-canonical slug is always a no-op —
-# that's what lets workon compute the slug a new item *will* get without
-# needing to parse it back out of `workitem create`'s output.
-kebab() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
-
 ###
 ### Parse arguments
 ###
@@ -126,6 +105,7 @@ create=false
 slug=''
 repo_opts=()
 title_parts=()
+# shellcheck disable=SC2034  # VERBOSE/DEBUG are read by print_* in lib.sh
 while [ $# -gt 0 ]; do
     case "$1" in
         -v|--verbose) VERBOSE=true ;;

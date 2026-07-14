@@ -16,7 +16,11 @@ BASE_IMAGE=work-sandbox-base:latest
 CONTAINER=work-sandbox
 VOLUME=claude-home
 CACHE_VOLUME=claude-cache
-WORK="${WORK_ROOT:-$HOME/work}"
+# Shared boilerplate: WORK root, print_* output functions, trim/kebab/trunc/
+# iso_now. Resolves to lib.sh in this script's own bin/ dir. See
+# docs/bin-coding-standards.md.
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 RECIPE="$WORK/engine/sandbox"
 # Optional gitignored host file holding CLAUDE_CODE_OAUTH_TOKEN (a long-lived
 # token from `claude setup-token` on the host), injected into the container so
@@ -29,24 +33,6 @@ SANDBOX_ENV="${SANDBOX_ENV:-$HOME/.config/claude-sandbox.env}"
 # engine content — adding a package here never touches the engine. Absent by
 # default: no file means the base image ships as-is.
 LOCAL_DOCKERFILE="${LOCAL_DOCKERFILE:-$WORK/data/sandbox/Dockerfile.local}"
-
-###
-### Output functions
-###
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NORMAL='\033[0m'
-VERBOSE=false
-DEBUG=false
-
-print_status()  { echo -e "${BLUE}[INFO]${NORMAL} $1"; }
-print_success() { echo -e "${GREEN}[SUCCESS]${NORMAL} $1"; }
-print_warning() { echo -e "${YELLOW}[WARNING]${NORMAL} $1" >&2; }
-print_error()   { echo -e "${RED}[ERROR]${NORMAL} $1" >&2; }
-print_verbose() { [ "$VERBOSE" = true ] && echo -e "${BLUE}[VERBOSE]${NORMAL} $1" >&2 || true; }
-print_debug()   { [ "$DEBUG" = true ] && echo -e "${BLUE}[DEBUG]${NORMAL} $1" >&2 || true; }
 
 IFS='' read -r -d '' usage <<"EOF"
 
@@ -262,6 +248,7 @@ rebuild() {
 ###
 # Parse global options before the subcommand so `sandbox -v up` works.
 # -d implies -v.
+# shellcheck disable=SC2034  # VERBOSE/DEBUG are read by print_* in lib.sh
 while [ $# -gt 0 ]; do
     case "$1" in
         -v|--verbose) VERBOSE=true; shift ;;
