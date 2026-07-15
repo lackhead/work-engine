@@ -29,7 +29,7 @@ Usage:
    workitem [ -v|--verbose ] [ -d|--debug ] defer    <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] block    <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] unblock  <slug>
-   workitem [ -v|--verbose ] [ -d|--debug ] archive  <slug> [--completed|--cancelled]
+   workitem [ -v|--verbose ] [ -d|--debug ] archive  <slug> [--complete|--cancel]
    workitem [ -v|--verbose ] [ -d|--debug ] delete   <slug> [--force]
 
 Arguments:
@@ -71,8 +71,10 @@ Description:
    unblock  Sets a top-level item's status from blocked to active.
             Frontmatter only, no move.
 
-   archive  Sets status to completed/cancelled (prompted if not given as a
-            flag) and moves the item to items/archived/<slug>/.
+   archive  Moves the item to items/archived/<slug>/. If status is already
+            completed or cancelled, moves as-is. Otherwise prompts before
+            setting status to cancelled and moving. --complete/--cancel set
+            the respective status directly, skipping the prompt.
 
    delete   Removes the item's directory outright. Refuses unless <slug>
             is tagged `quick` (--force overrides).
@@ -94,7 +96,7 @@ Examples:
    workitem defer some-active-item
    workitem block some-active-item
    workitem unblock some-blocked-item
-   workitem archive nagios --completed
+   workitem archive nagios --complete
    workitem delete quick-task-2026-07-11-10-56
 
 EOF
@@ -733,8 +735,8 @@ wi_archive() {
     while [ $# -gt 0 ]; do
         a=$1
         case "$a" in
-            --completed) newstatus=completed ;;
-            --cancelled) newstatus=cancelled ;;
+            --complete) newstatus=completed ;;
+            --cancel)   newstatus=cancelled ;;
             -*) print_error "Unknown option: $a"; return 1 ;;
             *)
                 if [ -z "$slug" ]; then slug=$a
@@ -744,7 +746,7 @@ wi_archive() {
         shift
     done
     if [ -z "$slug" ]; then
-        print_error "Usage: workitem archive <slug> [--completed|--cancelled]"; return 1
+        print_error "Usage: workitem archive <slug> [--complete|--cancel]"; return 1
     fi
 
     local root="$WORK/data/items" srcdir='' zone; zone=$(wi_locate "$slug")
@@ -756,18 +758,31 @@ wi_archive() {
     esac
     print_verbose "Found item at ${srcdir/#$HOME/\~}"
 
+    local front="$srcdir/$slug.md"
+    local destdir="$root/archived/$slug"
+    local current; current=$(sed -n 's/^status: *//p' "$front" | head -1)
+    local stamp=completed
+
     if [ -z "$newstatus" ]; then
-        read -r -p "completed or cancelled? [c/x] " reply
-        case "$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')" in
-            c*) newstatus=completed ;;
-            x*|d*) newstatus=cancelled ;;
-            *) print_error "Cancelled — nothing changed."; return 1 ;;
+        case "$current" in
+            completed|cancelled)
+                # Already terminal (e.g. complete-item just set this) --
+                # nothing left to decide, and re-stamping `completed:` here
+                # would clobber the real completion date on a later re-run.
+                newstatus=$current
+                stamp=''
+                ;;
+            *)
+                read -r -p "'$slug' is not marked as complete (status: $current); move anyway? [y/N] " reply
+                case "$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')" in
+                    y*) newstatus=cancelled ;;
+                    *) print_error "Nothing changed."; return 1 ;;
+                esac
+                ;;
         esac
     fi
 
-    local front="$srcdir/$slug.md"
-    local destdir="$root/archived/$slug"
-    transition_status "$front" "$newstatus" completed "$destdir" || return 1
+    transition_status "$front" "$newstatus" "$stamp" "$destdir" || return 1
 
     if [ -d "$WORK/worktrees/$slug" ]; then
         print_status "Removing worktree(s) for '$slug' ..."

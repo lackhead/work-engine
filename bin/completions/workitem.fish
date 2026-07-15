@@ -168,8 +168,8 @@ complete -c workitem -n '__fish_seen_subcommand_from unblock; and test (__workit
 # archive <slug> [--completed|--cancelled]
 complete -c workitem -n '__fish_seen_subcommand_from archive; and test (__workitem_nargs) -eq 0' \
     -a '(__workitem_archivable_slugs)' -d item
-complete -c workitem -n '__fish_seen_subcommand_from archive' -l completed -d 'Mark completed'
-complete -c workitem -n '__fish_seen_subcommand_from archive' -l cancelled -d 'Mark cancelled'
+complete -c workitem -n '__fish_seen_subcommand_from archive' -l complete -d 'Mark completed (skip prompt)'
+complete -c workitem -n '__fish_seen_subcommand_from archive' -l cancel   -d 'Mark cancelled (skip prompt)'
 
 # delete <slug> [--force]
 complete -c workitem -n '__fish_seen_subcommand_from delete; and test (__workitem_nargs) -eq 0' \

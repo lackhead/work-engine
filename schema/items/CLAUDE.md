@@ -106,7 +106,10 @@ The front-door file is named **`<name>.md`** (matching the directory), *not*
   current state, what's next, links to the item's other files. This is what's
   read first when scoped to the item. Its `## Current state` is the *only*
   living narrative for the item — there's no separate dated-snapshot history
-  alongside it (see "Session log" below for why).
+  alongside it (see "Session log" below for why). At completion, one more,
+  one-time section is added — `## Retrospective`, a permanent closing
+  narrative distinct from `Current state`'s living summary — see "Completing
+  an item" below.
 - **`plan.md`** — phases, goals, decisions made (and why), considered-and-
   rejected alternatives, success criteria, rollback criteria. Edited in place
   as the plan evolves.
@@ -384,11 +387,26 @@ nothing logged this way goes unseen.
 
 Use the tooled transitions: `workitem activate`, `workitem defer`,
 `workitem block`, `workitem unblock`, and `workitem archive
-[--completed|--cancelled]` (see "Attention zones" above). Each updates
-`status:` and, where the transition crosses a zone boundary, moves the
-file/directory to the new zone in the same act — `active ↔ blocked` is the
-one frontmatter-only case, no move. Fall back to a manual edit only for a
-status change that isn't one of these named transitions.
+[--complete|--cancel]` (see "Attention zones" above; see "Completing an
+item" below for the recommended way to reach `completed` on anything
+substantial). Each updates `status:` and, where the transition crosses a
+zone boundary, moves the file/directory to the new zone in the same act —
+`active ↔ blocked` is the one frontmatter-only case, no move. Fall back to a
+manual edit only for a status change that isn't one of these named
+transitions.
+
+### Completing an item
+
+Before archiving something genuinely finished, run the `complete-item`
+skill (`~/work/engine/skills/complete-item/`) from inside a session on that
+item. It drafts a permanent `## Retrospective` section (the item's closing
+narrative, read from its full `log/` history) and a final `## Current
+state` paragraph, confirms both with you, writes them, stamps `status:
+completed` and `completed:`, then runs `workitem archive` itself to move
+the directory — no separate archive step to remember. Trivial or `--quick`
+items can skip the ceremony and go straight to `workitem archive <slug>
+--complete`, which sets `status: completed` and moves it without drafting a
+retrospective. Cancellations skip it too — see "Archiving" below.
 
 ### Archiving
 
@@ -397,9 +415,15 @@ archived item carries `completed` or `cancelled` status — there is no other
 valid status once in `archived/`. The body is preserved; archived content is
 read-only by convention (fix outright errors only).
 
-`workitem archive <slug> [--completed|--cancelled]` is the only supported
-path: sets `status:` and `completed:`, moves the item to `items/archived/`,
-and removes its worktree(s) if any.
+`workitem archive <slug>` is the only supported path. If the item's status
+is already `completed` or `cancelled` (typically because `complete-item`
+just set it), it moves the directory as-is. Otherwise it prompts —
+`"<slug> is not marked as complete; move anyway?"` — and on confirmation
+sets `status: cancelled`, stamps `completed:`, and moves. `--complete` /
+`--cancel` set the respective status directly and move, skipping the
+prompt — the fast path for trivial completions and for cancelling abandoned
+work, neither of which warrants a drafted retrospective. Either way,
+`workitem archive` also removes the item's worktree(s), if any.
 
 ### Promoting a reminder into an item
 
@@ -436,4 +460,28 @@ The immediate pointed-at work.
 
 - [[ad-upgrade/plan]] — phased rollout, decisions, rollback criteria.
 - `log/` — session-by-session record (auto-populated).
+```
+
+### Retrospective section (added at completion)
+
+Written once, by the `complete-item` skill, directly after `## Current
+state` and before `## Item files` — `## What's next` is dropped at this
+point, since nothing is next once an item is done:
+
+```markdown
+## Current state
+
+**Complete.** One or two sentences summarizing the outcome.
+
+## Retrospective
+
+*2026-07-13 → 07-14 · 5 sessions · ~15 commits.* One or two sentences
+framing the arc, then bullets by theme:
+
+- **Theme A:** what happened, what it fixed or delivered.
+- **Theme B:** ...
+
+*Process note:* anything learned worth remembering next time (optional).
+
+## Item files
 ```
