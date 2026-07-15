@@ -245,3 +245,8 @@ Print the recap to stdout, plus the saved file path for cross-item runs
 - **Past windows are immutable.** Regenerating the current window is fine;
   treat regenerating an *old* window as fix-outright-errors-only — a
   retrospective reflects what was captured at the time.
+- **Not for closing out a finished item.** This skill answers "what happened
+  in this window" — even scoped to one item, it's still a time-window recap,
+  printed and not persisted. Use `complete-item` instead when the item itself
+  is done: it drafts a permanent `## Retrospective` section and archives the
+  item, a one-time lifecycle event rather than a window query.

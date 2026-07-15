@@ -90,9 +90,12 @@ ever serve.
 9. **System-specific skills live at `~/work/engine/skills/`**, reachable from
    inside this vault via a symlink at `~/work/data/.claude/skills`. The current
    roster is `dashboard` (generates the index from items / reminders / item
-   `log/` / git) and `retrospective` (rolls up a window, cross-item or
+   `log/` / git), `retrospective` (rolls up a window, cross-item or
    scoped to one item, and proposes a refreshed `## Current state` for items
-   with material progress). Capture is manual via the `work*` shell commands
+   with material progress), and `complete-item` (closes out a finished item —
+   drafts its permanent `## Retrospective` section and final `## Current
+   state`, then hands off to `workitem archive`; see `items/CLAUDE.md`'s
+   "Completing an item"). Capture is manual via the `work*` shell commands
    (`workreminder`, `workitem`) — engine tooling that lives in
    `~/work/engine/bin/` (shell-agnostic, on PATH), not skills. Coding
    conventions for these scripts (output functions, help format, argument
@@ -338,10 +341,12 @@ scope, but the root conventions still apply.
 
 System-specific skills live at `~/work/engine/skills/`, symlinked into this
 vault at `~/work/data/.claude/skills`: `dashboard` (generates `index.md` from
-items / reminders / item `log/` / git) and `retrospective` (rolls up a
+items / reminders / item `log/` / git), `retrospective` (rolls up a
 window — cross-item or scoped to a single item — and proposes a refreshed
-`## Current state` for items with material progress). Read a skill's
-`SKILL.md` before invoking it. The old `daily-summary`, `session-capture`,
+`## Current state` for items with material progress), and `complete-item`
+(closes out a finished item — drafts its permanent `## Retrospective`
+section and final `## Current state`, then hands off to `workitem archive`).
+Read a skill's `SKILL.md` before invoking it. The old `daily-summary`, `session-capture`,
 and `standup-prep` skills are retired — superseded by the `SessionEnd`
 breadcrumb hook, `retrospective`, and `dashboard`. Capture is manual via the
 `work*` commands (`workreminder` / `workitem`) in
