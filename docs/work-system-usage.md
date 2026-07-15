@@ -107,8 +107,9 @@ workitem create -b Investigate the new vendor API  # into backlog/ (status propo
 `create` is non-interactive: it takes the title, sets `status: active`
 top-level (or `proposed` in `backlog/` with `-b`), and stamps `made:`. Optional
 frontmatter (`to:`, `due:`, a description) is added afterward — by hand or by
-asking Claude. Beyond create/list/archive there are also `show`, `log`,
-`activate`, `defer`, `block`, `unblock`, and `delete`; see [[items/CLAUDE]].
+asking Claude. Beyond create/list/complete/cancel there are also `show`,
+`log`, `activate`, `defer`, `block`, `unblock`, and `delete`; see
+[[items/CLAUDE]].
 
 `workitem list` is a quick terminal-native glance — slug, status, due,
 last-updated — no LLM session needed:
@@ -119,13 +120,12 @@ workitem list --backlog
 workitem list --all --status blocked
 ```
 
-`workitem archive <slug>` closes one out — sets `status:`
-(`completed`/`cancelled`, prompted if not passed as a flag) and the
-`completed:` date, moves it to `items/archived/`, and removes its
-worktree(s) if any:
+`workitem complete <slug>` / `workitem cancel <slug>` close one out — set
+`status:` (`completed`/`cancelled`) and the `completed:` date, move it to
+`items/archived/`, and remove its worktree(s) if any:
 
 ```bash
-workitem archive nagios --completed
+workitem complete nagios
 ```
 
 ## Working on an item
@@ -211,15 +211,16 @@ These are deliberate edits, not commands (the schema is in [[items/CLAUDE]]):
 - **Pause:** move `items/<x>` → `items/backlog/`, set `status: deferred`.
 - **Block/unblock:** just flip `status:` between `active` and `blocked` — *no
   move* (both live at top level), so the most frequent transition is free.
-- **Finish:** `workitem archive <slug> [--completed|--cancelled]` — sets
+- **Finish:** `workitem complete <slug>` / `workitem cancel <slug>` — sets
   `status:` and the `completed:` date, moves to `items/archived/`, and
   removes its worktree(s) if any, all in one step.
 
-Reminders archive as a single coupled move: set `status:` to `addressed` or
-`dismissed` *and* move the file to `reminders/archived/` together. Documents
-archive by moving to `docs/archived/` (no status field).
+Reminders archive as a single coupled move: `workreminder complete <name>` /
+`workreminder cancel <name>` set `status:` to `completed` or `cancelled` *and*
+move the file to `reminders/archived/` together. Documents archive by moving
+to `docs/archived/` (no status field).
 
-You can ask Claude to do any of these ("mark nagios blocked", "archive that
+You can ask Claude to do any of these ("mark nagios blocked", "complete that
 reminder, it's done") — it follows the same schema.
 
 ## The sandbox
@@ -294,7 +295,7 @@ scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
 | `workreminder promote <name> [workitem create args...]` | Turn a reminder into a work item | vault |
 | `workitem create [title...]` | Create a work item | vault |
 | `workitem list [--backlog\|--archived\|--all] [--status <v>]` | Quick glance at items | vault |
-| `workitem archive <slug> [--completed\|--cancelled]` | Close out an item | vault |
+| `workitem complete <slug>` / `workitem cancel <slug>` | Close out an item | vault |
 | `workon <slug> [-r <repo>]...` | Open a Claude session for an item | host → container |
 | `worktree add/rm/list/refresh` | Manage per-item git worktrees | vault/repos |
 | `sandbox up/down/restart/status/shell/rebuild` | Container lifecycle | host |

@@ -1,4 +1,4 @@
-# Completions for `workreminder` (create/list/show/archive/delete/due/promote subcommands).
+# Completions for `workreminder` (create/list/show/complete/cancel/delete/due/promote subcommands).
 # Canonical location: ~/work/engine/bin/completions/workreminder.fish (the work-engine repo);
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
 
@@ -37,7 +37,10 @@ function __workreminder_item_slugs
     end
 end
 
-# Active reminder names (top level only) — targets for archive/due.
+# Active reminder names (top level only), never archived/ -- archived
+# reminders are never tab-completed anywhere in this file; reaching one
+# (show, delete) means typing the name out by hand. Shared by show, complete,
+# cancel, delete, due, and promote.
 function __workreminder_active_names
     set -l root (__workreminder_root)/data/reminders
     test -d $root; or return
@@ -47,32 +50,20 @@ function __workreminder_active_names
     end
 end
 
-# Any reminder name, active or archived — targets for delete/due.
-function __workreminder_all_names
-    set -l root (__workreminder_root)/data/reminders
-    test -d $root; or return
-    for dir in $root $root/archived
-        test -d $dir; or continue
-        for p in $dir/*.md
-            test -e $p; or continue
-            basename $p .md
-        end
-    end
-end
-
 complete -c workreminder -f
 
 complete -c workreminder -s v -l verbose -d 'Show what is happening as it happens'
 complete -c workreminder -s d -l debug   -d 'Show diagnostic detail (implies --verbose)'
 complete -c workreminder -s h -l help    -d 'Show help'
 
-complete -c workreminder -n __fish_use_subcommand -a create  -d 'Create a reminder'
-complete -c workreminder -n __fish_use_subcommand -a list    -d 'List reminders'
-complete -c workreminder -n __fish_use_subcommand -a show    -d 'Print a reminder'
-complete -c workreminder -n __fish_use_subcommand -a archive -d 'Archive a reminder'
-complete -c workreminder -n __fish_use_subcommand -a delete  -d 'Delete a reminder outright'
-complete -c workreminder -n __fish_use_subcommand -a due     -d 'Set or clear a due date'
-complete -c workreminder -n __fish_use_subcommand -a promote -d 'Promote to a work item'
+complete -c workreminder -n __fish_use_subcommand -a create   -d 'Create a reminder'
+complete -c workreminder -n __fish_use_subcommand -a list     -d 'List reminders'
+complete -c workreminder -n __fish_use_subcommand -a show     -d 'Print a reminder'
+complete -c workreminder -n __fish_use_subcommand -a complete -d 'Complete a reminder and archive it'
+complete -c workreminder -n __fish_use_subcommand -a cancel   -d 'Cancel a reminder and archive it'
+complete -c workreminder -n __fish_use_subcommand -a delete   -d 'Delete a reminder outright'
+complete -c workreminder -n __fish_use_subcommand -a due      -d 'Set or clear a due date'
+complete -c workreminder -n __fish_use_subcommand -a promote  -d 'Promote to a work item'
 
 # create [-i|--item <slug>] [description...] -- description given -> fires
 # immediately, no prompts; description omitted -> full interactive flow
@@ -85,21 +76,23 @@ complete -c workreminder -n '__fish_seen_subcommand_from list' -l all      -d 'S
 
 # show <name>
 complete -c workreminder -n '__fish_seen_subcommand_from show; and test (__workreminder_nargs) -eq 0' \
-    -a '(__workreminder_all_names)' -d reminder
-
-# archive <name> [--addressed|--dismissed]
-complete -c workreminder -n '__fish_seen_subcommand_from archive; and test (__workreminder_nargs) -eq 0' \
     -a '(__workreminder_active_names)' -d reminder
-complete -c workreminder -n '__fish_seen_subcommand_from archive' -l addressed -d 'Followed up / resolved'
-complete -c workreminder -n '__fish_seen_subcommand_from archive' -l dismissed -d 'No follow-up needed'
+
+# complete <name>
+complete -c workreminder -n '__fish_seen_subcommand_from complete; and test (__workreminder_nargs) -eq 0' \
+    -a '(__workreminder_active_names)' -d reminder
+
+# cancel <name>
+complete -c workreminder -n '__fish_seen_subcommand_from cancel; and test (__workreminder_nargs) -eq 0' \
+    -a '(__workreminder_active_names)' -d reminder
 
 # delete <name>
 complete -c workreminder -n '__fish_seen_subcommand_from delete; and test (__workreminder_nargs) -eq 0' \
-    -a '(__workreminder_all_names)' -d reminder
+    -a '(__workreminder_active_names)' -d reminder
 
 # due <name> [date]
 complete -c workreminder -n '__fish_seen_subcommand_from due; and test (__workreminder_nargs) -eq 0' \
-    -a '(__workreminder_all_names)' -d reminder
+    -a '(__workreminder_active_names)' -d reminder
 complete -c workreminder -n '__fish_seen_subcommand_from due; and test (__workreminder_nargs) -eq 1' \
     -x -d 'YYYY-MM-DD (omit to clear)'
 

@@ -55,7 +55,7 @@ a skill:
 - **`items/backlog/` — `proposed` + `deferred`.** Candidates and
   intentionally-paused work; consulted occasionally when planning further out.
 - **`items/archived/` — out of active circulation.** Always `completed` /
-  `cancelled` — set by `workitem archive <slug> [--completed|--cancelled]`,
+  `cancelled` — set by `workitem complete <slug>` / `workitem cancel <slug>`,
   which also stamps the `completed:` date. The frontmatter status stays
   canonical; the `archived/` location is the separate "not turning this
   over right now" signal.
@@ -69,8 +69,10 @@ move between zones only at deliberate transitions:
 - resume: `backlog → top`, `status: active` — `workitem activate <slug>`
 - toggle in place: `active ↔ blocked`, no move — `workitem block <slug>` /
   `workitem unblock <slug>`
-- finish or abandon: `top|backlog → archived/`, `completed` / `cancelled`
-  and the `completed:` date — `workitem archive <slug> [--completed|--cancelled]`
+- finish: `top|backlog → archived/`, `status: completed` and the `completed:`
+  date — `workitem complete <slug>`
+- abandon: `top|backlog → archived/`, `status: cancelled` and the
+  `completed:` date — `workitem cancel <slug>`
 
 Status edit and zone move usually happen together at these transitions, but
 they remain conceptually separate acts (you can, e.g., mark something
@@ -386,14 +388,13 @@ nothing logged this way goes unseen.
 ### Changing status
 
 Use the tooled transitions: `workitem activate`, `workitem defer`,
-`workitem block`, `workitem unblock`, and `workitem archive
-[--complete|--cancel]` (see "Attention zones" above; see "Completing an
-item" below for the recommended way to reach `completed` on anything
-substantial). Each updates `status:` and, where the transition crosses a
-zone boundary, moves the file/directory to the new zone in the same act —
-`active ↔ blocked` is the one frontmatter-only case, no move. Fall back to a
-manual edit only for a status change that isn't one of these named
-transitions.
+`workitem block`, `workitem unblock`, and `workitem complete`/`workitem
+cancel` (see "Attention zones" above; see "Completing an item" below for the
+recommended way to reach `completed` on anything substantial). Each updates
+`status:` and, where the transition crosses a zone boundary, moves the
+file/directory to the new zone in the same act — `active ↔ blocked` is the
+one frontmatter-only case, no move. Fall back to a manual edit only for a
+status change that isn't one of these named transitions.
 
 ### Completing an item
 
@@ -401,12 +402,12 @@ Before archiving something genuinely finished, run the `complete-item`
 skill (`~/work/engine/skills/complete-item/`) from inside a session on that
 item. It drafts a permanent `## Retrospective` section (the item's closing
 narrative, read from its full `log/` history) and a final `## Current
-state` paragraph, confirms both with you, writes them, stamps `status:
-completed` and `completed:`, then runs `workitem archive` itself to move
-the directory — no separate archive step to remember. Trivial or `--quick`
-items can skip the ceremony and go straight to `workitem archive <slug>
---complete`, which sets `status: completed` and moves it without drafting a
-retrospective. Cancellations skip it too — see "Archiving" below.
+state` paragraph, confirms both with you, writes them, then runs `workitem
+complete` itself to stamp `status: completed`/`completed:` and move the
+directory — no separate step to remember. Trivial or `--quick` items can
+skip the ceremony and go straight to `workitem complete <slug>`, which sets
+`status: completed` and moves it without drafting a retrospective.
+Cancellations skip it too — see "Archiving" below.
 
 ### Archiving
 
@@ -415,20 +416,16 @@ archived item carries `completed` or `cancelled` status — there is no other
 valid status once in `archived/`. The body is preserved; archived content is
 read-only by convention (fix outright errors only).
 
-`workitem archive <slug>` is the only supported path. If the item's status
-is already `completed` or `cancelled` (typically because `complete-item`
-just set it), it moves the directory as-is. Otherwise it prompts —
-`"<slug> is not marked as complete; move anyway?"` — and on confirmation
-sets `status: cancelled`, stamps `completed:`, and moves. `--complete` /
-`--cancel` set the respective status directly and move, skipping the
-prompt — the fast path for trivial completions and for cancelling abandoned
-work, neither of which warrants a drafted retrospective. Either way,
-`workitem archive` also removes the item's worktree(s), if any.
+`workitem complete <slug>` and `workitem cancel <slug>` are the only
+supported paths — each sets the respective status, stamps `completed:` with
+today, moves the item to `items/archived/<slug>/`, and removes its
+worktree(s), if any. There's no bare "archive, decide later" verb: the verb
+itself is the status decision, made explicitly every time.
 
 ### Promoting a reminder into an item
 
 When a reminder earns a session, create the item
-(`items/<name>/<name>.md`), set the reminder's `status: addressed`, and
+(`items/<name>/<name>.md`), set the reminder's `status: completed`, and
 optionally archive the reminder. See `reminders/CLAUDE.md`.
 
 ## Template

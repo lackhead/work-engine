@@ -51,15 +51,15 @@ ever serve.
      are conceptually separate acts; the frequent `active ↔ blocked` toggle is
      frontmatter-only (no move), tooled via `workitem block`/`workitem
      unblock`. See `items/CLAUDE.md` for the full set of tooled transitions
-     (`activate`/`defer`/`block`/`unblock`/`archive`).
+     (`activate`/`defer`/`block`/`unblock`/`complete`/`cancel`).
    - **Reminders** (`reminders/`) use the simpler two-way split: in active
      circulation at the top, moved out under `archived/`. Here status and
      location are *coupled*, not independent: a reminder is either `active`
      (in circulation, top level) or archived, and the `status:` value records
-     *why* it was archived — `addressed` (followed up / resolved) or
-     `dismissed` (turned out not to need follow-up). `addressed`/`dismissed`
+     *why* it was archived — `completed` (followed up / resolved) or
+     `cancelled` (turned out not to need follow-up). `completed`/`cancelled`
      therefore imply the file lives under `archived/`; there is no
-     addressed-but-still-circulating limbo.
+     completed-but-still-circulating limbo.
    - **Documents** (`docs/`) carry no `status:` field, so location alone is
      the signal: present in `docs/`, archived in `docs/archived/`, or promoted
      into a work item (gone from `docs/` entirely).
@@ -94,8 +94,9 @@ ever serve.
    scoped to one item, and proposes a refreshed `## Current state` for items
    with material progress), and `complete-item` (closes out a finished item —
    drafts its permanent `## Retrospective` section and final `## Current
-   state`, then hands off to `workitem archive`; see `items/CLAUDE.md`'s
-   "Completing an item"). Capture is manual via the `work*` shell commands
+   state`, then hands off to `workitem complete`/`workitem cancel`; see
+   `items/CLAUDE.md`'s "Completing an item"). Capture is manual via the
+   `work*` shell commands
    (`workreminder`, `workitem`) — engine tooling that lives in
    `~/work/engine/bin/` (shell-agnostic, on PATH), not skills. Coding
    conventions for these scripts (output functions, help format, argument
@@ -323,7 +324,7 @@ scope, but the root conventions still apply.
   zone; the `status:` frontmatter edit is a separate act that usually
   accompanies the move. The dashboard reflects it on its next run — no index
   edit. For reminders, archiving couples the two: the `→ archived/` move and
-  the `status:` edit to `addressed` or `dismissed` are the same transition
+  the `status:` edit to `completed` or `cancelled` are the same transition
   (active → archived-with-a-reason), done together.
 - Documents have their own per-directory index at [[docs/index]] (not the root
   [[index]]) and carry no `status:` field, so archiving is purely a directory
@@ -345,7 +346,8 @@ items / reminders / item `log/` / git), `retrospective` (rolls up a
 window — cross-item or scoped to a single item — and proposes a refreshed
 `## Current state` for items with material progress), and `complete-item`
 (closes out a finished item — drafts its permanent `## Retrospective`
-section and final `## Current state`, then hands off to `workitem archive`).
+section and final `## Current state`, then hands off to `workitem
+complete`/`workitem cancel`).
 Read a skill's `SKILL.md` before invoking it. The old `daily-summary`, `session-capture`,
 and `standup-prep` skills are retired — superseded by the `SessionEnd`
 breadcrumb hook, `retrospective`, and `dashboard`. Capture is manual via the

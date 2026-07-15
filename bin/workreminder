@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# workreminder — create, list, archive, delete, and set due dates on
-# reminders under ~/work/data/reminders/.
+# workreminder — create, list, show, complete, cancel, delete, and set due
+# dates on reminders under ~/work/data/reminders/.
 #
 # Engine tool for the work system. Lives at ~/work/engine/bin/workreminder
 # (the work-engine repo, on PATH). Companion completion:
@@ -18,17 +18,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workreminder: create, list, show, archive, delete, promote, and set due dates on reminders
+workreminder: create, list, show, complete, cancel, delete, promote, and set due dates on reminders
 
 Usage:
    workreminder [ -h|--help ]
-   workreminder [ -v|--verbose ] [ -d|--debug ] create  [-i|--item <slug>] [description...]
-   workreminder [ -v|--verbose ] [ -d|--debug ] list    [--archived|--all]
-   workreminder [ -v|--verbose ] [ -d|--debug ] show    <name>
-   workreminder [ -v|--verbose ] [ -d|--debug ] archive <name> [--addressed|--dismissed]
-   workreminder [ -v|--verbose ] [ -d|--debug ] delete  <name>
-   workreminder [ -v|--verbose ] [ -d|--debug ] due     <name> [date]
-   workreminder [ -v|--verbose ] [ -d|--debug ] promote <name> [workitem create args...]
+   workreminder [ -v|--verbose ] [ -d|--debug ] create   [-i|--item <slug>] [description...]
+   workreminder [ -v|--verbose ] [ -d|--debug ] list     [--archived|--all]
+   workreminder [ -v|--verbose ] [ -d|--debug ] show     <name>
+   workreminder [ -v|--verbose ] [ -d|--debug ] complete <name>
+   workreminder [ -v|--verbose ] [ -d|--debug ] cancel   <name>
+   workreminder [ -v|--verbose ] [ -d|--debug ] delete   <name>
+   workreminder [ -v|--verbose ] [ -d|--debug ] due      <name> [date]
+   workreminder [ -v|--verbose ] [ -d|--debug ] promote  <name> [workitem create args...]
 
 Arguments:
    -h|--help     Show what you are seeing right now
@@ -47,8 +48,11 @@ Description:
    show     Prints the reminder informatio — piped through $PAGER if set,
             else plain output
 
-   archive  Sets status to addressed/dismissed (prompted if not given as a
-            flag) and moves the reminder to reminders/archived/
+   complete Sets status to completed and moves the reminder to
+            reminders/archived/.
+
+   cancel   Sets status to cancelled and moves the reminder to
+            reminders/archived/.
 
    delete   Removes a reminder outright (delete from inventory)
 
@@ -56,8 +60,8 @@ Description:
             omitting the date clears any existing due date.
 
    promote  Creates a work item (title defaults to the reminder's own
-            heading unless overridden by trailing args) and archives the
-            reminder as addressed, in one step.
+            heading unless overridden by trailing args) and completes the
+            reminder, in one step.
 
 Examples:
    workreminder create
@@ -66,7 +70,8 @@ Examples:
    workreminder list
    workreminder list --all
    workreminder show check-on-mikes-pr-progress
-   workreminder archive check-on-mikes-pr-progress --addressed
+   workreminder complete check-on-mikes-pr-progress
+   workreminder cancel beta-lm-license-hague
    workreminder due check-on-mikes-pr-progress 2026-05-15
    workreminder due check-on-mikes-pr-progress
    workreminder promote check-on-mikes-pr-progress
@@ -341,24 +346,8 @@ wr_show() {
     fi
 }
 
-wr_archive() {
-    local name='' newstatus='' a
-    while [ $# -gt 0 ]; do
-        a=$1
-        case "$a" in
-            --addressed) newstatus=addressed ;;
-            --dismissed) newstatus=dismissed ;;
-            -*) print_error "Unknown option: $a"; return 1 ;;
-            *)
-                if [ -z "$name" ]; then name=$a
-                else print_error "Too many arguments."; return 1
-                fi ;;
-        esac
-        shift
-    done
-    if [ -z "$name" ]; then
-        print_error "Usage: workreminder archive <name> [--addressed|--dismissed]"; return 1
-    fi
+wr_finish() {
+    local name=$1 newstatus=$2
 
     local root="$WORK/data/reminders"
     if [ -f "$root/archived/$name.md" ]; then
@@ -367,15 +356,6 @@ wr_archive() {
     local src="$root/$name.md"
     if [ ! -f "$src" ]; then
         print_error "No reminder '$name' found."; return 1
-    fi
-
-    if [ -z "$newstatus" ]; then
-        read -r -p "addressed or dismissed? [a/d] " reply
-        case "$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')" in
-            a*) newstatus=addressed ;;
-            d*) newstatus=dismissed ;;
-            *) print_error "Cancelled — nothing changed."; return 1 ;;
-        esac
     fi
 
     local tmp; tmp=$(mktemp)
@@ -409,6 +389,40 @@ wr_archive() {
     fi
 
     print_success "Archived → reminders/archived/$name.md ($newstatus)"
+}
+
+wr_complete() {
+    local name='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$name" ]; then name=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$name" ]; then
+        print_error "Usage: workreminder complete <name>"; return 1
+    fi
+    wr_finish "$name" completed
+}
+
+wr_cancel() {
+    local name='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$name" ]; then name=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$name" ]; then
+        print_error "Usage: workreminder cancel <name>"; return 1
+    fi
+    wr_finish "$name" cancelled
 }
 
 # Argument parsing here is deliberately different from every other
@@ -448,14 +462,14 @@ wr_promote() {
     # Uncaptured (not wrapped in $(...)) so workitem create's own
     # "Created -> ..." banner reaches the user directly; only the exit
     # status is checked. Subprocess call (found via $PATH), not duplicated
-    # inline -- same precedent as wi_archive/wi_delete calling `worktree rm`.
+    # inline -- same precedent as wi_complete/wi_delete calling `worktree rm`.
     if ! workitem create "${create_args[@]}"; then
         print_error "workitem create failed — '$name' left untouched."
         return 1
     fi
 
-    wr_archive "$name" --addressed || {
-        print_error "Work item was created, but archiving '$name' failed (see above) — archive it manually."
+    wr_finish "$name" completed || {
+        print_error "Work item was created, but completing '$name' failed (see above) — complete it manually."
         return 1
     }
 }
@@ -556,13 +570,14 @@ done
 cmd="${1:-}"
 [ "$#" -gt 0 ] && shift
 case "$cmd" in
-    create)  wr_create "$@" ;;
-    list)    wr_list "$@" ;;
-    show)    wr_show "$@" ;;
-    archive) wr_archive "$@" ;;
-    delete)  wr_delete "$@" ;;
-    due)     wr_due "$@" ;;
-    promote) wr_promote "$@" ;;
+    create)   wr_create "$@" ;;
+    list)     wr_list "$@" ;;
+    show)     wr_show "$@" ;;
+    complete) wr_complete "$@" ;;
+    cancel)   wr_cancel "$@" ;;
+    delete)   wr_delete "$@" ;;
+    due)      wr_due "$@" ;;
+    promote)  wr_promote "$@" ;;
     '')      printf '%s\n' "$usage" ;;
     *)       print_error "Unknown command '$cmd' (try: workreminder help)"; exit 1 ;;
 esac

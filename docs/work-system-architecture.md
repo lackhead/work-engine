@@ -59,7 +59,7 @@ How location encodes stage differs by type:
   frontmatter.
 - **Reminders** (`reminders/`) use a simpler two-way split — top level (active)
   vs. `archived/` — and here status and location are *coupled*: archiving sets
-  the `status:` to *why* (`addressed` / `dismissed`) in the same move.
+  the `status:` to *why* (`completed` / `cancelled`) in the same move.
 - **Documents** (`docs/`) carry no status field at all; presence in `docs/` vs.
   `docs/archived/` (vs. promoted into an item) is the entire signal.
 

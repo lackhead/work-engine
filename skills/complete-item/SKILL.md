@@ -1,6 +1,6 @@
 ---
 name: complete-item
-description: Close out a work item that's genuinely finished — draft a permanent, categorized ## Retrospective section and a final ## Current state from the item's full log/ history, confirm with the user, write them, stamp status: completed, then hand off to `workitem archive` to move the directory. The one item-scoped run whose retrospective is persisted, since the item is leaving circulation for good.
+description: Close out a work item that's genuinely finished — draft a permanent, categorized ## Retrospective section and a final ## Current state from the item's full log/ history, confirm with the user, write them, stamp status: completed, then hand off to `workitem complete` to move the directory. The one item-scoped run whose retrospective is persisted, since the item is leaving circulation for good.
 user_invocable: true
 ---
 
@@ -15,15 +15,15 @@ finished, close it out."
 
 **Scope.** Use this for substantive completions — anything with enough
 history that a closing narrative is worth writing. Two cases skip it
-entirely and go straight to the bare `workitem archive` command instead (see
-`items/CLAUDE.md`'s "Completing an item" / "Archiving"):
+entirely and go straight to `workitem complete`/`workitem cancel` instead
+(see `items/CLAUDE.md`'s "Completing an item" / "Archiving"):
 
-- **Trivial or quick items** — `workitem archive <slug> --complete` sets
+- **Trivial or quick items** — `workitem complete <slug>` sets
   `status: completed` and moves the directory directly, no retrospective
   drafted.
-- **Cancellations** — abandoned work has no narrative worth drafting. Plain
-  `workitem archive <slug>` (prompts, since status isn't yet terminal) or
-  `workitem archive <slug> --cancel` handles it.
+- **Cancellations** — abandoned work has no narrative worth drafting.
+  `workitem cancel <slug>` sets `status: cancelled` and moves the directory
+  directly.
 
 ## Arguments
 
@@ -88,9 +88,10 @@ On confirmation:
 
 ### 6. Hand off to archive
 
-Run `workitem archive <slug>` (no flag needed — status is already terminal,
-so it just moves the directory with no prompt; see `items/CLAUDE.md`'s
-"Archiving").
+Run `workitem complete <slug>` (or `workitem cancel <slug>` if step 5 closed
+this out as cancelled) — status is already set from step 5, so this just
+re-confirms it, stamps `completed:`, and moves the directory; see
+`items/CLAUDE.md`'s "Archiving".
 
 ### 7. Print
 
@@ -106,4 +107,5 @@ Report the archive result (destination path, worktree(s) removed if any).
 - **Propose, don't autonomously mutate.** Step 4 never writes without
   confirmation, same rule as `retrospective`.
 - **Not for trivial items or cancellations.** See "Scope" above — both have
-  a faster, ceremony-free path through `workitem archive` directly.
+  a faster, ceremony-free path through `workitem complete`/`workitem cancel`
+  directly.

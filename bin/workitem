@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# workitem — create, list, and archive work items under ~/work/data/items/.
+# workitem — create, list, show, and transition the lifecycle of work items
+# under ~/work/data/items/.
 #
 # Engine tool for the work system. Lives at ~/work/engine/bin/workitem (the
 # work-engine repo, on PATH). Companion completion:
@@ -29,7 +30,8 @@ Usage:
    workitem [ -v|--verbose ] [ -d|--debug ] defer    <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] block    <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] unblock  <slug>
-   workitem [ -v|--verbose ] [ -d|--debug ] archive  <slug> [--complete|--cancel]
+   workitem [ -v|--verbose ] [ -d|--debug ] complete <slug>
+   workitem [ -v|--verbose ] [ -d|--debug ] cancel   <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] delete   <slug> [--force]
 
 Arguments:
@@ -71,10 +73,13 @@ Description:
    unblock  Sets a top-level item's status from blocked to active.
             Frontmatter only, no move.
 
-   archive  Moves the item to items/archived/<slug>/. If status is already
-            completed or cancelled, moves as-is. Otherwise prompts before
-            setting status to cancelled and moving. --complete/--cancel set
-            the respective status directly, skipping the prompt.
+   complete Sets status to completed, stamps completed: with today, moves
+            the item to items/archived/<slug>/, and removes its worktree(s)
+            if any. Item must be top-level or backlog (not already archived).
+
+   cancel   Sets status to cancelled, stamps completed: with today, moves
+            the item to items/archived/<slug>/, and removes its worktree(s)
+            if any. Item must be top-level or backlog (not already archived).
 
    delete   Removes the item's directory outright. Refuses unless <slug>
             is tagged `quick` (--force overrides).
@@ -96,7 +101,8 @@ Examples:
    workitem defer some-active-item
    workitem block some-active-item
    workitem unblock some-blocked-item
-   workitem archive nagios --complete
+   workitem complete nagios
+   workitem cancel some-active-item
    workitem delete quick-task-2026-07-11-10-56
 
 EOF
@@ -114,7 +120,7 @@ file_mtime_date() {
 # transition_status <front> <new_status> <stamp_field> <destdir>
 #
 # Shared by every subcommand that changes an item's status and/or zone
-# (archive, activate, defer, block, unblock). front is the item's front-door
+# (complete, cancel, activate, defer, block, unblock). front is the item's front-door
 # file at its CURRENT location; new_status is the value to write into
 # status:; stamp_field is a frontmatter field to stamp with today's date
 # ('' to skip -- block/unblock/activate/defer don't stamp anything);
@@ -730,24 +736,12 @@ wi_unblock() {
     print_success "Unblocked '$slug' (blocked → active)"
 }
 
-wi_archive() {
-    local slug='' newstatus='' a
-    while [ $# -gt 0 ]; do
-        a=$1
-        case "$a" in
-            --complete) newstatus=completed ;;
-            --cancel)   newstatus=cancelled ;;
-            -*) print_error "Unknown option: $a"; return 1 ;;
-            *)
-                if [ -z "$slug" ]; then slug=$a
-                else print_error "Too many arguments."; return 1
-                fi ;;
-        esac
-        shift
-    done
-    if [ -z "$slug" ]; then
-        print_error "Usage: workitem archive <slug> [--complete|--cancel]"; return 1
-    fi
+# Shared by wi_complete/wi_cancel: locate the item (top or backlog only --
+# already-archived is a hard error, not a no-op, since re-finishing a closed
+# item makes no sense), stamp status + completed:, move to archived/, and
+# remove any worktree(s). newstatus is 'completed' or 'cancelled'.
+wi_finish() {
+    local slug=$1 newstatus=$2
 
     local root="$WORK/data/items" srcdir='' zone; zone=$(wi_locate "$slug")
     case "$zone" in
@@ -760,29 +754,8 @@ wi_archive() {
 
     local front="$srcdir/$slug.md"
     local destdir="$root/archived/$slug"
-    local current; current=$(sed -n 's/^status: *//p' "$front" | head -1)
-    local stamp=completed
 
-    if [ -z "$newstatus" ]; then
-        case "$current" in
-            completed|cancelled)
-                # Already terminal (e.g. complete-item just set this) --
-                # nothing left to decide, and re-stamping `completed:` here
-                # would clobber the real completion date on a later re-run.
-                newstatus=$current
-                stamp=''
-                ;;
-            *)
-                read -r -p "'$slug' is not marked as complete (status: $current); move anyway? [y/N] " reply
-                case "$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')" in
-                    y*) newstatus=cancelled ;;
-                    *) print_error "Nothing changed."; return 1 ;;
-                esac
-                ;;
-        esac
-    fi
-
-    transition_status "$front" "$newstatus" "$stamp" "$destdir" || return 1
+    transition_status "$front" "$newstatus" completed "$destdir" || return 1
 
     if [ -d "$WORK/worktrees/$slug" ]; then
         print_status "Removing worktree(s) for '$slug' ..."
@@ -790,6 +763,16 @@ wi_archive() {
     fi
 
     print_success "Archived → items/archived/$slug ($newstatus)"
+}
+
+wi_complete() {
+    local slug; slug=$(wi_one_slug complete "$@") || return 1
+    wi_finish "$slug" completed
+}
+
+wi_cancel() {
+    local slug; slug=$(wi_one_slug cancel "$@") || return 1
+    wi_finish "$slug" cancelled
 }
 
 wi_delete() {
@@ -861,7 +844,8 @@ case "$cmd" in
     defer)    wi_defer "$@" ;;
     block)    wi_block "$@" ;;
     unblock)  wi_unblock "$@" ;;
-    archive)  wi_archive "$@" ;;
+    complete) wi_complete "$@" ;;
+    cancel)   wi_cancel "$@" ;;
     delete)   wi_delete "$@" ;;
     '')       printf '%s\n' "$usage" ;;
     *)        print_error "Unknown command '$cmd' (try: workitem help)"; exit 1 ;;

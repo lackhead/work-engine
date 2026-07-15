@@ -1,5 +1,5 @@
 # Completions for `workitem` (create/list/show/log/activate/defer/block/
-# unblock/archive/delete subcommands).
+# unblock/complete/cancel/delete subcommands).
 # Canonical location: ~/work/engine/bin/completions/workitem.fish (the work-engine repo);
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
 
@@ -31,27 +31,14 @@ function __workitem_nargs
     echo $n
 end
 
-# Item slugs eligible for archiving: top-level + backlog (not already archived).
-function __workitem_archivable_slugs
+# Item slugs in active circulation: top-level + backlog, never archived/.
+# Archived items are never tab-completed anywhere in this file -- reaching
+# one (show, delete) means typing the slug out by hand. Shared by show, log,
+# complete, cancel, and delete.
+function __workitem_active_slugs
     set -l items (__workitem_root)/data/items
     test -d $items; or return
     for zone in $items $items/backlog
-        test -d $zone; or continue
-        for p in $zone/*
-            test -d $p; or continue
-            set -l b (basename $p)
-            contains -- $b backlog archived; and continue
-            echo $b
-        end
-    end
-end
-
-# Item slugs eligible for deletion: any zone, including archived/ (delete can
-# target an already-archived item too, unlike archive).
-function __workitem_deletable_slugs
-    set -l items (__workitem_root)/data/items
-    test -d $items; or return
-    for zone in $items $items/backlog $items/archived
         test -d $zone; or continue
         for p in $zone/*
             test -d $p; or continue
@@ -121,7 +108,8 @@ complete -c workitem -n __fish_use_subcommand -a activate -d 'Move a backlog ite
 complete -c workitem -n __fish_use_subcommand -a defer    -d 'Move a top-level item to backlog (deferred)'
 complete -c workitem -n __fish_use_subcommand -a block    -d 'Mark a top-level item blocked'
 complete -c workitem -n __fish_use_subcommand -a unblock  -d 'Mark a blocked item active'
-complete -c workitem -n __fish_use_subcommand -a archive  -d 'Archive a work item'
+complete -c workitem -n __fish_use_subcommand -a complete -d 'Complete a work item and archive it'
+complete -c workitem -n __fish_use_subcommand -a cancel   -d 'Cancel a work item and archive it'
 complete -c workitem -n __fish_use_subcommand -a delete   -d 'Delete a work item outright'
 
 # create [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [title...]
@@ -141,11 +129,11 @@ complete -c workitem -n '__fish_seen_subcommand_from list' -l status -x \
 
 # show <slug>
 complete -c workitem -n '__fish_seen_subcommand_from show; and test (__workitem_nargs) -eq 0' \
-    -a '(__workitem_deletable_slugs)' -d item
+    -a '(__workitem_active_slugs)' -d item
 
 # log [-r|--repo <repo>] [item-slug] -- never archived, matching wi_log's own restriction
 complete -c workitem -n '__fish_seen_subcommand_from log; and test (__workitem_nargs) -eq 0' \
-    -a '(__workitem_archivable_slugs)' -d item
+    -a '(__workitem_active_slugs)' -d item
 complete -c workitem -n '__fish_seen_subcommand_from log' -s r -l repo \
     -x -a '(__workitem_repos)' -d 'repo for git facts'
 
@@ -165,13 +153,15 @@ complete -c workitem -n '__fish_seen_subcommand_from block; and test (__workitem
 complete -c workitem -n '__fish_seen_subcommand_from unblock; and test (__workitem_nargs) -eq 0' \
     -a '(__workitem_unblockable_slugs)' -d item
 
-# archive <slug> [--completed|--cancelled]
-complete -c workitem -n '__fish_seen_subcommand_from archive; and test (__workitem_nargs) -eq 0' \
-    -a '(__workitem_archivable_slugs)' -d item
-complete -c workitem -n '__fish_seen_subcommand_from archive' -l complete -d 'Mark completed (skip prompt)'
-complete -c workitem -n '__fish_seen_subcommand_from archive' -l cancel   -d 'Mark cancelled (skip prompt)'
+# complete <slug>
+complete -c workitem -n '__fish_seen_subcommand_from complete; and test (__workitem_nargs) -eq 0' \
+    -a '(__workitem_active_slugs)' -d item
+
+# cancel <slug>
+complete -c workitem -n '__fish_seen_subcommand_from cancel; and test (__workitem_nargs) -eq 0' \
+    -a '(__workitem_active_slugs)' -d item
 
 # delete <slug> [--force]
 complete -c workitem -n '__fish_seen_subcommand_from delete; and test (__workitem_nargs) -eq 0' \
-    -a '(__workitem_deletable_slugs)' -d item
+    -a '(__workitem_active_slugs)' -d item
 complete -c workitem -n '__fish_seen_subcommand_from delete' -l force -d 'Allow deleting a non-quick item'

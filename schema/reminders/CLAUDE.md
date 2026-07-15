@@ -28,12 +28,13 @@ carries.
 
 A reminder has exactly **two states** — `active` (in circulation) and
 **archived** (out of circulation) — and archival happens for one of **two
-reasons**: `addressed` or `dismissed`. Unlike work items, status and location
+reasons**: `completed` or `cancelled`. Unlike work items, status and location
 are *not* independent axes here: the state is the whole lifecycle, and the
 `status:` frontmatter value carries it — `active` while circulating, and the
-archival *reason* (`addressed`/`dismissed`) once archived. There is no
-addressed-but-still-circulating limbo: `addressed`/`dismissed` mean the
-reminder is archived.
+archival *reason* (`completed`/`cancelled`) once archived. There is no
+completed-but-still-circulating limbo: `completed`/`cancelled` mean the
+reminder is archived. These are the same two terminal values work items use
+(see `items/CLAUDE.md`), so both content types share one vocabulary for "done."
 
 ### Status values
 
@@ -45,17 +46,17 @@ values:
   "this needs follow-up." There is no `proposed` state for reminders — they're
   inherently lighter-weight than work items, and the act of capturing one is
   the commitment. Active reminders live at the top level of `reminders/`.
-- **`addressed`** — archived because the underlying thing was done, resolved,
+- **`completed`** — archived because the underlying thing was done, resolved,
   or followed up on. The reminder did its job.
-- **`dismissed`** — archived because it turned out not to need follow-up after
+- **`cancelled`** — archived because it turned out not to need follow-up after
   all (false alarm, no longer relevant, the question answered itself).
-  Distinct from `addressed`: dismissed means "I never followed up and don't
+  Distinct from `completed`: cancelled means "I never followed up and don't
   need to."
 
-`addressed` and `dismissed` are the two **reasons for archival**; both imply
+`completed` and `cancelled` are the two **reasons for archival**; both imply
 the file has moved to `archived/`. Transitions are conscious decisions —
-nothing changes status automatically. When a reminder is addressed or
-dismissed, I (or Claude on my behalf, with my approval) set the `status:` and
+nothing changes status automatically. When a reminder is completed or
+cancelled, I (or Claude on my behalf, with my approval) set the `status:` and
 move the file together (see "Archiving" below).
 
 ### Archive
@@ -63,13 +64,13 @@ move the file together (see "Archiving" below).
 `~/work/data/reminders/archived/` holds reminders no longer in active circulation.
 Because state and location are coupled, the lifecycle is simply
 `active → archived` and the `status:` value records why:
-`active → addressed` or `active → dismissed`. Both the status edit and the
+`active → completed` or `active → cancelled`. Both the status edit and the
 `→ archived/` move are part of the **same** transition, done together — a
-reminder doesn't sit at `addressed`/`dismissed` while still at the top level.
+reminder doesn't sit at `completed`/`cancelled` while still at the top level.
 
 The frontmatter status is canonical; the `archived/` location is its
 mechanical counterpart and should always agree (top level ⇔ `active`,
-`archived/` ⇔ `addressed`/`dismissed`).
+`archived/` ⇔ `completed`/`cancelled`).
 
 Nothing is deleted. Archiving is a deliberate act, not automatic.
 
@@ -94,7 +95,7 @@ Required fields:
 | Field | Notes |
 |-------|-------|
 | `created` | `YYYY-MM-DD` when the reminder was first captured (the date the *reminder* was created, not necessarily the date the underlying item arose). |
-| `status` | One of `active`, `addressed`, `dismissed`. New reminders default to `active` (top level); `addressed`/`dismissed` are the two archival reasons and imply the file lives under `archived/`. See "Status values" above. |
+| `status` | One of `active`, `completed`, `cancelled`. New reminders default to `active` (top level); `completed`/`cancelled` are the two archival reasons and imply the file lives under `archived/`. See "Status values" above. |
 
 Optional fields:
 
@@ -110,7 +111,7 @@ Optional fields:
 - **File names:** `<kebab-case-description>.md` — no date prefix. The
   creation date already lives in the `created:` frontmatter field, so
   putting it in the filename too would just be duplication; dropping it
-  also shortens what you type for `show`/`archive`/`delete`/`due`.
+  also shortens what you type for `show`/`complete`/`cancel`/`delete`/`due`.
 - **Auto-derived and capped at 30 characters.** `workreminder create`
   kebab-cases the description into a default slug, truncated at a word
   boundary (never mid-word). In the interactive flow (no description given
@@ -176,24 +177,25 @@ first), so stale ones surface naturally.
 omitting the date clears it. There is no `due-type` for reminders — see the
 frontmatter table above.
 
-### Archiving (addressing or dismissing)
+### Archiving (completing or cancelling)
 
-A reminder leaves active circulation by being **addressed** or **dismissed**,
+A reminder leaves active circulation by being **completed** or **cancelled**,
 and that is a single coupled transition — set the `status:` and move the file
 together:
 
-1. Edit the frontmatter `status:` to `addressed` (followed up / resolved) or
-   `dismissed` (no follow-up needed after all).
+1. Edit the frontmatter `status:` to `completed` (followed up / resolved) or
+   `cancelled` (no follow-up needed after all).
 2. Move the file to `~/work/data/reminders/archived/<name>.md`.
 
-`workreminder archive <slug> [--addressed|--dismissed]` automates this —
-prompts for the reason if not given as a flag, sets `status:`, and moves the
-file — mirroring `workitem archive --completed/--cancelled`.
+`workreminder complete <slug>` and `workreminder cancel <slug>` automate
+this — each sets the respective `status:` and moves the file in one step,
+mirroring `workitem complete`/`workitem cancel`. There's no bare "archive,
+decide later" verb: the verb itself is the status decision.
 
-Both steps always happen together — don't set `addressed`/`dismissed` while
+Both steps always happen together — don't set `completed`/`cancelled` while
 leaving the file at the top level, and don't move a file to `archived/`
 without recording the reason in `status:`. (The only edge case is genuinely
-abandoning tracking with no opinion on outcome — prefer `dismissed` for that
+abandoning tracking with no opinion on outcome — prefer `cancelled` for that
 rather than inventing a third state.)
 
 The body is preserved as-is; don't rewrite history.
@@ -201,9 +203,9 @@ The body is preserved as-is; don't rewrite history.
 ### Deleting a reminder created in error
 
 `workreminder delete <slug>` removes a reminder outright — for one created
-by mistake, not for the normal end-of-life path (that's archiving, which
-preserves the body). Distinct from archiving the same way `workitem delete`
-is distinct from `workitem archive`.
+by mistake, not for the normal end-of-life path (that's completing/cancelling,
+which preserves the body). Distinct from archiving the same way `workitem
+delete` is distinct from `workitem complete`/`workitem cancel`.
 
 ### Promoting a reminder to a work item
 
@@ -212,12 +214,12 @@ should become a work item. `workreminder promote <name> [workitem create
 args...]` does this atomically: creates the work item (title defaults to
 the reminder's own `#` heading; pass trailing args — a different title,
 `-b/--backlog`, `-s/--slug`, etc. — to override what `workitem create`
-receives instead), then archives the reminder as `addressed` in the same
-step (the coupled transition described under "Archiving"). If item creation
-fails, the reminder is left untouched — nothing archives on a failed
-promotion. `promote` only applies to active reminders — an already-archived
-one refuses with a clear error, since promoting something already closed
-doesn't make sense.
+receives instead), then completes the reminder in the same step (the coupled
+transition described under "Archiving"). If item creation fails, the
+reminder is left untouched — nothing archives on a failed promotion.
+`promote` only applies to active reminders — an already-archived one refuses
+with a clear error, since promoting something already closed doesn't make
+sense.
 
 There's no automatic cross-link back into the created item — `workitem
 create` has no flag to set arbitrary `tags:` at creation, and per this
