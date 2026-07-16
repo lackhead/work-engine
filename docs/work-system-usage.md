@@ -165,7 +165,8 @@ A work item that touches code gets a git worktree per repo under
 ```bash
 worktree add nagios Ansible feature/nagios-pushover   # branch is explicit…
 worktree add my-item Internal                         # …or defaults to the slug
-worktree list                  # all worktrees, with branch, clean/dirty, and commits ahead (unmerged)
+worktree list                  # all worktrees: branch, clean/dirty, commits unmerged
+                                # locally, and commits not yet pushed to origin
 worktree list nagios
 worktree rm nagios             # remove the item's worktree(s); branch kept
 worktree refresh Ansible       # fast-forward the clone's integration branch

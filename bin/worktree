@@ -49,11 +49,19 @@ Description:
    Worktrees are created when an item goes active and removed when it
    finishes; the branch and history are always left intact on removal.
 
-   list shows, per worktree: STATE (dirty = uncommitted changes present,
-   clean = none) and AHEAD (commits on this branch the canonical clone's
-   current branch doesn't have -- '-' for none, '?' if it can't be
-   determined). Together they answer "would removing this lose anything
-   not saved elsewhere" -- clean-but-ahead is still unmerged work.
+   list shows, per worktree:
+     STATE     dirty = uncommitted changes present, clean = none.
+     AHEAD     commits on this branch the canonical clone's current branch
+               doesn't have -- an integration signal (not yet merged
+               locally), not a safety one.
+     UNPUSHED  commits on this branch that origin doesn't have under the
+               same name -- the actual "could this be lost" signal.
+               'no-remote' means the branch has never been pushed at all.
+   All three can be '-'/none and the worktree still be worth keeping around;
+   what to actually worry about is dirty and/or a nonzero UNPUSHED --
+   that's local-only content. AHEAD and UNPUSHED both reflect this repo's
+   state as of its last `git fetch` (see `worktree refresh`) -- refresh
+   first if a number looks stale.
 
    refresh fast-forwards each canonical clone's integration branch from
    upstream (--ff-only, so it never rewrites). Used by workon on launch
@@ -183,11 +191,11 @@ wt_list() {
     local root; root=$WORK
     local wt=$root/worktrees
 
-    printf '%-28s %-10s %-32s %-6s %s\n' SLUG REPO BRANCH STATE AHEAD
+    printf '%-28s %-10s %-32s %-6s %-6s %s\n' SLUG REPO BRANCH STATE AHEAD UNPUSHED
 
     if [ ! -d "$wt" ]; then echo "(no worktrees yet)"; return 0; fi
 
-    local found=0 slug_dir slug repo_dir repo branch st dirty clone intbr ahead
+    local found=0 slug_dir slug repo_dir repo branch st dirty clone intbr ahead unpushed
     for slug_dir in "$wt"/*/; do
         [ -d "$slug_dir" ] || continue
         slug=$(basename "$slug_dir")
@@ -200,11 +208,10 @@ wt_list() {
             if [ -n "$st" ]; then dirty=dirty; else dirty=clean; fi
 
             # Commits in this worktree's HEAD that the canonical clone's
-            # current (integration) branch doesn't have — same "would
-            # removing this worktree lose something" check workon's
-            # --quick sweep runs before deleting an empty item. Unlike
-            # dirty/clean (uncommitted changes), this catches commits
-            # already made here but never merged/pushed anywhere else.
+            # current (integration) branch doesn't have — an integration
+            # signal, not a safety one: it reflects the clone's local branch
+            # as of its last refresh (`worktree refresh`/`workon`), which
+            # can lag what's actually on origin. See UNPUSHED for that.
             clone="$root/repos/$repo"
             intbr=$(git -C "$clone" rev-parse --abbrev-ref HEAD 2>/dev/null)
             ahead='?'
@@ -214,8 +221,27 @@ wt_list() {
             fi
             [ "$ahead" = 0 ] && ahead='-'
 
-            printf '%-28s %-10s %-32s %-6s %s\n' \
-                "$(trunc "$slug" 28)" "$(trunc "$repo" 10)" "$(trunc "$branch" 32)" "$dirty" "$ahead"
+            # Commits on this branch that origin doesn't have under the same
+            # name -- the actual "could this be lost" signal, independent of
+            # local main: a worktree can vanish (disk failure, accidental rm)
+            # without losing anything only if every commit already exists
+            # elsewhere. 'no-remote' means the branch has never been pushed
+            # under this name at all -- nothing on it is backed up anywhere.
+            # Reflects the last `git fetch` in this repo, same staleness
+            # caveat as AHEAD -- `worktree refresh <repo>` first if unsure.
+            unpushed='?'
+            if [ "$branch" != '?' ] && [ "$branch" != HEAD ]; then
+                if git -C "$repo_dir" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+                    unpushed=$(git -C "$repo_dir" rev-list --count "origin/$branch..HEAD" 2>/dev/null)
+                    [ -n "$unpushed" ] || unpushed='?'
+                    [ "$unpushed" = 0 ] && unpushed='-'
+                else
+                    unpushed='no-remote'
+                fi
+            fi
+
+            printf '%-28s %-10s %-32s %-6s %-6s %s\n' \
+                "$(trunc "$slug" 28)" "$(trunc "$repo" 10)" "$(trunc "$branch" 32)" "$dirty" "$ahead" "$unpushed"
             found=1
         done
     done
