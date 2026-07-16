@@ -243,7 +243,8 @@ worktree add  <slug> <repo> [branch]   # branch defaults to <slug>; an existing
                                        # local or remote branch is checked out,
                                        # else a new branch is created off HEAD
 worktree rm   <slug> [repo]            # remove the item's worktree(s); branch + history kept
-worktree list [slug]                   # show worktrees with branch + clean/dirty state
+worktree list [slug]                   # show worktrees with branch, clean/dirty state, and
+                                       # commits ahead of the canonical clone's branch (unmerged)
 worktree refresh [repo] [--if-stale]   # fast-forward the canonical clone's integration
                                        # branch (all repos, or one); --if-stale skips
                                        # clones fetched within the last 48h
