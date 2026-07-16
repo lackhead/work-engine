@@ -73,8 +73,8 @@ move between zones only at deliberate transitions:
   date — `workitem complete <slug>`
 - abandon: `top → archived/`, `status: cancelled` and the
   `completed:` date — `workitem cancel <slug>`
-- reject a candidate: `backlog → gone`, no archive — `workitem delete <slug>`
-  (requires `--force` unless tagged `quick`; see "Quick items" and the root
+- reject a candidate: `backlog → gone`, no archive — `workitem delete <slug>
+  --force` (see "Quick items and the empty-item sweep" and the root
   `CLAUDE.md`'s deletion exception)
 
 `complete`/`cancel` only apply to top-level items — a `backlog` item
@@ -276,47 +276,60 @@ encouraged way to handle "I need to touch one more repo" mid-conversation —
 e.g. realizing the best fix is a new fish function in dotfiles while working
 a different repo's item — not something to ask permission for first.
 
-## Quick items
+## Quick items and the empty-item sweep
 
 `workon --quick` (or `-q`) creates a throwaway item for work too small to
-warrant the usual create-then-activate ceremony — a fix expected to take
-under 15–90 minutes, or a repo-less session just to run a skill (`dashboard`,
-`retrospective`) or answer a question. It's a normal item in every structural
-sense (same directory, same frontmatter, same `worktree` machinery); the only
-difference is `workitem create --quick` skips every prompt (title is
-generated from a timestamp if none is given, status is always `active`/
-top-level) and tags the frontmatter `tags: [quick]`.
+warrant even typing a slug — a fix expected to take under 15–90 minutes, or a
+repo-less session just to run a skill (`dashboard`, `retrospective`) or
+answer a question. It's a normal item in every structural sense (same
+directory, same frontmatter, same `worktree` machinery); the only difference
+is `workitem create --quick` skips every prompt (title is generated from a
+timestamp if none is given, status is always `active`/top-level).
 
-That tag is the *only* signal `workon` uses to decide whether to sweep an
-item at session end — git cleanliness alone never triggers it, so a normal
-item with a no-op planning session is left untouched. `workon` makes this
-call itself, host-side, once its `docker exec` into the session returns
-(deliberately not `exec`'d into it — see `bin/workon`'s header comment): if
-nothing ever landed — no commits unique to the branch in any attached
-worktree, no uncommitted changes, nothing added to the item folder beyond its
-front-door file (its auto-written `log/` breadcrumb doesn't count) — it runs
-`workitem delete <slug>` on it: worktree(s) removed,
-item directory gone outright, no `archived/` copy. There's nothing to
-preserve for a placeholder that was never used, which is why this is
-deletion and not archiving — see the root `CLAUDE.md`'s note on that
-exception. If real work happened — a commit or uncommitted changes in any
-attached repo, or files added to the item folder — it's left exactly as any
-other active item would be, `quick` tag and all; nothing about it is special
-after that point, including whether it's ever archived. The "nothing landed"
-check is cumulative (commits unique to the branch versus its integration
-branch), not limited to the session that just ended, so a quick item that
-graduated to real work in an earlier session is never at risk from a later
-session that happens to add nothing new.
+Whether an item is swept at session end has nothing to do with `--quick`
+specifically — it's keyed on whether *this* `workon` invocation is the one
+that created the item, which is just as true of a plain `workon <newslug> -c`
+on a name that didn't exist yet. Git cleanliness alone never triggers a
+sweep, and neither does emptiness alone: an item that already existed before
+this invocation is never touched, no matter how uneventful the session, so a
+normal planning session on an established item is always left untouched.
+Only an item born in this exact invocation is a candidate, and only based on
+what's cumulatively true of it right now.
+
+`workon` makes this call itself, host-side, once its `docker exec` into the
+session returns (deliberately not `exec`'d into it — see `bin/workon`'s
+header comment): if nothing ever landed — no commits unique to the branch in
+any attached worktree, no uncommitted changes, nothing added to the item
+folder beyond its front-door file (its auto-written `log/` breadcrumb doesn't
+count), and no notes written into the front-door file's own content — it runs
+`workitem delete <slug> --force` on it: worktree(s) removed, item directory
+gone outright, no `archived/` copy. There's nothing to preserve for a
+placeholder that was never used, which is why this is deletion and not
+archiving — see the root `CLAUDE.md`'s note on that exception. If real work
+happened — a commit or uncommitted changes in any attached repo, files added
+to the item folder, or prose written into the front door itself — the item
+is left exactly as any other active item would be; nothing about it is
+special after that point, including whether it's ever archived.
+
+Detecting "notes written into the front door itself" needs more than a file
+listing, since `<slug>.md` is always present and can't be told apart from its
+own initial template by *existing* — only by its *content* having changed.
+Rather than parse or diff that content directly, the sweep reuses a number
+`work-session-breadcrumb` already computed moments earlier: the breadcrumb it
+writes to `log/` on every session records `item-files-changed`, a count of
+files in the item folder (front door included) whose mtime moved since
+session start. The sweep greps that field back out of the just-written
+breadcrumb file rather than re-deriving it — the marker file the breadcrumb
+used for its own `find -newer` check is already gone by the time the sweep
+runs, and re-extending its lifetime just for this would entangle two
+otherwise-independent mechanisms.
 
 Either way, `workon` prints one line reporting what it decided before
-exiting. `workon` writes the item's `log/` breadcrumb itself (host-side, just
-before this sweep — see `bin/work-session-breadcrumb`'s header), so a quick
-item deleted for having nothing landed takes that freshly-written breadcrumb
-with it when its directory is removed. Breadcrumbs never enter into the
-decision: the sweep's file check ignores `log/` entirely, so neither this
-session's breadcrumb nor any from earlier sessions keeps a quick item alive —
-only landed work does (cumulative commits, uncommitted changes, or files in
-the item folder outside `log/`).
+exiting. The "nothing landed" check is cumulative (commits unique to the
+branch versus its integration branch), not limited to a single moment in the
+session, so nothing here depends on ordering beyond "the breadcrumb for this
+session is written before the sweep reads it" — already guaranteed, since
+`workon` writes the breadcrumb itself immediately before running the sweep.
 
 ## Naming conventions
 

@@ -42,9 +42,10 @@ Arguments:
 Description:
    create   Creates items/<slug>/<slug>.md from the title, status active,
             top-level. -s/--slug sets the slug explicitly. -q/--quick
-            skips the title requirement for a throwaway item (tags:
-            [quick]). -b/--backlog creates in items/backlog/<slug>/
-            instead, status proposed. -q and -b are mutually exclusive.
+            skips the title requirement, generating one from a timestamp
+            instead, for a throwaway item you'd rather not name yet.
+            -b/--backlog creates in items/backlog/<slug>/ instead, status
+            proposed. -q and -b are mutually exclusive.
 
    list     Display work items: slug, status, due, last update. Defaults
             to top-level (active + blocked); --backlog/--archived/--all
@@ -85,8 +86,10 @@ Description:
             activate a backlog item first, or delete it if it's not going
             anywhere.
 
-   delete   Removes the item's directory outright. Refuses unless <slug>
-            is tagged `quick` (--force overrides).
+   delete   Removes the item's directory outright. Always requires
+            --force, an explicit admission there's nothing worth
+            preserving — workon's own post-session sweep passes it after
+            already verifying the item is empty.
 
 Examples:
    workitem create Rework cache host info
@@ -107,7 +110,7 @@ Examples:
    workitem unblock some-blocked-item
    workitem complete nagios
    workitem cancel some-active-item
-   workitem delete quick-task-2026-07-11-10-56
+   workitem delete quick-task-2026-07-11-10-56 --force
 
 EOF
 
@@ -182,8 +185,8 @@ transition_status() {
     rel_src="${srcdir#"$WORK"/data/}"
     rel_dest="${destdir#"$WORK"/data/}"
     # `git mv` refuses untracked paths outright ("fatal: not under version
-    # control") — a --quick item transitioned in the same session it was
-    # created in was never `git add`ed, so only fall back to plain `mv` when
+    # control") — an item transitioned in the same session it was created in
+    # was never `git add`ed, so only fall back to plain `mv` when
     # nothing under srcdir is actually tracked yet; use `git mv` (preserving
     # rename history) whenever the item has been committed at least once.
     if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1 \
@@ -322,7 +325,6 @@ wi_create() {
         echo "title: $title"
         echo "status: $status"
         echo "made: $made"
-        [ "$quick" = true ] && echo "tags: [quick]"
         echo "---"
         echo
         echo "# $title"
@@ -808,11 +810,13 @@ wi_delete() {
     print_verbose "Found item at ${srcdir/#$HOME/\~}"
 
     # Deletion (not archiving) is a deliberate, narrow exception — see the
-    # root CLAUDE.md's "nothing is deleted" principle. Reserved for `--quick`
-    # items with nothing to preserve; anything else needs --force, an
-    # explicit admission that there's real content being thrown away.
-    if [ "$force" != true ] && ! grep -qE '^tags:.*\bquick\b' "$srcdir/$slug.md" 2>/dev/null; then
-        print_error "'$slug' isn't tagged quick — refusing to delete without --force."
+    # root CLAUDE.md's "nothing is deleted" principle. Always requires
+    # --force, an explicit admission that there's real content being thrown
+    # away. workon's own post-session sweep passes --force itself, having
+    # already verified the item accumulated nothing durable — this guard is
+    # for a human typing the command by hand.
+    if [ "$force" != true ]; then
+        print_error "Refusing to delete '$slug' without --force."
         return 1
     fi
 

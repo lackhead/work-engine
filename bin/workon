@@ -20,7 +20,7 @@
 #
 # Deliberately NOT `exec`'d into the final `docker exec` — this process stays
 # alive as the session's parent so it can do post-session bookkeeping (the
-# --quick sweep, below) once the container session ends, host-side, after
+# empty-item sweep, below) once the container session ends, host-side, after
 # Claude's own TUI has fully torn down. That's the whole point: the command
 # line here is for managing work (create/start/end); the sandbox is where the
 # work itself happens. The cost is one idle bash process for the life of the
@@ -58,15 +58,19 @@ Arguments:
                      attached automatically, with or without -r.
    -q|--quick        Create a temporary item with a generated slug and open
                      it now — for work too small or exploratory to warrant
-                     creating a fully tracked item off the bat.
-                     [title...] becomes the item title (kebab-cased into the
-                     slug); omit it for an auto-generated timestamp title.
-                     At session end, workon checks every quick item attached
-                     to this invocation: if nothing ever landed (no commits
-                     unique to its branch, no uncommitted changes, no extra
-                     files in the item folder) it's deleted outright — no
-                     archived/ copy, there's nothing to preserve. Otherwise
-                     it's left exactly as any other active item.
+                     even typing a slug. [title...] becomes the item title
+                     (kebab-cased into the slug); omit it for an
+                     auto-generated timestamp title.
+
+                     Any item workon creates this run — via -q/--quick or a
+                     plain `workon <newslug> -c` — is swept at session end if
+                     nothing durable landed: no commits unique to its branch,
+                     no uncommitted changes, no extra files in the item
+                     folder, and no notes written into the front door itself.
+                     It's deleted outright — no archived/ copy, there's
+                     nothing to preserve. An item that already existed before
+                     this invocation is never swept, no matter how the
+                     session goes.
 
 Description:
    Opens Claude Code with the item's folder as the working directory, with
@@ -354,17 +358,19 @@ printf '{"cwd":"%s","start":"%s","end":"%s","since_ref":"%s"}' \
 rm -f "$bc_marker"
 
 ###
-### Post-session: the --quick sweep
+### Post-session: the empty-item sweep
 ###
 # Runs after the container session has fully exited — no `exec` hand-off — so
 # nothing here races Claude's own terminal teardown (a message printed from
 # *inside* the session, e.g. by the old SessionEnd hook, could flash and
-# vanish; this can't). Only quick items are ever touched, and only based on
-# what's cumulatively true right now (commits unique to the branch, not just
-# this session's), so a later no-op session never mistakes a graduated item
-# with real history for one that's still empty.
-front="$itemdir/$slug.md"
-if grep -qE '^tags:.*\bquick\b' "$front" 2>/dev/null; then
+# vanish; this can't). Only an item THIS invocation created is ever touched —
+# never one that already existed before it — and only based on what's
+# cumulatively true right now (commits unique to the branch, not just this
+# session's), so nothing with prior history is ever at risk. This is why the
+# gate is item_created_this_run rather than a `quick` tag: the same "did
+# anything durable land" question applies whether the item came from
+# -q/--quick or from typing a brand-new slug at `workon <newslug> -c`.
+if [ "$item_created_this_run" = true ]; then
     sweep_dirty=false
     sweep_unique_commits=0
     sweep_unique_known=true
@@ -383,26 +389,42 @@ if grep -qE '^tags:.*\bquick\b' "$front" 2>/dev/null; then
             sweep_unique_known=false
         fi
     done
-    # log/ is excluded deliberately: the SessionEnd breadcrumb hook writes a
-    # session breadcrumb into log/ for every session (including a do-nothing
-    # one), and it fires *inside* the session — before this host-side sweep
-    # runs — so counting log/ as "extra" would defeat the sweep for every quick
-    # item that ever opened a session. Only content outside log/ (plan.md,
-    # notes, artifacts the user actually added) signals real work worth keeping.
+    # log/ is excluded deliberately: the breadcrumb just written above lands
+    # there for every session (including a do-nothing one), so counting log/
+    # itself as "extra" would defeat the sweep every time. Files elsewhere in
+    # the item folder (plan.md, artifacts actually added) still count as
+    # durable; <slug>.md itself is excluded here too, since it's always
+    # present — content changes to it are caught separately below.
     sweep_has_extra=false
     find "$itemdir" -mindepth 1 -path "$itemdir/log" -prune -o ! -name "$slug.md" -print 2>/dev/null \
         | grep -q . && sweep_has_extra=true
 
+    # A session that only ever wrote prose into the front door itself
+    # (<slug>.md) — notes in Current state, nothing else — wouldn't show up
+    # in the check above, since that file is always present and excluded by
+    # name. The breadcrumb just written already recorded whether anything in
+    # the item folder, front door included, changed mtime since session
+    # start (item-files-changed) — reuse that number instead of re-deriving
+    # it; bc_marker is already gone by this point and deliberately isn't
+    # extended just for this.
+    sweep_item_files_changed=0
+    newest_bc=$(printf '%s\n' "$itemdir"/log/"${session_end%%T*}.$slug.session."*.md 2>/dev/null | sort | tail -1)
+    if [ -n "$newest_bc" ] && [ -f "$newest_bc" ]; then
+        n=$(sed -n 's/^item-files-changed: *//p' "$newest_bc" | head -1)
+        [ -n "$n" ] && sweep_item_files_changed=$n
+    fi
+
     if [ "$sweep_dirty" != true ] && [ "$sweep_unique_commits" -eq 0 ] \
        && { [ ${#wt_repos[@]} -eq 0 ] || [ "$sweep_unique_known" = true ]; } \
-       && [ "$sweep_has_extra" != true ]; then
-        workitem delete "$slug" >/dev/null 2>&1
+       && [ "$sweep_has_extra" != true ] && [ "$sweep_item_files_changed" -eq 0 ]; then
+        workitem delete "$slug" --force >/dev/null 2>&1
         print_success "'$slug' was empty — deleted, nothing to keep."
     else
         why=()
         [ "$sweep_dirty" = true ] && why+=("uncommitted changes")
         [ "$sweep_unique_commits" -gt 0 ] && why+=("$sweep_unique_commits commit(s)")
         [ "$sweep_has_extra" = true ] && why+=("extra files in the item folder")
+        [ "$sweep_item_files_changed" -gt 0 ] && why+=("notes written into the front door")
         [ "$sweep_unique_known" != true ] && why+=("couldn't verify repo history — skipping to be safe")
         if [ ${#why[@]} -gt 0 ]; then
             IFS=', '; reason="${why[*]}"; unset IFS

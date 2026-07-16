@@ -116,7 +116,7 @@ complete -c workitem -n __fish_use_subcommand -a delete   -d 'Delete a work item
 
 # create [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [title...]
 complete -c workitem -n '__fish_seen_subcommand_from create' -s q -l quick \
-    -d 'Skip prompts; active/top-level, tags: [quick]'
+    -d 'Skip prompts, generate a timestamp title/slug'
 complete -c workitem -n '__fish_seen_subcommand_from create' -s b -l backlog \
     -d 'Create in items/backlog/ instead, status proposed'
 complete -c workitem -n '__fish_seen_subcommand_from create' -s s -l slug \
@@ -166,4 +166,4 @@ complete -c workitem -n '__fish_seen_subcommand_from cancel; and test (__workite
 # delete <slug> [--force]
 complete -c workitem -n '__fish_seen_subcommand_from delete; and test (__workitem_nargs) -eq 0' \
     -a '(__workitem_active_slugs)' -d item
-complete -c workitem -n '__fish_seen_subcommand_from delete' -l force -d 'Allow deleting a non-quick item'
+complete -c workitem -n '__fish_seen_subcommand_from delete' -l force -d 'Required — confirm the item has nothing worth preserving'

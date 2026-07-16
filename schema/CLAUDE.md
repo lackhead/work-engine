@@ -65,11 +65,15 @@ ever serve.
      into a work item (gone from `docs/` entirely).
    Nothing that represents actual work is deleted; archiving preserves the
    body, and transitions are deliberate, not automatic. The one deliberate
-   exception is narrow and explicit: a `--quick` item that never accumulated
-   any content at all — no commits, no uncommitted changes, no files added to
-   its folder — is deleted outright at session end rather than archived,
-   because there's no body to preserve for a placeholder that was never used.
-   See `items/CLAUDE.md`'s quick-item section for the mechanics.
+   exception is narrow and explicit: an item that `workon` created this
+   session (via `--quick` or a plain create-on-the-fly) and that never
+   accumulated any content at all — no commits, no uncommitted changes, no
+   files added to its folder, no notes written into the front door itself —
+   is deleted outright at session end rather than archived, because there's
+   no body to preserve for a placeholder that was never used. An item that
+   already existed before the session is never subject to this. See
+   `items/CLAUDE.md`'s "Quick items and the empty-item sweep" section for the
+   mechanics.
 6. **Two actionable types: reminders and work items, split on whether work
    gets a session.** A reminder is an atomic note you action or flip without
    sitting down to work it. A work item is something you sit down and work in
@@ -199,7 +203,8 @@ it or move it into a work item. It's scratch, not storage — files are meant to
 be consumed (moved into an item's `artifacts/`/`docs/`) as they're used, and
 the sandbox sweeps anything older than a week on every start. That auto-deletion
 is a deliberate, narrow exception to "nothing is deleted" (principle 5), like
-`--quick` items: a transfer buffer holds nothing worth preserving.
+a freshly-created item swept for having accumulated nothing: a transfer
+buffer holds nothing worth preserving.
 
 ## Conventions
 
