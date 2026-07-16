@@ -69,15 +69,23 @@ move between zones only at deliberate transitions:
 - resume: `backlog → top`, `status: active` — `workitem activate <slug>`
 - toggle in place: `active ↔ blocked`, no move — `workitem block <slug>` /
   `workitem unblock <slug>`
-- finish: `top|backlog → archived/`, `status: completed` and the `completed:`
+- finish: `top → archived/`, `status: completed` and the `completed:`
   date — `workitem complete <slug>`
-- abandon: `top|backlog → archived/`, `status: cancelled` and the
+- abandon: `top → archived/`, `status: cancelled` and the
   `completed:` date — `workitem cancel <slug>`
+- reject a candidate: `backlog → gone`, no archive — `workitem delete <slug>`
+  (requires `--force` unless tagged `quick`; see "Quick items" and the root
+  `CLAUDE.md`'s deletion exception)
 
-Status edit and zone move usually happen together at these transitions, but
-they remain conceptually separate acts (you can, e.g., mark something
-`cancelled` and archive it in two steps). Nothing is ever deleted; finished
-work moves to `archived/`, preserving the body as historical record.
+`complete`/`cancel` only apply to top-level items — a `backlog` item
+(`proposed`/`deferred`) never became active work, so there's nothing to
+complete or cancel; it's either promoted with `activate` first, or rejected
+outright with `delete`. Status edit and zone move usually happen together at
+these transitions, but they remain conceptually separate acts (you can, e.g.,
+mark something `cancelled` and archive it in two steps). Nothing genuinely
+worked is ever deleted; finished work moves to `archived/`, preserving the
+body as historical record — `delete` is reserved for candidates and
+placeholders that never became anything.
 
 ## Structure
 
@@ -420,7 +428,9 @@ read-only by convention (fix outright errors only).
 supported paths — each sets the respective status, stamps `completed:` with
 today, moves the item to `items/archived/<slug>/`, and removes its
 worktree(s), if any. There's no bare "archive, decide later" verb: the verb
-itself is the status decision, made explicitly every time.
+itself is the status decision, made explicitly every time. Both apply to
+top-level items only; a `backlog` candidate that's being rejected is
+`workitem delete`d instead, not completed/cancelled — see "Attention zones."
 
 ### Promoting a reminder into an item
 

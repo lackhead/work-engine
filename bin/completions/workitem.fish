@@ -34,7 +34,8 @@ end
 # Item slugs in active circulation: top-level + backlog, never archived/.
 # Archived items are never tab-completed anywhere in this file -- reaching
 # one (show, delete) means typing the slug out by hand. Shared by show, log,
-# complete, cancel, and delete.
+# and delete. NOT complete/cancel -- those only apply to top-level items
+# (see __workitem_toplevel_slugs); a backlog item never became active work.
 function __workitem_active_slugs
     set -l items (__workitem_root)/data/items
     test -d $items; or return
@@ -44,7 +45,7 @@ function __workitem_active_slugs
             test -d $p; or continue
             set -l b (basename $p)
             contains -- $b backlog archived; and continue
-            echo $b
+            test -f $p/$b.md; and echo $b
         end
     end
 end
@@ -55,7 +56,8 @@ function __workitem_backlog_slugs
     test -d $zone; or return
     for p in $zone/*
         test -d $p; or continue
-        echo (basename $p)
+        set -l b (basename $p)
+        test -f $p/$b.md; and echo $b
     end
 end
 
@@ -68,7 +70,7 @@ function __workitem_toplevel_slugs
         test -d $p; or continue
         set -l b (basename $p)
         contains -- $b backlog archived; and continue
-        echo $b
+        test -f $p/$b.md; and echo $b
     end
 end
 
@@ -153,13 +155,13 @@ complete -c workitem -n '__fish_seen_subcommand_from block; and test (__workitem
 complete -c workitem -n '__fish_seen_subcommand_from unblock; and test (__workitem_nargs) -eq 0' \
     -a '(__workitem_unblockable_slugs)' -d item
 
-# complete <slug>
+# complete <slug> -- top-level only; a backlog item is activated or deleted, never completed
 complete -c workitem -n '__fish_seen_subcommand_from complete; and test (__workitem_nargs) -eq 0' \
-    -a '(__workitem_active_slugs)' -d item
+    -a '(__workitem_toplevel_slugs)' -d item
 
-# cancel <slug>
+# cancel <slug> -- top-level only; a backlog item is activated or deleted, never cancelled
 complete -c workitem -n '__fish_seen_subcommand_from cancel; and test (__workitem_nargs) -eq 0' \
-    -a '(__workitem_active_slugs)' -d item
+    -a '(__workitem_toplevel_slugs)' -d item
 
 # delete <slug> [--force]
 complete -c workitem -n '__fish_seen_subcommand_from delete; and test (__workitem_nargs) -eq 0' \

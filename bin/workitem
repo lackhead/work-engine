@@ -75,11 +75,15 @@ Description:
 
    complete Sets status to completed, stamps completed: with today, moves
             the item to items/archived/<slug>/, and removes its worktree(s)
-            if any. Item must be top-level or backlog (not already archived).
+            if any. Item must be top-level (not backlog or archived) --
+            activate a backlog item first, or delete it if it's not going
+            anywhere.
 
    cancel   Sets status to cancelled, stamps completed: with today, moves
             the item to items/archived/<slug>/, and removes its worktree(s)
-            if any. Item must be top-level or backlog (not already archived).
+            if any. Item must be top-level (not backlog or archived) --
+            activate a backlog item first, or delete it if it's not going
+            anywhere.
 
    delete   Removes the item's directory outright. Refuses unless <slug>
             is tagged `quick` (--force overrides).
@@ -736,19 +740,22 @@ wi_unblock() {
     print_success "Unblocked '$slug' (blocked → active)"
 }
 
-# Shared by wi_complete/wi_cancel: locate the item (top or backlog only --
-# already-archived is a hard error, not a no-op, since re-finishing a closed
-# item makes no sense), stamp status + completed:, move to archived/, and
-# remove any worktree(s). newstatus is 'completed' or 'cancelled'.
+# Shared by wi_complete/wi_cancel: locate the item (top-level only --
+# a backlog item never became active work, so completing/cancelling it
+# makes no sense; activate it first, or delete it if it's not going
+# anywhere. already-archived is a hard error too, not a no-op, since
+# re-finishing a closed item makes no sense), stamp status + completed:,
+# move to archived/, and remove any worktree(s). newstatus is 'completed'
+# or 'cancelled'.
 wi_finish() {
     local slug=$1 newstatus=$2
 
     local root="$WORK/data/items" srcdir='' zone; zone=$(wi_locate "$slug")
     case "$zone" in
         top)      srcdir="$root/$slug" ;;
-        backlog)  srcdir="$root/backlog/$slug" ;;
+        backlog)  print_error "'$slug' is in backlog — activate it first, or 'workitem delete' it if it's not going anywhere."; return 1 ;;
         archived) print_error "'$slug' is already archived."; return 1 ;;
-        *)        print_error "No item '$slug' found (checked items/ and items/backlog/)."; return 1 ;;
+        *)        print_error "No item '$slug' found at top level."; return 1 ;;
     esac
     print_verbose "Found item at ${srcdir/#$HOME/\~}"
 

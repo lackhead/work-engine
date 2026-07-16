@@ -18,7 +18,7 @@ function __workon_item_slugs
         set -l b (basename $p)
         contains -- $b CLAUDE.md backlog archived; and continue
         if test -d $p
-            echo $b
+            test -f $p/$b.md; and echo $b
         else
             echo (string replace -r '\.md$' '' $b)
         end
