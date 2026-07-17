@@ -1,11 +1,11 @@
 ---
 name: complete-item
-description: Close out a work item that's genuinely finished — draft a permanent, categorized ## Retrospective section and a final ## Current state from the item's full log/ history, confirm with the user, write them, stamp status: completed, then hand off to `workitem complete` to move the directory. The one item-scoped run whose retrospective is persisted, since the item is leaving circulation for good.
+description: Close out a work item that's genuinely finished — draft a permanent, categorized ## Retrospective section and a final ## Current state from the item's full log/ history, write them directly and print them for review, stamp status: completed, then hand off to `workitem complete` to move the directory. The one item-scoped run whose retrospective is persisted, since the item is leaving circulation for good.
 user_invocable: true
 ---
 
 Close out a single work item for good: draft its permanent closing narrative,
-confirm it, write it, and archive the item. This is a one-time lifecycle
+write it, and archive the item. This is a one-time lifecycle
 event, not a time-window recap — it's triggered by "this item is done," never
 by a date range. That's the whole reason it's a separate skill from
 `retrospective`, even though it reads the same kind of sources
@@ -68,15 +68,10 @@ Two pieces, both drafted but not yet written:
 - **Drop `## What's next`**, if the item has one — nothing is next once an
   item is done.
 
-### 4. Confirm before writing
+### 4. Write
 
-Present both drafts. Ask the user to confirm, edit, or skip — same
-propose-then-write convention as `retrospective` step 6. Do not write
-anything until confirmed.
-
-### 5. Write
-
-On confirmation:
+No confirm-before-writing gate here — unlike `retrospective`'s per-item
+`## Current state` proposals, write the draft straight to the file:
 
 - Insert `## Retrospective` directly after `## Current state` (before
   `## Item files`, if present) — see the placement example in
@@ -86,16 +81,19 @@ On confirmation:
 - Set `status: completed` (or `cancelled`) and stamp `completed:` with
   today's date directly in the frontmatter.
 
-### 6. Hand off to archive
+### 5. Hand off to archive
 
-Run `workitem complete <slug>` (or `workitem cancel <slug>` if step 5 closed
-this out as cancelled) — status is already set from step 5, so this just
+Run `workitem complete <slug>` (or `workitem cancel <slug>` if step 4 closed
+this out as cancelled) — status is already set from step 4, so this just
 re-confirms it, stamps `completed:`, and moves the directory; see
 `items/CLAUDE.md`'s "Archiving".
 
-### 7. Print
+### 6. Print
 
-Report the archive result (destination path, worktree(s) removed if any).
+Print the `## Retrospective` and finalized `## Current state` content that
+was just written, plus the archive result (destination path, worktree(s)
+removed if any) — the user reviews what actually landed and can amend the
+file by hand afterward if anything needs a correction.
 
 ## Notes
 
@@ -104,8 +102,9 @@ Report the archive result (destination path, worktree(s) removed if any).
   written permanently, directly into the item's own front door, because the
   item is leaving circulation and this is its one lasting home for that
   story.
-- **Propose, don't autonomously mutate.** Step 4 never writes without
-  confirmation, same rule as `retrospective`.
+- **Write, then let review happen after.** No confirm-before-writing gate,
+  unlike `retrospective` — the draft is written and printed in the same
+  step; review is a look-back-and-amend, not a look-before-you-write.
 - **Not for trivial items or cancellations.** See "Scope" above — both have
   a faster, ceremony-free path through `workitem complete`/`workitem cancel`
   directly.

@@ -425,12 +425,15 @@ Before archiving something genuinely finished, run the `complete-item`
 skill (`~/work/engine/skills/complete-item/`) from inside a session on that
 item. It drafts a permanent `## Retrospective` section (the item's closing
 narrative, read from its full `log/` history) and a final `## Current
-state` paragraph, confirms both with you, writes them, then runs `workitem
+state` paragraph, writes them directly and prints them, then runs `workitem
 complete` itself to stamp `status: completed`/`completed:` and move the
-directory — no separate step to remember. Trivial or `--quick` items can
-skip the ceremony and go straight to `workitem complete <slug>`, which sets
-`status: completed` and moves it without drafting a retrospective.
-Cancellations skip it too — see "Archiving" below.
+directory — no separate step to remember. Unlike `retrospective`'s
+per-item `## Current state` proposals, there's no confirm-before-writing
+gate here: the draft is written straight to the file, printed for review,
+and amended by hand afterward if it needs a correction. Trivial or
+`--quick` items can skip the ceremony and go straight to `workitem complete
+<slug>`, which sets `status: completed` and moves it without drafting a
+retrospective. Cancellations skip it too — see "Archiving" below.
 
 ### Archiving
 
