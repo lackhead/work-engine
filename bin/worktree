@@ -25,29 +25,35 @@ worktree: manage per-work-item git worktrees under ~/work
 
 Usage:
    worktree [ -h|--help ]
-   worktree [ -v|--verbose ] [ -d|--debug ] add     <slug> <repo> [branch] [--base <ref>]
-   worktree [ -v|--verbose ] [ -d|--debug ] rm      <slug> [repo]
-   worktree [ -v|--verbose ] [ -d|--debug ] list    [slug]
-   worktree [ -v|--verbose ] [ -d|--debug ] refresh [repo] [--if-stale]
+   worktree [ -v|--verbose ] [ -d|--debug ] add            <slug> <repo> [branch] [--base <ref>]
+   worktree [ -v|--verbose ] [ -d|--debug ] rm             <slug> [repo] [--delete-branch]
+   worktree [ -v|--verbose ] [ -d|--debug ] list           [slug]
+   worktree [ -v|--verbose ] [ -d|--debug ] refresh        [repo] [--if-stale]
+   worktree [ -v|--verbose ] [ -d|--debug ] prune-branches [repo] [--apply]
 
 Arguments:
-   -h|--help     Show what you are seeing right now
-   -v|--verbose  Show what is happening as it happens
-   -d|--debug    Show diagnostic detail (implies --verbose)
+   -h|--help         Show what you are seeing right now
+   -v|--verbose      Show what is happening as it happens
+   -d|--debug        Show diagnostic detail (implies --verbose)
 
-   <slug>        Work item basename (must be an active top-level item)
-   <repo>        Canonical clone under ~/work/repos/
-   [branch]      Branch name (defaults to <slug>); an existing local or
-                 remote-tracking branch is checked out, else a new branch
-                 is created off --base
-   --base <ref>  Base ref for a new branch (default: clone HEAD)
-   --if-stale    (refresh) Skip clones fetched within the last 48h
+   <slug>            Work item basename (must be an active top-level item)
+   <repo>            Canonical clone under ~/work/repos/
+   [branch]          Branch name (defaults to <slug>); an existing local or
+                     remote-tracking branch is checked out, else a new
+                     branch is created off --base
+   --base <ref>      Base ref for a new branch (default: clone HEAD)
+   --delete-branch   (rm) Also delete the branch, but only if it's merged
+                     into the clone's current branch; left in place otherwise
+   --if-stale        (refresh) Skip clones fetched within the last 48h
+   --apply           (prune-branches) Delete the branches found safe to
+                     delete; without it, only lists what would happen
 
 Description:
    Manages git worktrees under ~/work/worktrees/<slug>/<repo>/, each
    checked out to its own branch off the canonical clone in ~/work/repos/.
    Worktrees are created when an item goes active and removed when it
-   finishes; the branch and history are always left intact on removal.
+   finishes; rm leaves the branch and history intact unless --delete-branch
+   is given.
 
    list shows, per worktree:
      STATE     dirty = uncommitted changes present, clean = none.
@@ -67,14 +73,23 @@ Description:
    upstream (--ff-only, so it never rewrites). Used by workon on launch
    to keep drift counts honest.
 
+   prune-branches finds local branches with no live worktree and sorts
+   them into SAFE (an ancestor of the clone's current branch, or of a
+   branch some other live worktree has checked out) and REVIEW
+   (everything else). Without --apply it only prints the split; with
+   --apply it deletes the SAFE set and leaves REVIEW alone.
+
 Examples:
    worktree add nagios Ansible feature/nagios-pushover
    worktree add my-item Internal                       # branch defaults to my-item
    worktree list
    worktree list nagios
    worktree rm nagios
+   worktree rm nagios --delete-branch
    worktree refresh
    worktree refresh Ansible --if-stale
+   worktree prune-branches Ansible
+   worktree prune-branches Ansible --apply
 
 EOF
 
@@ -155,8 +170,19 @@ wt_add() {
 }
 
 wt_rm() {
-    local slug=${1:-} repo=${2:-}
-    if [ -z "$slug" ]; then print_error "Usage: worktree rm <slug> [repo]"; return 1; fi
+    local delete_branch=0 a
+    local positional=()
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            --delete-branch) delete_branch=1 ;;
+            -*)              print_error "Unknown option: $a"; return 1 ;;
+            *)               positional+=("$a") ;;
+        esac
+        shift
+    done
+    local slug=${positional[0]:-} repo=${positional[1]:-}
+    if [ -z "$slug" ]; then print_error "Usage: worktree rm <slug> [repo] [--delete-branch]"; return 1; fi
 
     local root; root=$WORK
     local slug_dir=$root/worktrees/$slug
@@ -171,6 +197,13 @@ wt_rm() {
     fi
     [ ${#targets[@]} -eq 0 ] && { print_error "No worktrees under slug '$slug'"; return 1; }
 
+    # Branch names must be read before removal -- the worktree's .git is gone
+    # once `git worktree remove` succeeds.
+    local branches=()
+    for r in "${targets[@]}"; do
+        branches+=("$(git -C "$slug_dir/$r" rev-parse --abbrev-ref HEAD 2>/dev/null)")
+    done
+
     for r in "${targets[@]}"; do
         print_status "Removing worktrees/$slug/$r"
         if ! git -C "$root/repos/$r" worktree remove "$slug_dir/$r"; then
@@ -183,7 +216,28 @@ wt_rm() {
     # which would make rmdir see a non-empty dir and silently leave it behind.
     rm -f "$slug_dir/.DS_Store" 2>/dev/null
     rmdir "$slug_dir" 2>/dev/null
-    print_success "Done (branches and history left intact)"
+
+    if [ "$delete_branch" -eq 1 ]; then
+        local i=0 branch
+        for r in "${targets[@]}"; do
+            branch=${branches[$i]}
+            i=$((i + 1))
+            if [ -z "$branch" ] || [ "$branch" = HEAD ]; then
+                print_warning "Couldn't determine branch for $r — left in place."
+                continue
+            fi
+            # -d (not -D): only deletes if merged into repos/$r's current
+            # (integration) branch. Refuses otherwise rather than losing work.
+            if git -C "$root/repos/$r" branch -d "$branch" >/dev/null 2>&1; then
+                print_success "Deleted branch '$branch' from $r (merged)"
+            else
+                print_warning "Branch '$branch' not merged into $r's integration branch — left in place (see 'worktree prune-branches $r')"
+            fi
+        done
+        print_success "Done"
+    else
+        print_success "Done (branches and history left intact)"
+    fi
 }
 
 wt_list() {
@@ -248,6 +302,108 @@ wt_list() {
 
     if [ "$found" -eq 0 ]; then
         if [ -n "$want" ]; then echo "(no worktrees for '$want')"; else echo "(no worktrees)"; fi
+    fi
+}
+
+# For each canonical clone (or one named repo), find local branches with no
+# live worktree and classify them: SAFE if the branch is an ancestor of the
+# clone's integration branch (shipped and merged) or of any branch currently
+# checked out in a live worktree for that repo (mid-item rename -- the old
+# name is fully subsumed by the new one); REVIEW otherwise. Dry-run unless
+# --apply, which deletes (git branch -D -- safe here because ancestry was
+# already verified via merge-base, not git's own weaker "merged into current
+# HEAD" check) only the SAFE bucket; REVIEW branches are never touched.
+wt_prune_branches() {
+    local apply=0 want='' a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            --apply) apply=1 ;;
+            -*)      print_error "Unknown option: $a"; return 1 ;;
+            *)       want=$a ;;
+        esac
+        shift
+    done
+
+    local root; root=$WORK
+    local repos="$root/repos"
+    [ -d "$repos" ] || { print_error "No repos/ directory at $repos"; return 1; }
+
+    local targets=() d
+    if [ -n "$want" ]; then
+        [ -d "$repos/$want" ] || { print_error "No canonical clone at repos/$want"; return 1; }
+        targets=("$want")
+    else
+        for d in "$repos"/*/; do [ -d "$d" ] && targets+=("$(basename "$d")"); done
+    fi
+    [ ${#targets[@]} -eq 0 ] && { echo "(no clones under repos/)"; return 0; }
+
+    local r repo_dir intbr live safe_count=0 review_count=0
+    for r in "${targets[@]}"; do
+        repo_dir="$repos/$r"
+        if ! git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
+            print_verbose "$r: not a git repo, skipping"
+            continue
+        fi
+        intbr=$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+        [ "$intbr" = HEAD ] && intbr=''
+
+        # Branches currently checked out in a live worktree for this repo --
+        # never candidates, and a valid merge target for the ancestry check.
+        local live=() slug_dir b
+        for slug_dir in "$root/worktrees"/*/; do
+            [ -d "${slug_dir}${r}" ] || continue
+            b=$(git -C "${slug_dir}${r}" rev-parse --abbrev-ref HEAD 2>/dev/null)
+            [ -n "$b" ] && [ "$b" != HEAD ] && live+=("$b")
+        done
+
+        echo "=== $r ==="
+        local branch merged_into is_live lb found_any=0
+        while IFS= read -r branch; do
+            [ -n "$branch" ] || continue
+            [ "$branch" = "$intbr" ] && continue
+            is_live=0
+            for lb in "${live[@]}"; do [ "$branch" = "$lb" ] && is_live=1 && break; done
+            [ "$is_live" -eq 1 ] && continue
+
+            found_any=1
+            merged_into=''
+            if [ -n "$intbr" ] && git -C "$repo_dir" merge-base --is-ancestor "$branch" "$intbr" 2>/dev/null; then
+                merged_into=$intbr
+            else
+                for lb in "${live[@]}"; do
+                    if git -C "$repo_dir" merge-base --is-ancestor "$branch" "$lb" 2>/dev/null; then
+                        merged_into=$lb
+                        break
+                    fi
+                done
+            fi
+
+            if [ -n "$merged_into" ]; then
+                safe_count=$((safe_count + 1))
+                if [ "$apply" -eq 1 ]; then
+                    if git -C "$repo_dir" branch -D "$branch" >/dev/null 2>&1; then
+                        printf '  %-6s %-32s deleted (was merged into %s)\n' SAFE "$branch" "$merged_into"
+                    else
+                        printf '  %-6s %-32s FAILED to delete (merged into %s)\n' SAFE "$branch" "$merged_into"
+                    fi
+                else
+                    printf '  %-6s %-32s merged into %s\n' SAFE "$branch" "$merged_into"
+                fi
+            else
+                review_count=$((review_count + 1))
+                printf '  %-6s %-32s not an ancestor of %s or any live worktree branch\n' REVIEW "$branch" "${intbr:-<none>}"
+            fi
+        done < <(git -C "$repo_dir" for-each-ref --format='%(refname:short)' refs/heads)
+
+        [ "$found_any" -eq 0 ] && echo "  (no orphaned branches)"
+    done
+
+    echo
+    if [ "$apply" -eq 1 ]; then
+        print_success "$safe_count branch(es) deleted, $review_count left for manual review"
+    else
+        print_status "$safe_count safe to delete, $review_count need manual review -- rerun with --apply to delete the safe set"
     fi
 }
 
@@ -349,10 +505,11 @@ done
 sub="${1:-}"
 [ $# -gt 0 ] && shift
 case "$sub" in
-    add)            wt_add "$@" ;;
-    rm|remove)      wt_rm "$@" ;;
-    list|ls)        wt_list "$@" ;;
-    refresh|sync)   wt_refresh "$@" ;;
-    '')             printf '%s\n' "$usage" ;;
-    *)              print_error "Unknown subcommand: $sub (try --help)"; exit 1 ;;
+    add)                wt_add "$@" ;;
+    rm|remove)          wt_rm "$@" ;;
+    list|ls)            wt_list "$@" ;;
+    refresh|sync)       wt_refresh "$@" ;;
+    prune-branches)     wt_prune_branches "$@" ;;
+    '')                 printf '%s\n' "$usage" ;;
+    *)                  print_error "Unknown subcommand: $sub (try --help)"; exit 1 ;;
 esac

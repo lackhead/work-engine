@@ -100,10 +100,11 @@ complete -c worktree -s v -l verbose -d 'Show what is happening as it happens'
 complete -c worktree -s d -l debug   -d 'Show diagnostic detail (implies --verbose)'
 complete -c worktree -s h -l help    -d 'Show help'
 
-complete -c worktree -n __fish_use_subcommand -a add     -d 'Create a worktree'
-complete -c worktree -n __fish_use_subcommand -a rm      -d 'Remove worktree(s)'
-complete -c worktree -n __fish_use_subcommand -a list    -d 'List worktrees'
-complete -c worktree -n __fish_use_subcommand -a refresh -d 'Fast-forward canonical clones'
+complete -c worktree -n __fish_use_subcommand -a add            -d 'Create a worktree'
+complete -c worktree -n __fish_use_subcommand -a rm             -d 'Remove worktree(s)'
+complete -c worktree -n __fish_use_subcommand -a list           -d 'List worktrees'
+complete -c worktree -n __fish_use_subcommand -a refresh        -d 'Fast-forward canonical clones'
+complete -c worktree -n __fish_use_subcommand -a prune-branches -d 'Find/delete orphaned branches'
 
 # add <slug> <repo> [branch] [--base ref]
 complete -c worktree -n '__fish_seen_subcommand_from add; and test (__worktree_nargs) -eq 0' -a '(__worktree_item_slugs)' -d item
@@ -111,9 +112,10 @@ complete -c worktree -n '__fish_seen_subcommand_from add; and test (__worktree_n
 complete -c worktree -n '__fish_seen_subcommand_from add; and test (__worktree_nargs) -eq 2' -a '(__worktree_branches)'   -d branch
 complete -c worktree -n '__fish_seen_subcommand_from add' -l base -r -d 'Base ref for a new branch'
 
-# rm <slug> [repo]
+# rm <slug> [repo] [--delete-branch]
 complete -c worktree -n '__fish_seen_subcommand_from rm remove; and test (__worktree_nargs) -eq 0' -a '(__worktree_live_slugs)' -d worktree
 complete -c worktree -n '__fish_seen_subcommand_from rm remove; and test (__worktree_nargs) -eq 1' -a '(__worktree_live_repos)' -d repo
+complete -c worktree -n '__fish_seen_subcommand_from rm remove' -l delete-branch -d 'Also delete the branch if merged'
 
 # list [slug]
 complete -c worktree -n '__fish_seen_subcommand_from list ls; and test (__worktree_nargs) -eq 0' -a '(__worktree_live_slugs)' -d worktree
@@ -121,3 +123,7 @@ complete -c worktree -n '__fish_seen_subcommand_from list ls; and test (__worktr
 # refresh [repo] [--if-stale]
 complete -c worktree -n '__fish_seen_subcommand_from refresh sync; and test (__worktree_nargs) -eq 0' -a '(__worktree_repos)' -d clone
 complete -c worktree -n '__fish_seen_subcommand_from refresh sync' -l if-stale -d 'Skip clones fetched <48h ago'
+
+# prune-branches [repo] [--apply]
+complete -c worktree -n '__fish_seen_subcommand_from prune-branches; and test (__worktree_nargs) -eq 0' -a '(__worktree_repos)' -d clone
+complete -c worktree -n '__fish_seen_subcommand_from prune-branches' -l apply -d 'Delete the branches found safe to delete'

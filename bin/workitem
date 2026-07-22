@@ -768,7 +768,7 @@ wi_finish() {
 
     if [ -d "$WORK/worktrees/$slug" ]; then
         print_status "Removing worktree(s) for '$slug' ..."
-        worktree rm "$slug" || print_warning "worktree rm failed — clean it up by hand."
+        worktree rm "$slug" --delete-branch || print_warning "worktree rm failed — clean it up by hand."
     fi
 
     print_success "Archived → items/archived/$slug ($newstatus)"
@@ -822,7 +822,7 @@ wi_delete() {
 
     if [ -d "$WORK/worktrees/$slug" ]; then
         print_status "Removing worktree(s) for '$slug' ..."
-        worktree rm "$slug" || print_warning "worktree rm failed — clean it up by hand."
+        worktree rm "$slug" --delete-branch || print_warning "worktree rm failed — clean it up by hand."
     fi
 
     rm -rf "$srcdir"
