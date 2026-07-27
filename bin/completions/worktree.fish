@@ -102,6 +102,7 @@ complete -c worktree -s h -l help    -d 'Show help'
 
 complete -c worktree -n __fish_use_subcommand -a add            -d 'Create a worktree'
 complete -c worktree -n __fish_use_subcommand -a rm             -d 'Remove worktree(s)'
+complete -c worktree -n __fish_use_subcommand -a mv             -d 'Relocate worktree(s) to a new slug'
 complete -c worktree -n __fish_use_subcommand -a list           -d 'List worktrees'
 complete -c worktree -n __fish_use_subcommand -a refresh        -d 'Fast-forward canonical clones'
 complete -c worktree -n __fish_use_subcommand -a prune-branches -d 'Find/delete orphaned branches'
@@ -116,6 +117,9 @@ complete -c worktree -n '__fish_seen_subcommand_from add' -l base -r -d 'Base re
 complete -c worktree -n '__fish_seen_subcommand_from rm remove; and test (__worktree_nargs) -eq 0' -a '(__worktree_live_slugs)' -d worktree
 complete -c worktree -n '__fish_seen_subcommand_from rm remove; and test (__worktree_nargs) -eq 1' -a '(__worktree_live_repos)' -d repo
 complete -c worktree -n '__fish_seen_subcommand_from rm remove' -l delete-branch -d 'Also delete the branch if merged'
+
+# mv <old-slug> <new-slug> -- new-slug is a name being chosen, not completed
+complete -c worktree -n '__fish_seen_subcommand_from mv rename; and test (__worktree_nargs) -eq 0' -a '(__worktree_live_slugs)' -d worktree
 
 # list [slug]
 complete -c worktree -n '__fish_seen_subcommand_from list ls; and test (__worktree_nargs) -eq 0' -a '(__worktree_live_slugs)' -d worktree
