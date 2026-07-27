@@ -27,6 +27,7 @@ Usage:
    worktree [ -h|--help ]
    worktree [ -v|--verbose ] [ -d|--debug ] add            <slug> <repo> [branch] [--base <ref>]
    worktree [ -v|--verbose ] [ -d|--debug ] rm             <slug> [repo] [--delete-branch]
+   worktree [ -v|--verbose ] [ -d|--debug ] mv             <old-slug> <new-slug>
    worktree [ -v|--verbose ] [ -d|--debug ] list           [slug]
    worktree [ -v|--verbose ] [ -d|--debug ] refresh        [repo] [--if-stale]
    worktree [ -v|--verbose ] [ -d|--debug ] prune-branches [repo] [--apply]
@@ -44,6 +45,8 @@ Arguments:
    --base <ref>      Base ref for a new branch (default: clone HEAD)
    --delete-branch   (rm) Also delete the branch, but only if it's merged
                      into the clone's current branch; left in place otherwise
+   <old-slug>        (mv) Existing worktree slug to relocate
+   <new-slug>        (mv) Slug to relocate it to
    --if-stale        (refresh) Skip clones fetched within the last 48h
    --apply           (prune-branches) Delete the branches found safe to
                      delete; without it, only lists what would happen
@@ -54,6 +57,13 @@ Description:
    Worktrees are created when an item goes active and removed when it
    finishes; rm leaves the branch and history intact unless --delete-branch
    is given.
+
+   mv relocates every worktree under worktrees/<old-slug>/ to
+   worktrees/<new-slug>/ via `git worktree move` (branch and history
+   untouched). If a repo's checked-out branch is named after <old-slug> --
+   the `add` default -- it's renamed to <new-slug> too; an explicitly-named
+   branch is left as-is. Used by `workitem rename` to keep an item's
+   worktree(s) attached under its new name.
 
    list shows, per worktree:
      STATE     dirty = uncommitted changes present, clean = none.
@@ -86,6 +96,7 @@ Examples:
    worktree list nagios
    worktree rm nagios
    worktree rm nagios --delete-branch
+   worktree mv nagios-pushover nagios-alerting
    worktree refresh
    worktree refresh Ansible --if-stale
    worktree prune-branches Ansible
@@ -238,6 +249,59 @@ wt_rm() {
     else
         print_success "Done (branches and history left intact)"
     fi
+}
+
+# Relocate every worktree under worktrees/<old>/ to worktrees/<new>/ via
+# `git worktree move` -- a raw `mv` would corrupt the administrative link
+# git keeps between the main repo and the worktree, so this always goes
+# through git. Called by `workitem rename` after it renames the item itself.
+wt_mv() {
+    local positional=() a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)  positional+=("$a") ;;
+        esac
+    done
+    local old=${positional[0]:-} new=${positional[1]:-}
+    if [ -z "$old" ] || [ -z "$new" ]; then
+        print_error "Usage: worktree mv <old-slug> <new-slug>"; return 1
+    fi
+
+    local root; root=$WORK
+    local old_dir=$root/worktrees/$old new_dir=$root/worktrees/$new
+    if [ ! -d "$old_dir" ]; then print_error "No worktrees for slug '$old'"; return 1; fi
+    if [ -e "$new_dir" ]; then print_error "Worktree path already exists: worktrees/$new"; return 1; fi
+    mkdir -p "$new_dir"
+
+    local r repo branch rc=0
+    for r in "$old_dir"/*/; do
+        [ -d "$r" ] || continue
+        repo=$(basename "$r")
+        print_status "Moving worktrees/$old/$repo -> worktrees/$new/$repo"
+        if ! git -C "$root/repos/$repo" worktree move "$old_dir/$repo" "$new_dir/$repo"; then
+            print_error "git worktree move failed for $repo — left at worktrees/$old/$repo."
+            rc=1
+            continue
+        fi
+        # `add`'s default names the branch after the slug -- rename it to
+        # match so it doesn't read stale after the item's renamed. A
+        # branch named explicitly at `add` time is left alone.
+        branch=$(git -C "$new_dir/$repo" rev-parse --abbrev-ref HEAD 2>/dev/null)
+        if [ "$branch" = "$old" ]; then
+            if git -C "$new_dir/$repo" branch -m "$new"; then
+                print_verbose "Renamed branch '$old' -> '$new' in $repo"
+            else
+                print_warning "Couldn't rename branch in $repo — left as '$old'."
+            fi
+        fi
+    done
+
+    rm -f "$old_dir/.DS_Store" 2>/dev/null
+    rmdir "$old_dir" 2>/dev/null
+
+    [ "$rc" -eq 0 ] || return 1
+    print_success "Worktrees moved -> worktrees/$new"
 }
 
 wt_list() {
@@ -507,6 +571,7 @@ sub="${1:-}"
 case "$sub" in
     add)                wt_add "$@" ;;
     rm|remove)          wt_rm "$@" ;;
+    mv|rename)          wt_mv "$@" ;;
     list|ls)            wt_list "$@" ;;
     refresh|sync)       wt_refresh "$@" ;;
     prune-branches)     wt_prune_branches "$@" ;;

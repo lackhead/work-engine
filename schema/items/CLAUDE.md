@@ -345,6 +345,17 @@ session is written before the sweep reads it" — already guaranteed, since
   a deliberate short name instead when truncation wouldn't land on a good
   one. Either way, a collision with an existing slug appends `-2`, `-3`, ...
   rather than refusing — expected once slugs are short, not an error.
+- **Renaming a slug after the fact:** `workitem rename <slug> <new-slug>`
+  renames the directory and front-door file in place — zone, status,
+  `title:`, and the `#` heading are untouched, since the slug and the title
+  are independent (the slug is the structural name; the title is display
+  text). It relocates the item's worktree(s), if any, to
+  `worktrees/<new-slug>/` (via `worktree mv`), but it does **not** rewrite
+  `[[<slug>]]` wikilinks elsewhere in the vault — `related-items` on other
+  items, mentions in docs or reminders, etc. are left pointing at the old
+  name and need fixing by hand. Prefer picking a slug you're willing to
+  keep; rename for a genuine mistake or a name that's stopped fitting, not
+  routine polish.
 
 ## Linking and cross-references
 

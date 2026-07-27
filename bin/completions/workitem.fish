@@ -1,5 +1,5 @@
 # Completions for `workitem` (create/list/show/log/activate/defer/block/
-# unblock/complete/cancel/delete subcommands).
+# unblock/complete/cancel/rename/delete subcommands).
 # Canonical location: ~/work/engine/bin/completions/workitem.fish (the work-engine repo);
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
 
@@ -112,6 +112,7 @@ complete -c workitem -n __fish_use_subcommand -a block    -d 'Mark a top-level i
 complete -c workitem -n __fish_use_subcommand -a unblock  -d 'Mark a blocked item active'
 complete -c workitem -n __fish_use_subcommand -a complete -d 'Complete a work item and archive it'
 complete -c workitem -n __fish_use_subcommand -a cancel   -d 'Cancel a work item and archive it'
+complete -c workitem -n __fish_use_subcommand -a rename   -d "Rename an item's slug (directory + front door)"
 complete -c workitem -n __fish_use_subcommand -a delete   -d 'Delete a work item outright'
 
 # create [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [title...]
@@ -162,6 +163,10 @@ complete -c workitem -n '__fish_seen_subcommand_from complete; and test (__worki
 # cancel <slug> -- top-level only; a backlog item is activated or deleted, never cancelled
 complete -c workitem -n '__fish_seen_subcommand_from cancel; and test (__workitem_nargs) -eq 0' \
     -a '(__workitem_toplevel_slugs)' -d item
+
+# rename <slug> <new-slug> -- new-slug is a name being chosen, not completed
+complete -c workitem -n '__fish_seen_subcommand_from rename; and test (__workitem_nargs) -eq 0' \
+    -a '(__workitem_active_slugs)' -d item
 
 # delete <slug> [--force]
 complete -c workitem -n '__fish_seen_subcommand_from delete; and test (__workitem_nargs) -eq 0' \

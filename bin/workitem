@@ -32,6 +32,7 @@ Usage:
    workitem [ -v|--verbose ] [ -d|--debug ] unblock  <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] complete <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] cancel   <slug>
+   workitem [ -v|--verbose ] [ -d|--debug ] rename   <slug> <new-slug>
    workitem [ -v|--verbose ] [ -d|--debug ] delete   <slug> [--force]
 
 Arguments:
@@ -86,6 +87,12 @@ Description:
             activate a backlog item first, or delete it if it's not going
             anywhere.
 
+   rename   Renames <slug>/<slug>.md to <new-slug>/<new-slug>.md in place --
+            zone (top/backlog/archived), status, title:, and the # heading
+            are untouched. Relocates the item's worktree(s), if any, to
+            worktrees/<new-slug>/. Does not update [[<slug>]] wikilinks
+            elsewhere in the vault -- fix those by hand.
+
    delete   Removes the item's directory outright. Always requires
             --force, an explicit admission there's nothing worth
             preserving — workon's own post-session sweep passes it after
@@ -110,6 +117,7 @@ Examples:
    workitem unblock some-blocked-item
    workitem complete nagios
    workitem cancel some-active-item
+   workitem rename nagios-pushover nagios-alerting
    workitem delete quick-task-2026-07-11-10-56 --force
 
 EOF
@@ -122,6 +130,27 @@ file_mtime_date() {
         Darwin|*BSD) stat -f '%Sm' -t '%Y-%m-%d' "$1" 2>/dev/null ;;
         *)           stat -c '%y' "$1" 2>/dev/null | cut -d' ' -f1 ;;
     esac
+}
+
+# vault_mv <src> <dest> -- move/rename a path inside the vault (absolute
+# paths under WORK/data). Uses `git mv` when src is already tracked
+# (preserves rename history), else a plain `mv` -- an item transitioned or
+# renamed in the same session it was created in was never `git add`ed yet.
+# Silent on failure (just returns 1) so each caller can print its own
+# contextual error message. Shared by transition_status (directory moves
+# on activate/defer/complete/cancel) and wi_rename (directory + front-door
+# file rename).
+vault_mv() {
+    local src=$1 dest=$2 rel_src rel_dest
+    rel_src="${src#"$WORK"/data/}"
+    rel_dest="${dest#"$WORK"/data/}"
+    mkdir -p "$(dirname "$dest")"
+    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1 \
+       && [ -n "$(git -C "$WORK/data" ls-files "$rel_src")" ]; then
+        git -C "$WORK/data" mv "$rel_src" "$rel_dest"
+    else
+        mv "$src" "$dest"
+    fi
 }
 
 # transition_status <front> <new_status> <stamp_field> <destdir>
@@ -180,27 +209,10 @@ transition_status() {
 
     [ -n "$destdir" ] || return 0
 
-    mkdir -p "$(dirname "$destdir")"
-    local rel_src rel_dest
-    rel_src="${srcdir#"$WORK"/data/}"
-    rel_dest="${destdir#"$WORK"/data/}"
-    # `git mv` refuses untracked paths outright ("fatal: not under version
-    # control") — an item transitioned in the same session it was created in
-    # was never `git add`ed, so only fall back to plain `mv` when
-    # nothing under srcdir is actually tracked yet; use `git mv` (preserving
-    # rename history) whenever the item has been committed at least once.
-    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1 \
-       && [ -n "$(git -C "$WORK/data" ls-files "$rel_src")" ]; then
-        git -C "$WORK/data" mv "$rel_src" "$rel_dest" || {
-            print_error "Move to $rel_dest failed — frontmatter updated, item left in place."
-            return 1
-        }
-    else
-        mv "$srcdir" "$destdir" || {
-            print_error "Move to $rel_dest failed — frontmatter updated, item left in place."
-            return 1
-        }
-    fi
+    vault_mv "$srcdir" "$destdir" || {
+        print_error "Move to ${destdir#"$WORK"/data/} failed — frontmatter updated, item left in place."
+        return 1
+    }
 }
 
 ###
@@ -784,6 +796,72 @@ wi_cancel() {
     wi_finish "$slug" cancelled
 }
 
+# Renames an item's slug in place: items/<zone>/<slug>/<slug>.md becomes
+# items/<zone>/<new-slug>/<new-slug>.md. Zone, status, title:, and the #
+# heading are untouched -- the slug (directory + front-door filename) is the
+# only thing that's the item's "name" in the structural sense; title is
+# independent human-readable text (see items/CLAUDE.md's naming
+# conventions). A worktree keyed to the old slug, if any, is relocated to
+# match via `worktree mv`. Does NOT rewrite [[<slug>]] wikilinks elsewhere in
+# the vault (other items' related-items, docs, reminders) -- out of scope,
+# fixed by hand.
+wi_rename() {
+    local old='' new_raw='' a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$old" ]; then old=$a
+                elif [ -z "$new_raw" ]; then new_raw=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$old" ] || [ -z "$new_raw" ]; then
+        print_error "Usage: workitem rename <slug> <new-slug>"; return 1
+    fi
+
+    local root="$WORK/data/items" zone; zone=$(wi_locate "$old")
+    if [ -z "$zone" ]; then
+        print_error "No item '$old' found."; return 1
+    fi
+
+    # Sanitized the same way an explicit -s/--slug is at create time --
+    # normalized, not truncated (this is a deliberate short name already).
+    local new; new=$(kebab "$new_raw" 200)
+    if [ -z "$new" ]; then
+        print_error "New slug is empty after sanitizing '$new_raw'."; return 1
+    fi
+    if [ "$new" = "$old" ]; then
+        print_error "'$old' is already the slug — nothing to rename."; return 1
+    fi
+    local existing_zone; existing_zone=$(wi_locate "$new")
+    if [ -n "$existing_zone" ]; then
+        print_error "'$new' already exists (in $existing_zone) — pick a different name."
+        return 1
+    fi
+
+    local zonedir="$root"; [ "$zone" != top ] && zonedir="$root/$zone"
+    local srcdir="$zonedir/$old" destdir="$zonedir/$new"
+
+    vault_mv "$srcdir" "$destdir" || {
+        print_error "Move to ${destdir#"$WORK"/data/} failed."
+        return 1
+    }
+    vault_mv "$destdir/$old.md" "$destdir/$new.md" || {
+        print_error "Directory renamed but front-door file rename failed — fix ${destdir#"$WORK"/data/}/$old.md by hand."
+        return 1
+    }
+
+    if [ -d "$WORK/worktrees/$old" ]; then
+        print_status "Relocating worktree(s) for '$old' → '$new' ..."
+        worktree mv "$old" "$new" || print_warning "worktree mv failed — relocate worktrees/$old by hand."
+    fi
+
+    local disp="items/$new"; [ "$zone" != top ] && disp="items/$zone/$new"
+    print_success "Renamed → $disp (was '$old')"
+}
+
 wi_delete() {
     local slug='' force=false a
     for a in "$@"; do
@@ -857,6 +935,7 @@ case "$cmd" in
     unblock)  wi_unblock "$@" ;;
     complete) wi_complete "$@" ;;
     cancel)   wi_cancel "$@" ;;
+    rename)   wi_rename "$@" ;;
     delete)   wi_delete "$@" ;;
     '')       printf '%s\n' "$usage" ;;
     *)        print_error "Unknown command '$cmd' (try: workitem help)"; exit 1 ;;
