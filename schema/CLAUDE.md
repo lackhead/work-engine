@@ -126,7 +126,10 @@ ever serve.
     there. `~/work/repos/` and `~/work/worktrees/` (below) are ungit'd scratch
     space, siblings of both. No repo's work-tree is ever an ancestor of
     another's root — learned the hard way from an earlier design that nested
-    the vault inside the dotfiles repo's work-tree.
+    the vault inside the dotfiles repo's work-tree. `~/work/keys/` (below) is
+    a third kind of sibling — ungit'd like `repos/`/`worktrees/`, but holding
+    sandbox credentials rather than scratch space; see the Directory
+    structure section.
 11. **Code repositories live under `~/work/repos/`, worked through
     per-item worktrees under `~/work/worktrees/`.** `repos/<repo>/` is the
     **canonical clone** — the reference checkout, kept on the integration
@@ -186,11 +189,14 @@ ever serve.
 │   └── <repo-name>/         # one per repo; kept on the integration branch, not worked in directly
 ├── worktrees/              # per-item git worktrees off the canonical clones
 │   └── <slug>/<repo>/        # one checkout per active item per repo it touches
+├── keys/                   # sandbox SSH credentials + config (mode 700, ungit'd, never in a repo)
+│   ├── sandbox_github         # per-instance private key(s), whatever this instance's sandbox needs
+│   └── ssh_config             # this instance's ~/.ssh/config content — see sandbox/home/ssh_config.example
 └── incoming/               # transient host→sandbox file drop zone (ungit'd, auto-purged weekly)
 ```
 
 `engine/` and `data/` are separate git repos (see principle 10); `repos/`,
-`worktrees/`, and `incoming/` are ungit'd scratch space. For each major `data/`
+`worktrees/`, `keys/`, and `incoming/` are ungit'd. For each major `data/`
 subdirectory, see its schema at `engine/schema/<name>/CLAUDE.md` for content
 rules, filename conventions, and frontmatter fields. The root file deliberately
 stops at one level of depth.
@@ -205,6 +211,20 @@ the sandbox sweeps anything older than a week on every start. That auto-deletion
 is a deliberate, narrow exception to "nothing is deleted" (principle 5), like
 a freshly-created item swept for having accumulated nothing: a transfer
 buffer holds nothing worth preserving.
+
+`keys/` holds the sandbox container's SSH credentials and `~/.ssh/config` —
+created (mode 700) by `workinit`, otherwise entirely hand-populated, and
+**never tracked in any repo, engine or vault.** That's the point: which keys
+exist and which hosts they map to varies per instance (a personal instance
+has no reason to carry a job's internal deploy hosts, or vice versa), so
+none of it belongs in shared, versioned content. The engine repo ships only
+a generic template, `~/work/engine/sandbox/home/ssh_config.example` — copy
+it to `keys/ssh_config` and edit for the instance. Because `~/work/` as a
+whole is already bind-mounted into the sandbox container at the same
+absolute path (see `sandbox`'s design notes), anything placed under `keys/`
+is visible inside the container immediately — no `sandbox recreate` needed,
+unlike the container's other creation-time-only inputs (the auth env-file,
+`data/sandbox/Dockerfile.local`).
 
 ## Conventions
 

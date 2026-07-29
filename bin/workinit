@@ -33,9 +33,10 @@ Arguments:
 Description:
    Creates whatever's missing from the ~/work skeleton — the data/
    subdirectories (items/, reminders/, docs/, retrospectives/,
-   .claude/) and the two symlinks into engine/ (data/CLAUDE.md,
-   data/.claude/skills). Requires engine/ to already be cloned; never clones
-   engine/ or data/ itself.
+   .claude/), keys/ (mode 700, holds the sandbox's SSH credentials/config),
+   and the two symlinks into engine/ (data/CLAUDE.md, data/.claude/skills).
+   Requires engine/ to already be cloned; never clones engine/ or data/
+   itself.
 
    Never deletes or overwrites existing content. Anything unexpected (a
    symlink pointing somewhere else, a real file/directory where a symlink is
@@ -90,6 +91,30 @@ for d in repos worktrees incoming \
         mkdir -p "$WORK/$d" && print_success "Created $d/"
     fi
 done
+
+###
+### keys/ — sandbox SSH credentials + config (see sandbox script/help).
+### Mode 700, not just present/absent like the dirs above: it holds private
+### key material, so a wrong mode is flagged rather than silently accepted.
+###
+dir_mode() {
+    case "$(uname -s)" in
+        Darwin|*BSD) stat -f '%Lp' "$1" 2>/dev/null ;;
+        *)           stat -c '%a'  "$1" 2>/dev/null ;;
+    esac
+}
+
+if [ -d "$WORK/keys" ]; then
+    mode=$(dir_mode "$WORK/keys")
+    if [ "$mode" = "700" ]; then
+        print_verbose "Already present: keys/ (700)"
+    else
+        print_warning "keys/ exists but is mode ${mode:-unknown}, expected 700 (holds private key material) — chmod it by hand: chmod 700 $WORK/keys"
+        flagged=$((flagged + 1))
+    fi
+else
+    mkdir -m 700 "$WORK/keys" && print_success "Created keys/ (700)"
+fi
 
 ###
 ### Symlinks — create if absent, verify if present, never overwrite

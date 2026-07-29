@@ -83,14 +83,41 @@ git clone <your-vault-remote> ~/work/data
 workinit -v
 ```
 
-Creates `~/work/{repos,worktrees}` and `data/{items,reminders,docs,
+Creates `~/work/{repos,worktrees,keys}` and `data/{items,reminders,docs,
 retrospectives,.claude}` if missing, and the two symlinks
-(`data/CLAUDE.md`, `data/.claude/skills`) into `engine/`. Never overwrites
-unexpected state — it flags anything odd instead (exit code `2`) so you can
-resolve it by hand. Safe to re-run any time, including just to verify nothing
-has drifted (a clean second run is the idempotency check).
+(`data/CLAUDE.md`, `data/.claude/skills`) into `engine/`. `keys/` is created
+mode `700` — it's where the next step puts the sandbox's SSH credentials.
+Never overwrites unexpected state — it flags anything odd instead (exit code
+`2`) so you can resolve it by hand. Safe to re-run any time, including just to
+verify nothing has drifted (a clean second run is the idempotency check).
 
-## 4. Set up the long-lived auth token
+## 4. Set up the sandbox's SSH keys and config
+
+The sandbox container needs its own dedicated SSH key(s), separate from your
+host's regular ones, and a `~/.ssh/config` mapping each git endpoint to the
+right key. Neither lives in any repo — engine or vault — so each instance can
+have its own without an engine change or a leak into another instance's copy.
+Both live in `~/work/keys/` (created mode `700` by the previous step):
+
+```bash
+ssh-keygen -t ed25519 -f ~/work/keys/sandbox_github -C "sandbox — github"
+```
+
+Add the public key to GitHub (or wherever) as normal, generating one such
+key per endpoint the sandbox needs to reach. Then copy the config template
+and edit it for this instance:
+
+```bash
+cp ~/work/engine/sandbox/home/ssh_config.example ~/work/keys/ssh_config
+```
+
+`~/work/keys/` is already covered by the sandbox's `~/work` bind-mount, so
+edits here take effect immediately in any session already running — no
+`sandbox recreate`, let alone a rebuild. Skipping this step isn't fatal;
+sessions just can't push/pull over SSH from inside the sandbox until it's
+done.
+
+## 5. Set up the long-lived auth token
 
 Sessions inside the sandbox authenticate via a long-lived OAuth token rather
 than an interactive browser login. Generate one on the host (assumes
@@ -121,7 +148,7 @@ it up after the container already exists, `sandbox recreate` to pick it up
 help`). Skipping this step isn't fatal; sessions just fall back to an
 interactive login inside the container instead.
 
-## 5. Build the sandbox
+## 6. Build the sandbox
 
 The engine's Dockerfile is a base image only (Claude, `gh`, the base shell
 tooling — common to every instance). If this instance needs its own extra
@@ -154,7 +181,7 @@ sandbox up
 Confirm with `sandbox status`. The container auto-starts on future logins
 (`--restart unless-stopped` + Docker Desktop "start at login").
 
-## 6. Verify end to end
+## 7. Verify end to end
 
 ```bash
 workon <any-active-item>    # drops into a containerized Claude session
