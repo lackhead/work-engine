@@ -330,6 +330,28 @@ printf '\033]1;%s\007\033]2;workon: %s\007' "$slug" "$slug"
 session_start=$(date +%Y-%m-%dT%H:%M:%S%z | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')
 bc_marker=$(mktemp "${TMPDIR:-/tmp}/workon-bc.XXXXXX")
 
+# Re-assert Claude's onboarding flag before every launch. The entrypoint seeds
+# hasCompletedOnboarding=true at container *start*, but that's a one-shot: a
+# Claude version upgrade's one-time migration (e.g. after a `sandbox rebuild`
+# pulls a newer unpinned binary) can null the flag mid-life, on the persistent
+# ~/.claude state. When it's not true, Claude runs the theme/welcome onboarding,
+# which masquerades as an auth prompt on every session even though the injected
+# token is valid. Re-asserting here — right before the exec — covers any drift,
+# not just the moment the container came up. Mirrors the entrypoint's merge:
+# preserve Claude's other keys when the file exists, create it minimally if not.
+# $HOME is the same absolute path inside the box as out (the mount is 1:1).
+# Best-effort; never block a session on it.
+print_verbose "Ensuring hasCompletedOnboarding is set in the container"
+docker exec --user clake "$CONTAINER" sh -c '
+    f="$HOME/.claude.json"
+    if [ -s "$f" ] && jq -e . "$f" >/dev/null 2>&1; then
+        t=$(mktemp)
+        jq ".hasCompletedOnboarding = true" "$f" > "$t" 2>/dev/null && mv "$t" "$f" || rm -f "$t"
+    else
+        printf "{\"hasCompletedOnboarding\":true}\n" > "$f"
+    fi
+' >/dev/null 2>&1 || print_verbose "onboarding-flag re-assert failed (non-fatal)"
+
 dexec=(docker exec -it --user clake -w "$start"
        -e TERM -e CLAUDE_CODE_DISABLE_TERMINAL_TITLE "$CONTAINER")
 if [ -n "$existing" ]; then
