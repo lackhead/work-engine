@@ -853,10 +853,87 @@ wi_rename() {
         return 1
     }
 
+    local front="$destdir/$new.md"
+
+    # Slug and title are normally independent, so a hand-written title survives
+    # a rename untouched. The exception is a title that IS the old slug:
+    # `workon <newslug> -c` passes the kebab'd slug straight to `workitem
+    # create` as the title, so items born that way carry `title: <slug>`
+    # verbatim, and renaming the slug alone would strand an obviously-stale
+    # title. Only an exact match is rewritten -- anything a human typed is
+    # left alone. (Slugs are kebab-cased to [a-z0-9-] by kebab(), so they
+    # carry no sed metacharacters and need no escaping here.)
+    local cur_title
+    cur_title=$(sed -n 's/^title:[[:space:]]*//p' "$front" | head -1)
+    cur_title=${cur_title%\"}; cur_title=${cur_title#\"}
+    if [ "$cur_title" = "$old" ]; then
+        local tmp_t; tmp_t=$(mktemp)
+        sed -e "s/^title:.*/title: $new/" -e "s/^# $old\$/# $new/" "$front" > "$tmp_t" \
+            && mv "$tmp_t" "$front" \
+            && print_verbose "Title was the old slug — updated to '$new'"
+        rm -f "$tmp_t" 2>/dev/null
+    else
+        print_verbose "Title '$cur_title' isn't the old slug — left as-is"
+    fi
+
+    # former-slugs: is what keeps a rename from silently breaking the
+    # Work-Item commit-trailer lookup and inbound [[old-slug]] wikilinks --
+    # see schema/items/CLAUDE.md's "Renaming an item". Append to the inline
+    # array if it exists, otherwise insert the field just before the closing
+    # frontmatter delimiter.
+    local tmp_f; tmp_f=$(mktemp)
+    if grep -q '^former-slugs:' "$front"; then
+        sed -e "s/^former-slugs:[[:space:]]*\[[[:space:]]*\]/former-slugs: [$old]/" \
+            -e "s/^\(former-slugs:[[:space:]]*\[[^]]*\)\]/\1, $old]/" "$front" > "$tmp_f"
+    else
+        awk -v val="$old" '
+            /^---[[:space:]]*$/ { d++; if (d == 2) print "former-slugs: [" val "]" }
+            { print }
+        ' "$front" > "$tmp_f"
+    fi
+    if [ -s "$tmp_f" ]; then
+        mv "$tmp_f" "$front"
+        print_verbose "Recorded former slug '$old' in former-slugs:"
+    else
+        rm -f "$tmp_f"
+        print_warning "Couldn't record '$old' in former-slugs: — add it by hand."
+    fi
+
+    if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1; then
+        git -C "$WORK/data" add "$front" 2>/dev/null || true
+    fi
+
     if [ -d "$WORK/worktrees/$old" ]; then
         print_status "Relocating worktree(s) for '$old' → '$new' ..."
         worktree mv "$old" "$new" || print_warning "worktree mv failed — relocate worktrees/$old by hand."
     fi
+
+    # The rename is an event, so it lands in log/ dated, alongside session
+    # breadcrumbs -- frontmatter carries the flat lookup list, log/ carries
+    # the history. Written under the NEW slug, since that's what future reads
+    # glob for; older entries keep the old slug and are immutable.
+    local date_str; date_str=$(date +%Y-%m-%d)
+    local log_dir="$destdir/log" n=1 nn logfile
+    mkdir -p "$log_dir"
+    while [ -e "$log_dir/$date_str.$new.log.$(printf '%02d' "$n").md" ]; do
+        n=$((n + 1))
+    done
+    nn="$(printf '%02d' "$n")"
+    logfile="$log_dir/$date_str.$new.log.$nn.md"
+    {
+        echo "---"
+        echo "type: item-rename"
+        echo "slug: $new"
+        echo "former-slug: $old"
+        echo "time: $(iso_now)"
+        echo "---"
+        echo
+        echo "# Renamed — $old → $new"
+        echo
+        echo "Renamed by \`workitem rename\`. Commits made before this carry"
+        echo "\`Work-Item: $old\`; inbound \`[[$old]]\` wikilinks were not rewritten."
+    } > "$logfile"
+    print_verbose "Rename recorded → ${logfile/#$HOME/\~}"
 
     local disp="items/$new"; [ "$zone" != top ] && disp="items/$zone/$new"
     print_success "Renamed → $disp (was '$old')"
