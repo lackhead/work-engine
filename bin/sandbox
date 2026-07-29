@@ -47,6 +47,7 @@ Commands:
    up         Create or start the persistent container (builds if needed)
    down       Stop the container (keeps it and the named volumes)
    restart    Stop then start the container (no rebuild) — down + up
+   recreate   Drop and recreate the container on the current image (no rebuild)
    status     Show image / container / volume state
    shell      Open an interactive fish shell inside the container
    rebuild    Rebuild the image (--no-cache) and recreate the container
@@ -70,6 +71,12 @@ Description:
    available inside for passwordless auth. The SSH keys sandbox_github and
    sandbox_deploy are bind-mounted read-only if present under ~/.ssh/.
 
+   All three of the above (env-file, SSH keys, Dockerfile.local) are only
+   read at container *creation*. restart stops and starts the same container,
+   so it won't pick up a key or file added after the container already
+   exists — use recreate for that (rebuild instead, if the Dockerfile itself
+   changed).
+
    data/sandbox/Dockerfile.local (if present) layers instance-specific
    tooling on top of the engine's base image — e.g. a work instance's
    Ansible/pre-commit toolchain that a personal instance doesn't want.
@@ -81,6 +88,7 @@ Description:
 Examples:
    sandbox up            # start or create the container
    sandbox restart       # stop + start, no rebuild (e.g. a hung container)
+   sandbox recreate      # picked up a new SSH key / env-file, no image change
    sandbox status        # check image / container / volume state
    sandbox rebuild       # rebuild after a Dockerfile change
    sandbox shell         # drop into a fish shell inside the box
@@ -190,6 +198,27 @@ restart() {
     up
 }
 
+# Drop the container and run a fresh one from $IMAGE, no image build. Shared
+# by recreate (explicit, no Dockerfile change) and rebuild (after `build`).
+recreate_container() {
+    if container_exists; then
+        print_status "Recreating container ..."
+        docker rm -f "$CONTAINER" >/dev/null
+    fi
+    run_container || { print_error "Failed to recreate $CONTAINER."; exit 1; }
+    print_success "Container recreated ($CONTAINER)."
+}
+
+recreate() {
+    need_docker
+    if ! container_exists; then
+        print_warning "No container to recreate — run 'sandbox up' to create one."
+        return 0
+    fi
+    docker image inspect "$IMAGE" >/dev/null 2>&1 || build
+    recreate_container
+}
+
 status() {
     need_docker
     if docker image inspect "$BASE_IMAGE" >/dev/null 2>&1; then
@@ -235,12 +264,7 @@ shell() {
 rebuild() {
     need_docker
     build --no-cache "$@"
-    if container_exists; then
-        print_status "Recreating container on the new image ..."
-        docker rm -f "$CONTAINER" >/dev/null
-        run_container || { print_error "Failed to recreate $CONTAINER."; exit 1; }
-        print_success "Container recreated ($CONTAINER)."
-    fi
+    container_exists && recreate_container
 }
 
 ###
@@ -261,13 +285,14 @@ done
 cmd="${1:-}"
 [ "$#" -gt 0 ] && shift
 case "$cmd" in
-    build)   build "$@" ;;
-    up)      up ;;
-    down)    down ;;
-    restart) restart ;;
-    status)  status ;;
-    shell)   shell ;;
-    rebuild) rebuild "$@" ;;
-    '')      printf '%s\n' "$usage" ;;
-    *)       print_error "Unknown command '$cmd' (try: sandbox help)"; exit 1 ;;
+    build)    build "$@" ;;
+    up)       up ;;
+    down)     down ;;
+    restart)  restart ;;
+    recreate) recreate ;;
+    status)   status ;;
+    shell)    shell ;;
+    rebuild)  rebuild "$@" ;;
+    '')       printf '%s\n' "$usage" ;;
+    *)        print_error "Unknown command '$cmd' (try: sandbox help)"; exit 1 ;;
 esac

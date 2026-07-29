@@ -116,9 +116,10 @@ chmod 600 ~/.config/claude-sandbox.env
 
 This file is gitignored and never baked into the image. It's only read at
 container *creation* (`sandbox up` injects it via `--env-file`) — if you set
-it up after the container already exists, `sandbox rebuild` to pick it up.
-Skipping this step isn't fatal; sessions just fall back to an interactive
-login inside the container instead.
+it up after the container already exists, `sandbox recreate` to pick it up
+(no image rebuild needed; `sandbox restart` won't do it — see `sandbox
+help`). Skipping this step isn't fatal; sessions just fall back to an
+interactive login inside the container instead.
 
 ## 5. Build the sandbox
 
