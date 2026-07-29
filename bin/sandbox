@@ -68,14 +68,17 @@ Description:
 
    A gitignored env-file at ~/.config/claude-sandbox.env (if present) is
    injected at container creation via --env-file, making CLAUDE_CODE_OAUTH_TOKEN
-   available inside for passwordless auth. The SSH keys sandbox_github and
-   sandbox_deploy are bind-mounted read-only if present under ~/.ssh/.
+   available inside for passwordless auth. This and data/sandbox/Dockerfile.local
+   (below) are only read at container *creation* — restart stops and starts
+   the same container, so it won't pick up a change to either one. Use
+   recreate for an env-file change, rebuild if the Dockerfile itself changed.
 
-   All three of the above (env-file, SSH keys, Dockerfile.local) are only
-   read at container *creation*. restart stops and starts the same container,
-   so it won't pick up a key or file added after the container already
-   exists — use recreate for that (rebuild instead, if the Dockerfile itself
-   changed).
+   SSH credentials/config are different: they live under ~/work/keys/
+   (mode 700, never in any repo — see the root CLAUDE.md and
+   sandbox/home/ssh_config.example), which is already covered by the
+   container's ~/work bind-mount. A key added or an edit to
+   ~/work/keys/ssh_config takes effect immediately in any session already
+   running — no recreate needed.
 
    data/sandbox/Dockerfile.local (if present) layers instance-specific
    tooling on top of the engine's base image — e.g. a work instance's
@@ -88,7 +91,7 @@ Description:
 Examples:
    sandbox up            # start or create the container
    sandbox restart       # stop + start, no rebuild (e.g. a hung container)
-   sandbox recreate      # picked up a new SSH key / env-file, no image change
+   sandbox recreate      # picked up a new env-file, no image change
    sandbox status        # check image / container / volume state
    sandbox rebuild       # rebuild after a Dockerfile change
    sandbox shell         # drop into a fish shell inside the box
@@ -129,17 +132,6 @@ build() {
 }
 
 run_container() {
-    # Dedicated sandbox SSH keys, mounted read-only at the same path so the
-    # baked ~/.ssh/config finds them. Conditional: the box runs fine before the
-    # keys exist, and picks them up on the next `up`/`rebuild` once generated.
-    local ssh_mounts=() k
-    for k in sandbox_github sandbox_deploy; do
-        if [ -f "$HOME/.ssh/$k" ]; then
-            ssh_mounts+=( -v "$HOME/.ssh/$k:$HOME/.ssh/$k:ro" )
-            print_verbose "Mounting SSH key: $HOME/.ssh/$k"
-        fi
-    done
-
     # Long-lived auth token injection (see SANDBOX_ENV at the top of this file).
     local env_args=()
     if [ -f "$SANDBOX_ENV" ]; then
@@ -150,11 +142,14 @@ run_container() {
     fi
 
     print_verbose "Creating container: name=$CONTAINER hostname=sandbox image=$IMAGE"
-    print_debug   "Mounts: work=$WORK claude-home=$HOME/.claude cache=$HOME/.cache ssh=${ssh_mounts[*]:-none}"
+    print_debug   "Mounts: work=$WORK claude-home=$HOME/.claude cache=$HOME/.cache"
 
     # Same absolute path inside and out is the whole point — don't change the
     # mount target. --hostname makes shell prompts read `clake@sandbox`.
     # claude-cache persists ~/.cache (pre-commit hook envs, etc.) across recreates.
+    # SSH credentials/config need no mount of their own: they live under
+    # $WORK/keys/, already covered by the -v "$WORK:$WORK" mount below, and
+    # the image's ~/.ssh/config is a symlink into it — see the Dockerfile.
     docker run -d \
         --name "$CONTAINER" \
         --hostname sandbox \
@@ -162,7 +157,6 @@ run_container() {
         -v "$WORK:$WORK" \
         -v "$VOLUME:$HOME/.claude" \
         -v "$CACHE_VOLUME:$HOME/.cache" \
-        ${ssh_mounts[@]+"${ssh_mounts[@]}"} \
         ${env_args[@]+"${env_args[@]}"} \
         "$IMAGE" >/dev/null
 }

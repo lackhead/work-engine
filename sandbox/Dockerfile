@@ -96,11 +96,17 @@ RUN python3 -m venv "$HOME_DIR/.venvs/docs" \
 # generic, deliberately not a copy of the host's fish setup.
 COPY --chown=$USER_NAME:$USER_NAME home/config.fish $HOME_DIR/.config/fish/config.fish
 
-# Git identity (Phase-1 interim gap: the box couldn't commit) + SSH config that
-# maps each endpoint to its dedicated key. Neither file is secret — the private
-# keys themselves are bind-mounted read-only at runtime by ~/work/engine/bin/sandbox.
-COPY --chown=$USER_NAME:$USER_NAME --chmod=0644 home/gitconfig  $HOME_DIR/.gitconfig
-COPY --chown=$USER_NAME:$USER_NAME --chmod=0600 home/ssh_config $HOME_DIR/.ssh/config
+# Git identity (Phase-1 interim gap: the box couldn't commit).
+COPY --chown=$USER_NAME:$USER_NAME --chmod=0644 home/gitconfig $HOME_DIR/.gitconfig
+
+# ~/.ssh/config is a symlink into ~/work/keys/, not baked content: which
+# endpoints an instance's sandbox needs to reach (and which keys map to them)
+# is instance-specific and lives entirely on the host, outside any repo — see
+# the root CLAUDE.md's Directory structure section and
+# sandbox/home/ssh_config.example. ~/work/keys/ is already inside the ~/work
+# bind-mount, so the symlink resolves live at runtime — no content to
+# rebuild the image for when it changes.
+RUN ln -s "$HOME_DIR/work/keys/ssh_config" "$HOME_DIR/.ssh/config"
 
 # Settings seed + entrypoint live in the image. The entrypoint (root) takes
 # ownership of the ~/.claude volume and installs the seed on every start so the

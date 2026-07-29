@@ -1,0 +1,29 @@
+# Template for the sandbox's SSH config. Copy this to ~/work/keys/ssh_config
+# and edit for the instance — it's picked up automatically (the container's
+# ~/.ssh/config is a symlink to it, baked into the image) and never needs a
+# matching change in the engine itself.
+#
+# ~/work/keys/ is ungit'd and never tracked in any repo (engine or vault) —
+# see the root CLAUDE.md's Directory structure section. It's also already
+# inside the ~/work bind-mount the sandbox container runs with, so an edit
+# here takes effect immediately on the next session — no `sandbox recreate`,
+# let alone a rebuild.
+#
+# Not secret on its own (no key material), but keep it out of git anyway:
+# which hosts an instance's sandbox needs to reach is instance-specific
+# (a personal instance has no reason to carry a job's internal deploy hosts).
+
+Host github.com
+    User git
+    IdentityFile ~/work/keys/sandbox_github
+    IdentitiesOnly yes
+    StrictHostKeyChecking accept-new
+
+# Add one Host block per additional endpoint this instance's sandbox needs to
+# push/pull from, each with its own dedicated key under ~/work/keys/. E.g.:
+#
+# Host git.example.internal
+#     User deploy
+#     IdentityFile ~/work/keys/sandbox_deploy
+#     IdentitiesOnly yes
+#     StrictHostKeyChecking accept-new
