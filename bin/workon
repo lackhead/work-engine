@@ -235,7 +235,7 @@ for repo in ${wt_repos[@]+"${wt_repos[@]}"}; do
     wt_path="$wtbase/$repo"
 
     # Keep the branch-point honest before measuring drift: fast-forward the
-    # clone's integration branch if it hasn't been fetched in a while (48h gate,
+    # clone's integration branch if it hasn't been fetched in a while (24h gate,
     # non-fatal when offline). Manual equivalent: `worktree refresh`.
     print_verbose "[$repo] Running worktree refresh --if-stale $repo"
     worktree refresh --if-stale "$repo" || true
