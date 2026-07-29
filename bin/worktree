@@ -47,7 +47,7 @@ Arguments:
                      into the clone's current branch; left in place otherwise
    <old-slug>        (mv) Existing worktree slug to relocate
    <new-slug>        (mv) Slug to relocate it to
-   --if-stale        (refresh) Skip clones fetched within the last 48h
+   --if-stale        (refresh) Skip clones fetched within the last 24h
    --apply           (prune-branches) Delete the branches found safe to
                      delete; without it, only lists what would happen
 
@@ -154,6 +154,11 @@ wt_add() {
     if ! git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
         print_error "repos/$repo is not a git repo"; return 1
     fi
+
+    # Keep the branch-off point honest before branching (--if-stale gate,
+    # non-fatal when offline). Manual equivalent: `worktree refresh`.
+    print_verbose "[$repo] Running worktree refresh --if-stale $repo"
+    wt_refresh --if-stale "$repo" || true
 
     local dest=$root/worktrees/$slug/$repo
     if [ -e "$dest" ]; then print_error "Worktree path already exists: $dest"; return 1; fi
@@ -484,11 +489,11 @@ clone_stale() {
 # Fast-forward canonical clones' integration branch to their upstream. Clones are
 # never worked in directly, so this is always a clean FF; --ff-only refuses (rather
 # than mangles) anything unexpected. No <repo> -> every clone under repos/. With
-# --if-stale, skip any clone fetched within the gate (default 48h, override with
-# WORKTREE_REFRESH_MAX_AGE_HOURS) — that's the mode workon uses on launch.
+# --if-stale, skip any clone fetched within the gate (default 24h, override with
+# WORKTREE_REFRESH_MAX_AGE_HOURS) — that's the mode workon and worktree add use.
 wt_refresh() {
     local if_stale=0 want='' a
-    local gate_h=${WORKTREE_REFRESH_MAX_AGE_HOURS:-48}
+    local gate_h=${WORKTREE_REFRESH_MAX_AGE_HOURS:-24}
     while [ $# -gt 0 ]; do
         a=$1
         case "$a" in

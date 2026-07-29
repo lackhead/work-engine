@@ -126,7 +126,7 @@ complete -c worktree -n '__fish_seen_subcommand_from list ls; and test (__worktr
 
 # refresh [repo] [--if-stale]
 complete -c worktree -n '__fish_seen_subcommand_from refresh sync; and test (__worktree_nargs) -eq 0' -a '(__worktree_repos)' -d clone
-complete -c worktree -n '__fish_seen_subcommand_from refresh sync' -l if-stale -d 'Skip clones fetched <48h ago'
+complete -c worktree -n '__fish_seen_subcommand_from refresh sync' -l if-stale -d 'Skip clones fetched <24h ago'
 
 # prune-branches [repo] [--apply]
 complete -c worktree -n '__fish_seen_subcommand_from prune-branches; and test (__worktree_nargs) -eq 0' -a '(__worktree_repos)' -d clone

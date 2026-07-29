@@ -248,7 +248,7 @@ worktree list [slug]                   # show worktrees with branch, clean/dirty
                                        # pushed to origin (the actual "could this be lost" signal)
 worktree refresh [repo] [--if-stale]   # fast-forward the canonical clone's integration
                                        # branch (all repos, or one); --if-stale skips
-                                       # clones fetched within the last 48h
+                                       # clones fetched within the last 24h
 ```
 
 Most items reuse an existing feature branch, so pass the branch name
