@@ -116,6 +116,34 @@ remote_ref() {
     [ "$(printf '%s\n' "$matches" | grep -c .)" -eq 1 ] && printf '%s\n' "$matches"
 }
 
+# Install/refresh the work-item commit-msg trailer hook (bin/hooks/commit-msg)
+# into a canonical clone's .git/hooks/ — shared by every worktree of that
+# repo, since git hooks aren't per-worktree, so one install covers them all.
+# Called from both `add` (new clone) and `refresh` (backfills clones that
+# predate this hook, or picks up template updates) — cheap and idempotent
+# either way. Never overwrites a commit-msg hook that isn't already ours;
+# see bin/hooks/commit-msg's header for the marker this checks.
+install_commit_hook() {
+    local repo_dir=$1 repo=$2
+    local hook_src hook_dest marker
+    hook_src="$(dirname "${BASH_SOURCE[0]}")/hooks/commit-msg"
+    hook_dest="$repo_dir/.git/hooks/commit-msg"
+    marker='work-engine: commit-msg work-item trailer hook'
+
+    [ -f "$hook_src" ] || { print_warning "[$repo] Missing $hook_src — skipping work-item commit-msg hook install."; return; }
+    if [ -f "$hook_dest" ] && ! grep -q "$marker" "$hook_dest" 2>/dev/null; then
+        print_warning "[$repo] Existing commit-msg hook isn't engine-managed — leaving it in place; commits here won't get a Work-Item trailer automatically."
+        return
+    fi
+
+    mkdir -p "$(dirname "$hook_dest")"
+    if cp "$hook_src" "$hook_dest" && chmod +x "$hook_dest"; then
+        print_verbose "[$repo] Installed work-item commit-msg hook"
+    else
+        print_warning "[$repo] Couldn't install commit-msg hook at $hook_dest"
+    fi
+}
+
 ###
 ### Subcommands
 ###
@@ -154,6 +182,8 @@ wt_add() {
     if ! git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
         print_error "repos/$repo is not a git repo"; return 1
     fi
+
+    install_commit_hook "$repo_dir" "$repo"
 
     # Keep the branch-off point honest before branching (--if-stale gate,
     # non-fatal when offline). Manual equivalent: `worktree refresh`.
@@ -525,6 +555,9 @@ wt_refresh() {
         if ! git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
             printf '  %-12s %s\n' "$r" "skipped (not a git repo)"; continue
         fi
+
+        install_commit_hook "$repo_dir" "$r"
+
         branch=$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
         if [ -z "$branch" ] || [ "$branch" = HEAD ]; then
             printf '  %-12s %s\n' "$r" "skipped (detached HEAD)"; continue

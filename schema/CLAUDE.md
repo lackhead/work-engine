@@ -141,7 +141,12 @@ ever serve.
     item finishes; the clone and branch history are untouched. Both clones and
     worktrees are team code, conceptually separate from the work-management
     content: cross-references to any repo or worktree path use backticked
-    paths, never wikilinks.
+    paths, never wikilinks. Every commit made inside a worktree is stamped
+    with a `Work-Item: <slug>` git trailer (a `commit-msg` hook `worktree add`
+    installs into the canonical clone) — a durable, merge-proof record of
+    which item a commit belongs to that lives in the commit itself, not just
+    in the item's own files. See `items/CLAUDE.md`'s "Commit provenance"
+    section.
     *File modes in the sandbox:* inside the container git runs with
     `core.fileMode = false`, because the macOS→Linux bind mount doesn't report
     Unix exec bits reliably (left at the default, pre-commit sees phantom

@@ -276,6 +276,43 @@ encouraged way to handle "I need to touch one more repo" mid-conversation —
 e.g. realizing the best fix is a new fish function in dotfiles while working
 a different repo's item — not something to ask permission for first.
 
+### Commit provenance: the `Work-Item` trailer
+
+Every commit made inside a per-item worktree is stamped with a
+`Work-Item: <slug>` git trailer, e.g.:
+
+```
+Add nagios pushover integration
+
+Work-Item: nagios
+```
+
+This is a `commit-msg` hook (template at `~/work/engine/bin/hooks/commit-msg`),
+installed into a canonical clone's `.git/hooks/` by `worktree add` and
+refreshed by `worktree refresh` — so it's shared by every worktree of that
+repo (git hooks aren't per-worktree) and self-heals for clones that predate
+it. It derives the slug purely from the commit's worktree path
+(`worktrees/<slug>/<repo>/`), so it needs nothing from the item's own files —
+a commit made directly in the canonical clone (e.g. a merge into the
+integration branch) is left untouched, since it isn't "in" any one item's
+worktree. An existing commit-msg hook that isn't engine-managed (e.g. a
+pre-commit-framework install) is never overwritten.
+
+The point is durability: the item folder's `log/` (see "Session lifecycle,"
+above) is the rich record, but it's still just files under `data/`, and this
+system was built precisely because those files turned out to be at risk (an
+empty-item sweep once deleted a session's worth of work — see the root
+`CLAUDE.md`'s deletion exception and the sweep logic below). The trailer is
+the second, independent copy of "which item was this" — it lives in the
+commit itself, survives the item's directory being lost or renamed, and
+survives the branch being merged into the integration branch (unlike "commits
+unique to this branch," which collapses to zero once that history is
+shared). To find every commit for an item across a repo's full history:
+
+```
+git -C ~/work/repos/<repo> log --all --grep '^Work-Item: <slug>$'
+```
+
 ## Quick items and the empty-item sweep
 
 `workon --quick` (or `-q`) creates a throwaway item for work too small to
@@ -298,18 +335,33 @@ what's cumulatively true of it right now.
 
 `workon` makes this call itself, host-side, once its `docker exec` into the
 session returns (deliberately not `exec`'d into it — see `bin/workon`'s
-header comment): if nothing ever landed — no commits unique to the branch in
-any attached worktree, no uncommitted changes, nothing added to the item
-folder beyond its front-door file (its auto-written `log/` breadcrumb doesn't
-count), and no notes written into the front-door file's own content — it runs
-`workitem delete <slug> --force` on it: worktree(s) removed, item directory
-gone outright, no `archived/` copy. There's nothing to preserve for a
-placeholder that was never used, which is why this is deletion and not
-archiving — see the root `CLAUDE.md`'s note on that exception. If real work
-happened — a commit or uncommitted changes in any attached repo, files added
-to the item folder, or prose written into the front door itself — the item
-is left exactly as any other active item would be; nothing about it is
-special after that point, including whether it's ever archived.
+header comment): if nothing ever landed — no commits in any attached
+worktree (checked two ways, see below), no uncommitted changes, nothing
+added to the item folder beyond its front-door file (its auto-written `log/`
+breadcrumb doesn't count), and no notes written into the front-door file's
+own content — it runs `workitem delete <slug> --force` on it: worktree(s)
+removed, item directory gone outright, no `archived/` copy. There's nothing
+to preserve for a placeholder that was never used, which is why this is
+deletion and not archiving — see the root `CLAUDE.md`'s note on that
+exception. If real work happened — a commit (merged or not) or uncommitted
+changes in any attached repo, files added to the item folder, or prose
+written into the front door itself — the item is left exactly as any other
+active item would be; nothing about it is special after that point,
+including whether it's ever archived.
+
+"No commits" is checked two ways, not one, because a branch can be merged
+into its repo's integration branch mid-session or right before the session
+ends — and a merged branch is the *opposite* of empty, even though it now has
+zero commits unique to itself. The sweep counts both `rev-list
+"$intbr..HEAD"` (commits not yet merged — the original check, still the
+common case) and, separately, commits anywhere in the repo's reachable
+history carrying this item's `Work-Item: <slug>` trailer (see "Commit
+provenance," above) — the second catches exactly the merged case the first
+is blind to. Either being nonzero counts as "landed." This dual check exists
+because the single-signal version shipped first and was wrong: a session
+that merged its branch into `main` and then exited had its already-integrated
+work deleted, item directory and worktree both, because the branch's
+unique-commit count against `main` had already dropped to zero.
 
 Detecting "notes written into the front door itself" needs more than a file
 listing, since `<slug>.md` is always present and can't be told apart from its
@@ -325,11 +377,12 @@ runs, and re-extending its lifetime just for this would entangle two
 otherwise-independent mechanisms.
 
 Either way, `workon` prints one line reporting what it decided before
-exiting. The "nothing landed" check is cumulative (commits unique to the
-branch versus its integration branch), not limited to a single moment in the
-session, so nothing here depends on ordering beyond "the breadcrumb for this
-session is written before the sweep reads it" — already guaranteed, since
-`workon` writes the breadcrumb itself immediately before running the sweep.
+exiting. The "nothing landed" check is cumulative (both commit checks look at
+the branch's and the repo's full current state, not just this session's
+delta), not limited to a single moment in the session, so nothing here
+depends on ordering beyond "the breadcrumb for this session is written
+before the sweep reads it" — already guaranteed, since `workon` writes the
+breadcrumb itself immediately before running the sweep.
 
 ## Naming conventions
 
