@@ -124,6 +124,10 @@ tracked" below). These are the verbs of the system:
   by launchd).
 - **`work-session-breadcrumb`** — the `SessionEnd` hook that writes a factual
   breadcrumb to that item's own `log/` when a session ends.
+- **`hooks/commit-msg`** — a git `commit-msg` hook template; `worktree`
+  installs it into each canonical clone so every commit made in one of that
+  repo's worktrees is stamped `Work-Item: <slug>`, independent of the item's
+  own files.
 
 Capture is **manual and deliberate** — you run a `work*` command to record
 something. Nothing scrapes Slack or your calendar. The system only ever reflects

@@ -276,6 +276,43 @@ encouraged way to handle "I need to touch one more repo" mid-conversation —
 e.g. realizing the best fix is a new fish function in dotfiles while working
 a different repo's item — not something to ask permission for first.
 
+### Commit provenance: the `Work-Item` trailer
+
+Every commit made inside a per-item worktree is stamped with a
+`Work-Item: <slug>` git trailer, e.g.:
+
+```
+Add nagios pushover integration
+
+Work-Item: nagios
+```
+
+This is a `commit-msg` hook (template at `~/work/engine/bin/hooks/commit-msg`),
+installed into a canonical clone's `.git/hooks/` by `worktree add` and
+refreshed by `worktree refresh` — so it's shared by every worktree of that
+repo (git hooks aren't per-worktree) and self-heals for clones that predate
+it. It derives the slug purely from the commit's worktree path
+(`worktrees/<slug>/<repo>/`), so it needs nothing from the item's own files —
+a commit made directly in the canonical clone (e.g. a merge into the
+integration branch) is left untouched, since it isn't "in" any one item's
+worktree. An existing commit-msg hook that isn't engine-managed (e.g. a
+pre-commit-framework install) is never overwritten.
+
+The point is durability: the item folder's `log/` (see "Session lifecycle,"
+above) is the rich record, but it's still just files under `data/`, and this
+system was built precisely because those files turned out to be at risk (an
+empty-item sweep once deleted a session's worth of work — see the root
+`CLAUDE.md`'s deletion exception and the sweep logic below). The trailer is
+the second, independent copy of "which item was this" — it lives in the
+commit itself, survives the item's directory being lost or renamed, and
+survives the branch being merged into the integration branch (unlike "commits
+unique to this branch," which collapses to zero once that history is
+shared). To find every commit for an item across a repo's full history:
+
+```
+git -C ~/work/repos/<repo> log --all --grep '^Work-Item: <slug>$'
+```
+
 ## Quick items and the empty-item sweep
 
 `workon --quick` (or `-q`) creates a throwaway item for work too small to

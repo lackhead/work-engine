@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#
+# commit-msg (work-item trailer) — stamps every commit made in a per-item
+# worktree with a `Work-Item: <slug>` trailer, so the commit itself records
+# which item it belongs to. This is the durable copy of that fact: it
+# survives the item's own directory being lost, renamed, or swept, and
+# survives the branch being merged (unlike "commits unique to this branch",
+# which collapses to zero once history is shared with the integration
+# branch).
+#
+# Template lives at ~/work/engine/bin/hooks/commit-msg; `worktree add` and
+# `worktree refresh` copy it into a canonical clone's .git/hooks/commit-msg
+# (shared by every worktree of that repo — git hooks aren't per-worktree, so
+# one install covers them all, present and future). The marker line below is
+# how those installers recognize this file as engine-managed and safe to
+# overwrite; a repo with its own unrelated commit-msg hook (e.g. a
+# pre-commit-framework install) is left untouched instead.
+#
+# work-engine: commit-msg work-item trailer hook
+
+set -u
+WORK="${WORK_ROOT:-$HOME/work}"
+
+msg_file=${1:-}
+[ -n "$msg_file" ] && [ -f "$msg_file" ] || exit 0
+
+top=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+worktrees_root="$WORK/worktrees"
+case "$top" in
+    "$worktrees_root"/*) ;;
+    *) exit 0 ;;  # not inside a per-item worktree (e.g. the canonical clone) — nothing to stamp
+esac
+
+rel=${top#"$worktrees_root"/}
+slug=${rel%%/*}
+[ -n "$slug" ] || exit 0
+
+git interpret-trailers --if-exists replace --trailer "Work-Item: $slug" --in-place "$msg_file" 2>/dev/null
