@@ -8,7 +8,7 @@
       "Read(~/.netrc)",
       "Read(~/.git-credentials)",
       "Edit(~/work/engine/**)",
-      "Edit(~/work/repos/**)",
+      "Edit(~/work/repos/**)"
     ],
     "ask": [
       "Bash(git push:*)"
