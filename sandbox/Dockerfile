@@ -39,6 +39,18 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
+# docx/pdf tooling — foundational rather than per-instance: reading and
+# producing Word/PDF documents (meeting minutes, agendas, board documents in
+# general) comes up across instances of this system, not just one. pandoc
+# handles markdown <-> docx conversion; libreoffice-writer (headless, via
+# `soffice --headless --convert-to`) is the reliable docx -> pdf backend and
+# can also read legacy .doc; poppler-utils gives pdftotext/pdfinfo/pdftoppm
+# for quick inspection/extraction; fonts-liberation keeps headless-rendered
+# output from falling back to ugly substitute fonts.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pandoc libreoffice-writer poppler-utils fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
 # Non-root user whose HOME is the host's HOME path. Required: Claude Code refuses
 # --dangerously-skip-permissions (Phase 2) as root. The vault and ~/.claude are
 # overlaid by mounts at runtime; we create the mount points here so a fresh
@@ -49,16 +61,28 @@ RUN useradd --create-home --home-dir "$HOME_DIR" --shell /usr/bin/fish "$USER_NA
     && chown -R "$USER_NAME:$USER_NAME" "$HOME_DIR"
 
 ENV HOME=$HOME_DIR
-# ~/.local/bin: the native Claude binary. ~/work/engine/bin: the work-system
-# engine tools (workon, worktree, workinit, work*, statusline, breadcrumb hook)
-# off the mounted ~/work tree.
-ENV PATH=$HOME_DIR/.local/bin:$HOME_DIR/work/engine/bin:/usr/local/bin:/usr/bin:/bin
+# ~/.venvs/docs/bin: python-docx/pypdf/markdown/reportlab, isolated from the
+# externally-managed system Python (PEP 668) — see below. ~/.local/bin: the
+# native Claude binary. ~/work/engine/bin: the work-system engine tools
+# (workon, worktree, workinit, work*, statusline, breadcrumb hook) off the
+# mounted ~/work tree.
+ENV PATH=$HOME_DIR/.venvs/docs/bin:$HOME_DIR/.local/bin:$HOME_DIR/work/engine/bin:/usr/local/bin:/usr/bin:/bin
 
 # Install Claude Code's native binary AS THE USER (writes into ~/.local).
 USER $USER_NAME
 RUN curl -fsSL https://claude.ai/install.sh | bash
 # To pin a version instead of latest stable:
 #   RUN curl -fsSL https://claude.ai/install.sh | bash -s <version>
+
+# Python libraries for scripting docx/pdf generation and extraction directly
+# (complementing pandoc/libreoffice above, which cover whole-document
+# conversion but not programmatic construction/parsing) — a dedicated venv
+# since Debian's system Python refuses `pip install` directly (PEP 668).
+# python-docx: read/write .docx structurally. pypdf: read/inspect PDFs.
+# markdown: markdown -> HTML. reportlab: build PDFs directly from Python.
+RUN python3 -m venv "$HOME_DIR/.venvs/docs" \
+    && "$HOME_DIR/.venvs/docs/bin/pip" install --no-cache-dir \
+        python-docx pypdf markdown reportlab
 
 # This is the base image only — instance-specific tooling (e.g. the
 # Ansible/pre-commit toolchain a work instance needs but a personal one
