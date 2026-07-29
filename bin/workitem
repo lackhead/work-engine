@@ -335,7 +335,7 @@ wi_create() {
     mkdir -p "$itemdir"
     {
         echo "---"
-        echo "title: $title"
+        echo "title: $(yaml_scalar "$title")"
         echo "status: $status"
         echo "made: $made"
         echo "---"
@@ -446,7 +446,7 @@ wi_log_create_itemless() {
     mkdir -p "$itemdir"
     {
         echo "---"
-        echo "title: $title"
+        echo "title: $(yaml_scalar "$title")"
         echo "status: completed"
         echo "made: $today"
         echo "completed: $today"
@@ -553,7 +553,7 @@ wi_log_write_to_item() {
     {
         echo "---"
         echo "type: workitem-log"
-        echo "slug: $slug"
+        echo "slug: $(yaml_scalar "$slug")"
         echo "time: $(iso_now)"
         [ -n "$commit" ] && echo "commit: \"$commit\""
         echo "---"
@@ -924,8 +924,8 @@ wi_rename() {
     {
         echo "---"
         echo "type: item-rename"
-        echo "slug: $new"
-        echo "former-slug: $old"
+        echo "slug: $(yaml_scalar "$new")"
+        echo "former-slug: $(yaml_scalar "$old")"
         echo "time: $(iso_now)"
         echo "---"
         echo

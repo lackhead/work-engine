@@ -246,7 +246,11 @@ wr_create() {
         echo "created: $date_str"
         echo "status: active"
         echo "source: manual"
-        [ -n "$item" ] && echo "related-item: [[$item]]"
+        # Quoted deliberately: a bare [[slug]] is a YAML flow sequence, so the
+        # unquoted form parses as the nested list [['slug']] rather than the
+        # wikilink string every reader expects. See schema/items/CLAUDE.md's
+        # related-items row for the same trap.
+        [ -n "$item" ] && echo "related-item: \"[[$item]]\""
         echo "---"
         echo
         echo "# $desc"

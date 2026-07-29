@@ -102,7 +102,7 @@ Optional fields:
 | Field | Notes |
 |-------|-------|
 | `source` | Where the reminder came from. Common values: `manual` (added by hand — the default for `workreminder create`), `backfill-from-log` (added retrospectively from a logged item), `slack-thread`, `meeting`. Free-form text — pick a value that lets future-me trace the origin. |
-| `related-item` | Wikilink to a work item, e.g. `[[ad-upgrade]]`, when the reminder is tied to or adjacent to a specific work item. Single value, not a list — if a reminder spans several items, that's a sign it's actually a work item of its own. |
+| `related-item` | Wikilink to a work item when the reminder is tied to or adjacent to a specific one. **Quoted** — `related-item: "[[ad-upgrade]]"`; unquoted, `[[ad-upgrade]]` is a nested YAML flow sequence, not a wikilink. Single value, not a list — if a reminder spans several items, that's a sign it's actually a work item of its own. |
 | `due` | `YYYY-MM-DD` deadline. Bare date only — no `due-type` (`hard`/`soft`) the way work items have; reminders stay deliberately lower-overhead. Omit when there isn't one. |
 | `tags` | Inline list of short kebab-case tags. |
 
@@ -253,7 +253,7 @@ alone wouldn't capture.
 created: 2026-04-30
 status: active
 source: manual
-related-item: [[auto-update-backstop]]
+related-item: "[[auto-update-backstop]]"
 ---
 
 # Check on first paris auto-update notification
