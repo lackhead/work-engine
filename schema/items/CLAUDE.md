@@ -335,18 +335,33 @@ what's cumulatively true of it right now.
 
 `workon` makes this call itself, host-side, once its `docker exec` into the
 session returns (deliberately not `exec`'d into it — see `bin/workon`'s
-header comment): if nothing ever landed — no commits unique to the branch in
-any attached worktree, no uncommitted changes, nothing added to the item
-folder beyond its front-door file (its auto-written `log/` breadcrumb doesn't
-count), and no notes written into the front-door file's own content — it runs
-`workitem delete <slug> --force` on it: worktree(s) removed, item directory
-gone outright, no `archived/` copy. There's nothing to preserve for a
-placeholder that was never used, which is why this is deletion and not
-archiving — see the root `CLAUDE.md`'s note on that exception. If real work
-happened — a commit or uncommitted changes in any attached repo, files added
-to the item folder, or prose written into the front door itself — the item
-is left exactly as any other active item would be; nothing about it is
-special after that point, including whether it's ever archived.
+header comment): if nothing ever landed — no commits in any attached
+worktree (checked two ways, see below), no uncommitted changes, nothing
+added to the item folder beyond its front-door file (its auto-written `log/`
+breadcrumb doesn't count), and no notes written into the front-door file's
+own content — it runs `workitem delete <slug> --force` on it: worktree(s)
+removed, item directory gone outright, no `archived/` copy. There's nothing
+to preserve for a placeholder that was never used, which is why this is
+deletion and not archiving — see the root `CLAUDE.md`'s note on that
+exception. If real work happened — a commit (merged or not) or uncommitted
+changes in any attached repo, files added to the item folder, or prose
+written into the front door itself — the item is left exactly as any other
+active item would be; nothing about it is special after that point,
+including whether it's ever archived.
+
+"No commits" is checked two ways, not one, because a branch can be merged
+into its repo's integration branch mid-session or right before the session
+ends — and a merged branch is the *opposite* of empty, even though it now has
+zero commits unique to itself. The sweep counts both `rev-list
+"$intbr..HEAD"` (commits not yet merged — the original check, still the
+common case) and, separately, commits anywhere in the repo's reachable
+history carrying this item's `Work-Item: <slug>` trailer (see "Commit
+provenance," above) — the second catches exactly the merged case the first
+is blind to. Either being nonzero counts as "landed." This dual check exists
+because the single-signal version shipped first and was wrong: a session
+that merged its branch into `main` and then exited had its already-integrated
+work deleted, item directory and worktree both, because the branch's
+unique-commit count against `main` had already dropped to zero.
 
 Detecting "notes written into the front door itself" needs more than a file
 listing, since `<slug>.md` is always present and can't be told apart from its
@@ -362,11 +377,12 @@ runs, and re-extending its lifetime just for this would entangle two
 otherwise-independent mechanisms.
 
 Either way, `workon` prints one line reporting what it decided before
-exiting. The "nothing landed" check is cumulative (commits unique to the
-branch versus its integration branch), not limited to a single moment in the
-session, so nothing here depends on ordering beyond "the breadcrumb for this
-session is written before the sweep reads it" — already guaranteed, since
-`workon` writes the breadcrumb itself immediately before running the sweep.
+exiting. The "nothing landed" check is cumulative (both commit checks look at
+the branch's and the repo's full current state, not just this session's
+delta), not limited to a single moment in the session, so nothing here
+depends on ordering beyond "the breadcrumb for this session is written
+before the sweep reads it" — already guaranteed, since `workon` writes the
+breadcrumb itself immediately before running the sweep.
 
 ## Naming conventions
 

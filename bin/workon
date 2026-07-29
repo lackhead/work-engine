@@ -64,13 +64,13 @@ Arguments:
 
                      Any item workon creates this run — via -q/--quick or a
                      plain `workon <newslug> -c` — is swept at session end if
-                     nothing durable landed: no commits unique to its branch,
-                     no uncommitted changes, no extra files in the item
-                     folder, and no notes written into the front door itself.
-                     It's deleted outright — no archived/ copy, there's
-                     nothing to preserve. An item that already existed before
-                     this invocation is never swept, no matter how the
-                     session goes.
+                     nothing durable landed: no commits (unmerged or already
+                     merged), no uncommitted changes, no extra files in the
+                     item folder, and no notes written into the front door
+                     itself. It's deleted outright — no archived/ copy,
+                     there's nothing to preserve. An item that already
+                     existed before this invocation is never swept, no
+                     matter how the session goes.
 
 Description:
    Opens Claude Code with the item's folder as the working directory, with
@@ -365,15 +365,26 @@ rm -f "$bc_marker"
 # *inside* the session, e.g. by the old SessionEnd hook, could flash and
 # vanish; this can't). Only an item THIS invocation created is ever touched —
 # never one that already existed before it — and only based on what's
-# cumulatively true right now (commits unique to the branch, not just this
+# cumulatively true right now (commits on the branch, not just this
 # session's), so nothing with prior history is ever at risk. This is why the
 # gate is item_created_this_run rather than a `quick` tag: the same "did
 # anything durable land" question applies whether the item came from
 # -q/--quick or from typing a brand-new slug at `workon <newslug> -c`.
+#
+# "Landed a commit" is checked two ways, not one, because a branch merged
+# into the integration branch mid-session or right before exit is the
+# opposite of empty: rev-list "$intbr..HEAD" alone would read that as zero
+# unique commits and delete real, already-integrated work (this happened —
+# see items/CLAUDE.md's "Commit provenance" section). sweep_unique_commits
+# still catches the common not-yet-merged case; sweep_trailer_commits
+# catches the merged one, via the Work-Item trailer every worktree commit
+# carries, searched across all reachable history rather than just this
+# branch relative to intbr.
 if [ "$item_created_this_run" = true ]; then
     sweep_dirty=false
     sweep_unique_commits=0
     sweep_unique_known=true
+    sweep_trailer_commits=0
     for repo in ${wt_repos[@]+"${wt_repos[@]}"}; do
         wt_path="$wtbase/$repo"
         [ -n "$(git -C "$wt_path" status --porcelain 2>/dev/null)" ] && sweep_dirty=true
@@ -388,6 +399,17 @@ if [ "$item_created_this_run" = true ]; then
         else
             sweep_unique_known=false
         fi
+        # "$sweep_intbr..HEAD" goes to zero the moment the branch is merged
+        # into the integration branch -- correct as an integration signal,
+        # wrong as an emptiness signal, since it can't tell "nothing was ever
+        # committed" from "everything was committed AND already merged" (see
+        # items/CLAUDE.md's "Commit provenance" section). The Work-Item
+        # trailer bin/hooks/commit-msg stamps on every worktree commit
+        # doesn't have that blind spot -- it's still on the commit whichever
+        # branch it ends up reachable from, so search reachable history
+        # (--all) rather than just this branch relative to intbr.
+        tn=$(git -C "$wt_path" rev-list --all --count --grep="^Work-Item: $slug\$" 2>/dev/null)
+        [ -n "$tn" ] && sweep_trailer_commits=$((sweep_trailer_commits + tn))
     done
     # log/ is excluded deliberately: the breadcrumb just written above lands
     # there for every session (including a do-nothing one), so counting log/
@@ -414,7 +436,7 @@ if [ "$item_created_this_run" = true ]; then
         [ -n "$n" ] && sweep_item_files_changed=$n
     fi
 
-    if [ "$sweep_dirty" != true ] && [ "$sweep_unique_commits" -eq 0 ] \
+    if [ "$sweep_dirty" != true ] && [ "$sweep_unique_commits" -eq 0 ] && [ "$sweep_trailer_commits" -eq 0 ] \
        && { [ ${#wt_repos[@]} -eq 0 ] || [ "$sweep_unique_known" = true ]; } \
        && [ "$sweep_has_extra" != true ] && [ "$sweep_item_files_changed" -eq 0 ]; then
         workitem delete "$slug" --force >/dev/null 2>&1
@@ -423,6 +445,7 @@ if [ "$item_created_this_run" = true ]; then
         why=()
         [ "$sweep_dirty" = true ] && why+=("uncommitted changes")
         [ "$sweep_unique_commits" -gt 0 ] && why+=("$sweep_unique_commits commit(s)")
+        [ "$sweep_trailer_commits" -gt 0 ] && why+=("$sweep_trailer_commits already-merged commit(s)")
         [ "$sweep_has_extra" = true ] && why+=("extra files in the item folder")
         [ "$sweep_item_files_changed" -gt 0 ] && why+=("notes written into the front door")
         [ "$sweep_unique_known" != true ] && why+=("couldn't verify repo history — skipping to be safe")
