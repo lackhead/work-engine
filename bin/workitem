@@ -96,7 +96,8 @@ Description:
    delete   Removes the item's directory outright. Always requires
             --force, an explicit admission there's nothing worth
             preserving — workon's own post-session sweep passes it after
-            already verifying the item is empty.
+            already verifying the item is empty. Refuses archived items
+            outright, --force or not; remove those by hand if you mean it.
 
 Examples:
    workitem create Rework cache host info
@@ -334,7 +335,7 @@ wi_create() {
     mkdir -p "$itemdir"
     {
         echo "---"
-        echo "title: $title"
+        echo "title: $(yaml_scalar "$title")"
         echo "status: $status"
         echo "made: $made"
         echo "---"
@@ -445,7 +446,7 @@ wi_log_create_itemless() {
     mkdir -p "$itemdir"
     {
         echo "---"
-        echo "title: $title"
+        echo "title: $(yaml_scalar "$title")"
         echo "status: completed"
         echo "made: $today"
         echo "completed: $today"
@@ -552,7 +553,7 @@ wi_log_write_to_item() {
     {
         echo "---"
         echo "type: workitem-log"
-        echo "slug: $slug"
+        echo "slug: $(yaml_scalar "$slug")"
         echo "time: $(iso_now)"
         [ -n "$commit" ] && echo "commit: \"$commit\""
         echo "---"
@@ -923,8 +924,8 @@ wi_rename() {
     {
         echo "---"
         echo "type: item-rename"
-        echo "slug: $new"
-        echo "former-slug: $old"
+        echo "slug: $(yaml_scalar "$new")"
+        echo "former-slug: $(yaml_scalar "$old")"
         echo "time: $(iso_now)"
         echo "---"
         echo
@@ -959,7 +960,17 @@ wi_delete() {
     case "$zone" in
         top)      srcdir="$root/$slug" ;;
         backlog)  srcdir="$root/backlog/$slug" ;;
-        archived) srcdir="$root/archived/$slug" ;;
+        # archived/ is the preservation zone -- an item only gets there by way
+        # of `complete` or `cancel`, i.e. by having been real work someone
+        # deliberately closed out. There is no legitimate caller: workon's
+        # empty-item sweep only ever targets a top-level item it created in
+        # that same invocation. Refusing here rather than trusting --force,
+        # because --force is exactly what a script or a confused session would
+        # pass. Genuinely removing archived work is a deliberate act outside
+        # this tool.
+        archived) print_error "'$slug' is archived — refusing to delete preserved work."
+                  print_error "Remove it by hand if that's really what you want: rm -rf ${root/#$HOME/\~}/archived/$slug"
+                  return 1 ;;
         *)        print_error "No item '$slug' found."; return 1 ;;
     esac
     print_verbose "Found item at ${srcdir/#$HOME/\~}"

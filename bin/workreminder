@@ -27,7 +27,7 @@ Usage:
    workreminder [ -v|--verbose ] [ -d|--debug ] show     <name>
    workreminder [ -v|--verbose ] [ -d|--debug ] complete <name>
    workreminder [ -v|--verbose ] [ -d|--debug ] cancel   <name>
-   workreminder [ -v|--verbose ] [ -d|--debug ] delete   <name>
+   workreminder [ -v|--verbose ] [ -d|--debug ] delete   <name> [--force]
    workreminder [ -v|--verbose ] [ -d|--debug ] due      <name> [date]
    workreminder [ -v|--verbose ] [ -d|--debug ] promote  <name> [workitem create args...]
 
@@ -54,7 +54,9 @@ Description:
    cancel   Sets status to cancelled and moves the reminder to
             reminders/archived/.
 
-   delete   Removes a reminder outright (delete from inventory)
+   delete   Removes a reminder outright (delete from inventory). Prompts
+            for confirmation; --force skips the prompt and is required to
+            delete non-interactively.
 
    due      Sets or changes the (optional) due date (bare YYYY-MM-DD format);
             omitting the date clears any existing due date.
@@ -244,7 +246,11 @@ wr_create() {
         echo "created: $date_str"
         echo "status: active"
         echo "source: manual"
-        [ -n "$item" ] && echo "related-item: [[$item]]"
+        # Quoted deliberately: a bare [[slug]] is a YAML flow sequence, so the
+        # unquoted form parses as the nested list [['slug']] rather than the
+        # wikilink string every reader expects. See schema/items/CLAUDE.md's
+        # related-items row for the same trap.
+        [ -n "$item" ] && echo "related-item: \"[[$item]]\""
         echo "---"
         echo
         echo "# $desc"
@@ -475,9 +481,10 @@ wr_promote() {
 }
 
 wr_delete() {
-    local name='' a
+    local name='' force=false a
     for a in "$@"; do
         case "$a" in
+            --force) force=true ;;
             -*) print_error "Unknown option: $a"; return 1 ;;
             *)
                 if [ -z "$name" ]; then name=$a
@@ -486,7 +493,7 @@ wr_delete() {
         esac
     done
     if [ -z "$name" ]; then
-        print_error "Usage: workreminder delete <name>"; return 1
+        print_error "Usage: workreminder delete <name> [--force]"; return 1
     fi
 
     local src
@@ -494,10 +501,22 @@ wr_delete() {
         print_error "No reminder '$name' found."; return 1
     }
 
-    print_warning "About to permanently delete: ${src/#$HOME/\~}"
-    read -r -p "This cannot be undone. Delete? [y/N] " yn
-    if ! printf '%s' "$yn" | grep -qiE '^y'; then
-        print_status "Cancelled — nothing deleted."; return 0
+    # Deletion is the one path that doesn't preserve the body -- see the root
+    # CLAUDE.md's "nothing is deleted" principle. --force is the same explicit
+    # admission `workitem delete` requires, so the two content types agree on
+    # how dangerous this is; without it, the interactive prompt stands. The
+    # prompt alone made this uncallable from a script or a non-interactive
+    # session, which is why --force exists rather than replacing it.
+    if [ "$force" != true ]; then
+        if [ ! -t 0 ]; then
+            print_error "Refusing to delete '$name' non-interactively without --force."
+            return 1
+        fi
+        print_warning "About to permanently delete: ${src/#$HOME/\~}"
+        read -r -p "This cannot be undone. Delete? [y/N] " yn
+        if ! printf '%s' "$yn" | grep -qiE '^y'; then
+            print_status "Cancelled — nothing deleted."; return 0
+        fi
     fi
 
     rm -f "$src"

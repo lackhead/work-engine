@@ -86,9 +86,11 @@ complete -c workreminder -n '__fish_seen_subcommand_from complete; and test (__w
 complete -c workreminder -n '__fish_seen_subcommand_from cancel; and test (__workreminder_nargs) -eq 0' \
     -a '(__workreminder_active_names)' -d reminder
 
-# delete <name>
+# delete <name> [--force]
 complete -c workreminder -n '__fish_seen_subcommand_from delete; and test (__workreminder_nargs) -eq 0' \
     -a '(__workreminder_active_names)' -d reminder
+complete -c workreminder -n '__fish_seen_subcommand_from delete' -l force \
+    -d 'Skip the confirmation prompt (required non-interactively)'
 
 # due <name> [date]
 complete -c workreminder -n '__fish_seen_subcommand_from due; and test (__workreminder_nargs) -eq 0' \

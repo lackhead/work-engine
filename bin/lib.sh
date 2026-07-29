@@ -80,3 +80,52 @@ trunc() {
         printf '%s..' "${s:0:$((max - 2))}"
     fi
 }
+
+# Emit $1 as a YAML scalar safe to write into frontmatter: double-quoted and
+# escaped when the plain form would be misparsed, bare otherwise.
+#
+# The root CLAUDE.md's Frontmatter section already requires quoting values YAML
+# would coerce; this is that rule made mechanical, so a caller can't forget it.
+# The case that motivated it: a title containing ": " (e.g. "Docs schema:
+# imported artifacts") is a YAML *parse error* as a plain scalar, not a
+# coercion -- every downstream reader (workitem list, dashboard, retrospective,
+# Obsidian) then chokes on the file.
+#
+# Deliberately conservative: quotes on anything that could change meaning
+# unquoted, including bare numbers and YAML's bool/null keywords, so a title
+# like "2026" or "No" round-trips as the string it was. Quoting when it wasn't
+# strictly needed is harmless; failing to quote is not.
+yaml_scalar() {
+    local s=$1 needs=0
+    case "$s" in
+        '')            needs=1 ;;   # empty -> would read as null
+        *': '*|*:)     needs=1 ;;   # key/value ambiguity -- the parse error
+        *' #'*)        needs=1 ;;   # trailing comment
+        [[:space:]]*|*[[:space:]]) needs=1 ;;
+    esac
+    # Leading indicator characters, checked one at a time rather than as a
+    # bracket expression -- ']' and '-' inside a case-pattern bracket are a
+    # portability minefield.
+    case "${s:0:1}" in
+        -|'?'|:|,|'['|']'|'{'|'}'|'#'|'&'|'*'|'!'|'|'|'>'|"'"|'"'|'%'|'@'|'`') needs=1 ;;
+    esac
+    case "$s" in
+        [Tt]rue|TRUE|[Ff]alse|FALSE|[Yy]es|YES|[Nn]o|NO|[Oo]n|ON|[Oo]ff|OFF|[Nn]ull|NULL|'~') needs=1 ;;
+    esac
+    # Bare integers/decimals (YAML would hand back a number, not a string).
+    case "$s" in
+        *[!0-9]*) : ;;
+        ?*)       needs=1 ;;
+    esac
+    case "$s" in
+        [+-][0-9]*|[0-9]*.[0-9]*) case "$s" in *[!0-9.+-]*) : ;; *) needs=1 ;; esac ;;
+    esac
+
+    if [ "$needs" -eq 1 ]; then
+        s=${s//\\/\\\\}
+        s=${s//\"/\\\"}
+        printf '"%s"' "$s"
+    else
+        printf '%s' "$s"
+    fi
+}

@@ -75,7 +75,12 @@ move between zones only at deliberate transitions:
   `completed:` date — `workitem cancel <slug>`
 - reject a candidate: `backlog → gone`, no archive — `workitem delete <slug>
   --force` (see "Quick items and the empty-item sweep" and the root
-  `CLAUDE.md`'s deletion exception)
+  `CLAUDE.md`'s deletion exception). Also reachable from `top` — that's the
+  path the empty-item sweep uses on an item it just created. **Never from
+  `archived/`:** `workitem delete` refuses that zone outright, `--force` or
+  not, since an item only reaches it by having been real work someone
+  deliberately closed out. Removing archived work is a deliberate act
+  outside the tooling.
 
 `complete`/`cancel` only apply to top-level items — a `backlog` item
 (`proposed`/`deferred`) never became active work, so there's nothing to
@@ -224,7 +229,7 @@ Optional:
 | `due-type` | `hard` (must hit) or `soft` (target). Only meaningful with `due:`. |
 | `completed` | `YYYY-MM-DD` when status became `completed` or `cancelled`. The name stays `completed:` even for `cancelled`. |
 | `related-repos` | Inline list of bare repo names under `~/work/repos/`, e.g. `[Ansible, Internal]`. |
-| `related-items` | Inline list of bare item wikilinks, e.g. `[[ad-upgrade]]`, for items that are adjacent without one containing the other. |
+| `related-items` | Inline list of bare item wikilinks, for items that are adjacent without one containing the other. **Quote each entry** — `related-items: ["[[ad-upgrade]]", "[[nagios]]"]`. Unquoted, `[[[ad-upgrade]]]` is three nested YAML flow sequences, not a wikilink. |
 | `priority` | Optional ordering hint for the dashboard (`high` / `med` / `low`, or a number). Never required — absence means "let the dashboard derive ranking from due + status + staleness." `high` can lift an item a bucket; `low` marks deliberately best-effort / when-I-get-around-to-it work and **exempts the item from the at-risk staleness nudge** (it sinks to the bottom of `active` but is never flagged stale). |
 | `tags` | Inline list of short kebab-case tags. |
 | `former-slugs` | Inline list of slugs this item previously had, oldest first, e.g. `[work-system-unwanted-deletions]`. Written by `workitem rename`; absent until an item is first renamed. Order is chronological but carries no meaning anything depends on — the *current* slug is never listed here, because the item's directory and front-door filename already own that fact. See "Renaming an item" below for why this field exists and what reads it. |

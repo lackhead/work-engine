@@ -340,6 +340,17 @@ them in — don't re-inline them:
   table columns aligned regardless of value length.
 - **`iso_now`** — ISO 8601 timestamp with a colon in the TZ offset (the vault
   convention).
+- **`yaml_scalar <s>`** — emit `s` as a YAML scalar safe for frontmatter:
+  double-quoted and escaped when the plain form would be misparsed, bare
+  otherwise. **Use it for every frontmatter value that isn't provably
+  constrained** (a `kebab`'d slug, a `date +%F`). A title containing `": "` is
+  a *parse error* as a plain scalar, not merely a coercion, and it takes every
+  downstream reader — `workitem list`, the skills, Obsidian — down with it. It
+  also quotes bare numbers and YAML's bool/null keywords, so a title like
+  `2026` or `No` round-trips as the string it was. This is the root
+  `CLAUDE.md`'s "quote values YAML would otherwise coerce" rule made mechanical
+  — the rule existed for a long time before anything implemented it, and two
+  writers were silently emitting invalid frontmatter in the meantime.
 
 A self-contained script that needs just one of these (the breadcrumb hook uses
 `iso_now`) keeps its own copy inline rather than sourcing `lib.sh`.
