@@ -170,6 +170,14 @@ breadcrumbs):
   breadcrumb, so a fresh session picks it up as context unprompted — see
   that script's header comment.
 
+The `.log.NN.md` shape carries one other, tool-written entry type: a rename
+event, `type: item-rename`, written by `workitem rename` (frontmatter:
+`type`, `slug` — the new one — `former-slug`, `time`). It shares the `.log.`
+filename shape rather than introducing a third because it is the same kind of
+thing: a dated, discrete event against the item, as opposed to a session's
+worth of activity. `type:` remains the provenance field that tells the two
+apart. See "Renaming an item" below.
+
 Historical items may still carry a `<YYYY-MM-DD>.<name>.jot.NN.md` file
 (`type: jot`) — the shape `workjot`'s now-retired item-attribution path used
 to write. Nothing writes that shape anymore; existing ones are left exactly
@@ -219,6 +227,7 @@ Optional:
 | `related-items` | Inline list of bare item wikilinks, e.g. `[[ad-upgrade]]`, for items that are adjacent without one containing the other. |
 | `priority` | Optional ordering hint for the dashboard (`high` / `med` / `low`, or a number). Never required — absence means "let the dashboard derive ranking from due + status + staleness." `high` can lift an item a bucket; `low` marks deliberately best-effort / when-I-get-around-to-it work and **exempts the item from the at-risk staleness nudge** (it sinks to the bottom of `active` but is never flagged stale). |
 | `tags` | Inline list of short kebab-case tags. |
+| `former-slugs` | Inline list of slugs this item previously had, oldest first, e.g. `[work-system-unwanted-deletions]`. Written by `workitem rename`; absent until an item is first renamed. Order is chronological but carries no meaning anything depends on — the *current* slug is never listed here, because the item's directory and front-door filename already own that fact. See "Renaming an item" below for why this field exists and what reads it. |
 
 ## Worktrees
 
@@ -298,9 +307,9 @@ integration branch) is left untouched, since it isn't "in" any one item's
 worktree. An existing commit-msg hook that isn't engine-managed (e.g. a
 pre-commit-framework install) is never overwritten.
 
-The point is durability: the item folder's `log/` (see "Session lifecycle,"
-above) is the rich record, but it's still just files under `data/`, and this
-system was built precisely because those files turned out to be at risk (an
+The point is durability: the item folder's `log/` (see "Session log," above)
+is the rich record, but it's still just files under `data/`, and this system
+was built precisely because those files turned out to be at risk (an
 empty-item sweep once deleted a session's worth of work — see the root
 `CLAUDE.md`'s deletion exception and the sweep logic below). The trailer is
 the second, independent copy of "which item was this" — it lives in the
@@ -311,6 +320,17 @@ shared). To find every commit for an item across a repo's full history:
 
 ```
 git -C ~/work/repos/<repo> log --all --grep '^Work-Item: <slug>$'
+```
+
+**If the item has ever been renamed, that search under-reports.** The trailer
+records the slug as of commit time and that history is immutable, so commits
+made before a rename carry the old name. Add one `--grep` per entry in the
+item's `former-slugs:` frontmatter (see "Renaming an item," below); `git log`
+ORs multiple `--grep` patterns by default:
+
+```
+git -C ~/work/repos/<repo> log --all \
+  --grep '^Work-Item: <slug>$' --grep '^Work-Item: <former-slug>$'
 ```
 
 ## Quick items and the empty-item sweep
@@ -398,17 +418,57 @@ breadcrumb itself immediately before running the sweep.
   a deliberate short name instead when truncation wouldn't land on a good
   one. Either way, a collision with an existing slug appends `-2`, `-3`, ...
   rather than refusing — expected once slugs are short, not an error.
-- **Renaming a slug after the fact:** `workitem rename <slug> <new-slug>`
-  renames the directory and front-door file in place — zone, status,
-  `title:`, and the `#` heading are untouched, since the slug and the title
-  are independent (the slug is the structural name; the title is display
-  text). It relocates the item's worktree(s), if any, to
-  `worktrees/<new-slug>/` (via `worktree mv`), but it does **not** rewrite
-  `[[<slug>]]` wikilinks elsewhere in the vault — `related-items` on other
-  items, mentions in docs or reminders, etc. are left pointing at the old
-  name and need fixing by hand. Prefer picking a slug you're willing to
-  keep; rename for a genuine mistake or a name that's stopped fitting, not
-  routine polish.
+- **Renaming a slug after the fact:** `workitem rename <slug> <new-slug>` —
+  see "Renaming an item" below. Prefer picking a slug you're willing to keep;
+  rename for a genuine mistake or a name that's stopped fitting, not routine
+  polish.
+
+## Renaming an item
+
+`workitem rename <slug> <new-slug>` renames the directory and front-door file
+in place, keeping zone and status untouched. It relocates the item's
+worktree(s), if any, to `worktrees/<new-slug>/` (via `worktree mv`, which also
+renames the branch when the branch was named after the old slug).
+
+Two things it changes that aren't just the move:
+
+- **`title:` follows the slug when — and only when — the title was
+  slug-derived.** The slug and the title are normally independent (the slug is
+  the structural name, the title is display text), so a hand-written title is
+  left alone. But `workon <newslug> -c` passes the kebab'd slug straight to
+  `workitem create` as the title, so items created that way carry
+  `title: <slug>` verbatim; renaming the slug and leaving that behind would
+  strand an obviously-stale title. Rename therefore rewrites `title:` and the
+  `#` heading only if the existing title matches the old slug exactly.
+- **`former-slugs:` accumulates the old name**, and a dated rename entry is
+  written into `log/`. Frontmatter carries the flat list for lookup; `log/`
+  carries the dated event, per the usual split.
+
+`former-slugs:` exists because a rename otherwise **silently breaks two
+lookups**, and the field is what repairs both:
+
+1. **Commit provenance.** Commits carry `Work-Item: <slug>` as of commit time
+   (see "Commit provenance," above), and that history is immutable — a rename
+   must not rewrite it. So searching the new name alone under-reports. The
+   complete recipe is the current slug *plus* every entry in `former-slugs:`:
+
+   ```
+   git -C ~/work/repos/<repo> log --all \
+     --grep '^Work-Item: <slug>$' --grep '^Work-Item: <former-slug>$'
+   ```
+
+2. **Wikilinks.** Rename does **not** rewrite `[[<slug>]]` references elsewhere
+   in the vault — `related-items` on other items, mentions in docs or
+   reminders, and so on are left pointing at the old name and need fixing by
+   hand. `former-slugs:` is what lets a reader (or a link checker) resolve such
+   a link to the item that used to carry that name, rather than seeing only a
+   dead link.
+
+Note that an item's `log/` already records former names implicitly — entries
+are named `<date>.<slug>.session.NN.md` and carry `slug:` in their frontmatter,
+and `log/` is immutable, so a renamed item's older entries keep the old slug in
+both places. That's correct and deliberate; `former-slugs:` just makes the same
+fact readable without globbing and diffing filenames.
 
 ## Linking and cross-references
 
