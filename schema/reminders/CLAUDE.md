@@ -202,10 +202,13 @@ The body is preserved as-is; don't rewrite history.
 
 ### Deleting a reminder created in error
 
-`workreminder delete <slug>` removes a reminder outright — for one created
+`workreminder delete <name>` removes a reminder outright — for one created
 by mistake, not for the normal end-of-life path (that's completing/cancelling,
 which preserves the body). Distinct from archiving the same way `workitem
-delete` is distinct from `workitem complete`/`workitem cancel`.
+delete` is distinct from `workitem complete`/`workitem cancel`, and guarded
+the same way: it prompts for confirmation, and `--force` is required to delete
+non-interactively (so a script or a non-interactive session can't remove a
+reminder without saying so explicitly).
 
 ### Promoting a reminder to a work item
 

@@ -75,7 +75,12 @@ move between zones only at deliberate transitions:
   `completed:` date — `workitem cancel <slug>`
 - reject a candidate: `backlog → gone`, no archive — `workitem delete <slug>
   --force` (see "Quick items and the empty-item sweep" and the root
-  `CLAUDE.md`'s deletion exception)
+  `CLAUDE.md`'s deletion exception). Also reachable from `top` — that's the
+  path the empty-item sweep uses on an item it just created. **Never from
+  `archived/`:** `workitem delete` refuses that zone outright, `--force` or
+  not, since an item only reaches it by having been real work someone
+  deliberately closed out. Removing archived work is a deliberate act
+  outside the tooling.
 
 `complete`/`cancel` only apply to top-level items — a `backlog` item
 (`proposed`/`deferred`) never became active work, so there's nothing to
