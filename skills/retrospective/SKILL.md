@@ -96,15 +96,33 @@ the window by their `start`/`end` (breadcrumbs) or `time` (logged notes).
 Collect:
 
 - **Session breadcrumbs** — `<date>.<slug>.session.<NN>.md`. Parse frontmatter
-  (`slug`, `repo`, `branch`, `commits`, `files-changed`, `start`/`end`) and the
-  one-line body.
-- **Logged notes** — `<date>.<slug>.log.<NN>.md` (`type: workitem-log`), and
-  any legacy `<date>.<slug>.jot.<NN>.md` (`type: jot`, from before `workitem
-  log` — see `items/CLAUDE.md`'s "Session log" section) — same shape, keep
-  recognizing both. Sparse, hand-written entries; same directory, same
-  per-event granularity.
+  (`type`, `slug`, `session-num`, `start`/`end`, `dirty`, `commits`,
+  `files-changed`, `item-files-changed`, and `repos` — an inline list, present
+  only when at least one worktree was touched) and the one-line body. There is
+  no `repo:` or `branch:` field; per-repo branch and counts live in the body.
+- **Logged notes** — `<date>.<slug>.log.<NN>.md`, which covers two `type:`
+  values: `workitem-log` (sparse, hand-written, from `workitem log`) and
+  `item-rename` (tool-written, carrying `former-slug:` — the item was renamed
+  at that moment, which is usually worth a line in the recap). Also any legacy
+  `<date>.<slug>.jot.<NN>.md` (`type: jot`, from before `workitem log` — see
+  `items/CLAUDE.md`'s "Session log" section); keep recognizing it.
+
+  A renamed item's older entries keep the **old** slug in both filename and
+  `slug:` frontmatter, since `log/` is immutable. Group by the item's current
+  directory, not by the `slug:` field, or a rename will split one item's
+  history into two.
 - **The user's own commits** in that item's worktree(s), filtered by author
   and date range (see the git filtering rule below).
+
+**An item's `log/` is the whole record — there is no second place to look.**
+Breadcrumbs predating item-owned `log/` directories once lived in a dated
+`data/diary/<YYYY>/<MM>/<DD>/` tree; those were migrated into the owning
+items' `log/` on 2026-07-30 and the tree was removed. The oldest entries may
+carry a `session-id:` key that current breadcrumbs don't — harmless, nothing
+reads it. If you encounter any other dated breadcrumb tree outside
+`items/**/log/`, treat it as a bug worth reporting rather than a source to
+read: history hiding in a second location is exactly what that migration
+removed.
 
 **Cross-item run:** for every date in the window, walk every item's
 `items/**/log/` (including `archived/`, since an item's activity during the
