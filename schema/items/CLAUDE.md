@@ -149,8 +149,7 @@ prose — it's the factual layer underneath the front door's curated
 `type:` in a `log/` entry's frontmatter is a **provenance** field, not a
 fidelity field — it names which of the mechanisms below wrote the entry, and
 that alone tells a reader how much detail to expect. Filename shapes,
-distinguished by their dot-separated parts (same convention as the old diary
-breadcrumbs):
+distinguished by their dot-separated parts:
 
 - **`<YYYY-MM-DD>.<name>.session.NN.md`** — a session breadcrumb, written by
   `work-session-breadcrumb`, which `workon` invokes host-side once a session
@@ -189,6 +188,14 @@ to write. Nothing writes that shape anymore; existing ones are left exactly
 as they are (archived-adjacent content is read-only by convention), and
 anything reading `log/` should keep recognizing it alongside `.session.` and
 `.log.` files rather than assuming only the current two shapes exist.
+
+An item's `log/` is the **complete** raw record for that item — there is no
+second location holding older history. Breadcrumbs written before item-owned
+`log/` directories existed lived in a dated `data/diary/<YYYY>/<MM>/<DD>/`
+tree; those were migrated into their owning items' `log/` on 2026-07-30 and
+the tree removed, so nothing needs to read around it. The oldest migrated
+entries carry a `session-id:` key current breadcrumbs don't — an extra field,
+harmless, nothing reads it.
 
 **Lifecycle:** everything in `log/` is immutable once written, across every
 shape above. A typo in a `log/` entry is corrected by hand, same as a

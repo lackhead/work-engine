@@ -114,17 +114,15 @@ Collect:
 - **The user's own commits** in that item's worktree(s), filtered by author
   and date range (see the git filtering rule below).
 
-**Pre-`log/` history lives outside the item.** Before item-owned `log/`
-directories existed, breadcrumbs were written to a dated tree at
-`~/work/data/diary/<YYYY>/<MM>/<DD>/`, in the same
-`<date>.<slug>.session.<NN>.md` shape but with a slightly older frontmatter
-set (it carries `session-id:`, which current breadcrumbs don't). Nothing
-writes there anymore and it appears in no schema. If the window reaches back
-far enough to overlap it, either read those files too — they parse the same
-way — or say plainly in the output that history before the item's earliest
-`log/` entry was not covered. Do **not** silently report a long window as
-complete while skipping it; the whole point of a long-window run is that the
-user isn't going to go looking themselves.
+**An item's `log/` is the whole record — there is no second place to look.**
+Breadcrumbs predating item-owned `log/` directories once lived in a dated
+`data/diary/<YYYY>/<MM>/<DD>/` tree; those were migrated into the owning
+items' `log/` on 2026-07-30 and the tree was removed. The oldest entries may
+carry a `session-id:` key that current breadcrumbs don't — harmless, nothing
+reads it. If you encounter any other dated breadcrumb tree outside
+`items/**/log/`, treat it as a bug worth reporting rather than a source to
+read: history hiding in a second location is exactly what that migration
+removed.
 
 **Cross-item run:** for every date in the window, walk every item's
 `items/**/log/` (including `archived/`, since an item's activity during the
