@@ -96,15 +96,35 @@ the window by their `start`/`end` (breadcrumbs) or `time` (logged notes).
 Collect:
 
 - **Session breadcrumbs** — `<date>.<slug>.session.<NN>.md`. Parse frontmatter
-  (`slug`, `repo`, `branch`, `commits`, `files-changed`, `start`/`end`) and the
-  one-line body.
-- **Logged notes** — `<date>.<slug>.log.<NN>.md` (`type: workitem-log`), and
-  any legacy `<date>.<slug>.jot.<NN>.md` (`type: jot`, from before `workitem
-  log` — see `items/CLAUDE.md`'s "Session log" section) — same shape, keep
-  recognizing both. Sparse, hand-written entries; same directory, same
-  per-event granularity.
+  (`type`, `slug`, `session-num`, `start`/`end`, `dirty`, `commits`,
+  `files-changed`, `item-files-changed`, and `repos` — an inline list, present
+  only when at least one worktree was touched) and the one-line body. There is
+  no `repo:` or `branch:` field; per-repo branch and counts live in the body.
+- **Logged notes** — `<date>.<slug>.log.<NN>.md`, which covers two `type:`
+  values: `workitem-log` (sparse, hand-written, from `workitem log`) and
+  `item-rename` (tool-written, carrying `former-slug:` — the item was renamed
+  at that moment, which is usually worth a line in the recap). Also any legacy
+  `<date>.<slug>.jot.<NN>.md` (`type: jot`, from before `workitem log` — see
+  `items/CLAUDE.md`'s "Session log" section); keep recognizing it.
+
+  A renamed item's older entries keep the **old** slug in both filename and
+  `slug:` frontmatter, since `log/` is immutable. Group by the item's current
+  directory, not by the `slug:` field, or a rename will split one item's
+  history into two.
 - **The user's own commits** in that item's worktree(s), filtered by author
   and date range (see the git filtering rule below).
+
+**Pre-`log/` history lives outside the item.** Before item-owned `log/`
+directories existed, breadcrumbs were written to a dated tree at
+`~/work/data/diary/<YYYY>/<MM>/<DD>/`, in the same
+`<date>.<slug>.session.<NN>.md` shape but with a slightly older frontmatter
+set (it carries `session-id:`, which current breadcrumbs don't). Nothing
+writes there anymore and it appears in no schema. If the window reaches back
+far enough to overlap it, either read those files too — they parse the same
+way — or say plainly in the output that history before the item's earliest
+`log/` entry was not covered. Do **not** silently report a long window as
+complete while skipping it; the whole point of a long-window run is that the
+user isn't going to go looking themselves.
 
 **Cross-item run:** for every date in the window, walk every item's
 `items/**/log/` (including `archived/`, since an item's activity during the

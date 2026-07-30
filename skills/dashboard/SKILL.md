@@ -59,13 +59,32 @@ For each in-flight item, find its most recent activity from two sources:
 
 - **The item's own `log/`:** the newest-dated file in `items/<slug>/log/`
   (`.session.NN.md`, `.log.NN.md`, or legacy `.jot.NN.md` — whichever sorts
-  latest by filename date; recognize all three, since real items still carry
-  `.jot.NN.md` history from before `workitem log`) — read its `end:`
-  (breadcrumb) or `time:` (logged note / legacy jot). A single directory
-  listing per item; no cross-referencing anything outside the item.
-- **Worktree commits:** if the item has a worktree, the newest commit date from
-  `git -C ~/work/worktrees/<slug>/<repo> log -1 --format=%cI` (across each repo
-  the item has a worktree for).
+  latest by filename date; recognize all three, since a `.jot.NN.md` may
+  survive in an older item) — read its `end:` (breadcrumb) or `time:` (logged
+  note / legacy jot). A single directory listing per item; no
+  cross-referencing anything outside the item.
+- **The user's own commits for this item:**
+
+  ```
+  ME=$(git config user.email)
+  git -C ~/work/repos/<repo> log -1 --all --author="$ME" \
+      --grep="^Work-Item: <slug>$" --format=%cI
+  ```
+
+  across each repo the item has a worktree for. **Both filters matter.** The
+  repos are shared and a worktree's branch carries the whole merged history,
+  so an unfiltered `git log -1` returns whatever landed most recently from any
+  author on any item — which silently resets this item's staleness clock and
+  suppresses the at-risk nudge on precisely the item it exists to catch. The
+  `--author` and `--grep` filters AND together. (The `Work-Item` trailer is
+  described in `items/CLAUDE.md`, "Commit provenance".)
+
+  Commits predating the trailer won't match it. If the query returns nothing
+  but the item has a worktree, fall back to
+  `git -C ~/work/worktrees/<slug>/<repo> log -1 --author="$ME" --format=%cI`,
+  and treat a still-empty result as "no commit activity" rather than as an
+  error. If the item's frontmatter carries `former-slugs:`, add a `--grep` for
+  each — trailers record the slug as of commit time.
 
 `last-activity = max(newest log/ entry, newest commit date)`. An item whose
 `last-activity` is more than `STALE_ITEM_DAYS` ago — or that has none — is

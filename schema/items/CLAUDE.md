@@ -562,7 +562,11 @@ gate here: the draft is written straight to the file, printed for review,
 and amended by hand afterward if it needs a correction. Trivial or
 `--quick` items can skip the ceremony and go straight to `workitem complete
 <slug>`, which sets `status: completed` and moves it without drafting a
-retrospective. Cancellations skip it too — see "Archiving" below.
+retrospective. Most cancellations skip it too — abandoned work usually has
+no narrative worth drafting — but an item with real history behind it can
+still be closed out through the skill, which handles the `cancelled` case and
+hands off to `workitem cancel`. Judge by whether there's a story worth
+keeping, not by which verb ends up running. See "Archiving" below.
 
 ### Archiving
 

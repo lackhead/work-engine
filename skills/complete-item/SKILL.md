@@ -21,9 +21,14 @@ entirely and go straight to `workitem complete`/`workitem cancel` instead
 - **Trivial or quick items** — `workitem complete <slug>` sets
   `status: completed` and moves the directory directly, no retrospective
   drafted.
-- **Cancellations** — abandoned work has no narrative worth drafting.
-  `workitem cancel <slug>` sets `status: cancelled` and moves the directory
-  directly.
+- **Most cancellations** — abandoned work usually has no narrative worth
+  drafting, and `workitem cancel <slug>` sets `status: cancelled` and moves
+  the directory directly. The exception is an item with real history behind
+  it: *why* something was abandoned after weeks of work is exactly the kind
+  of thing worth recording, so this skill does support closing one out —
+  see the `**Cancelled.**` variant in step 3 and the `workitem cancel`
+  handoff in step 5. Judge by whether there's a story, not by which verb
+  ends up running.
 
 ## Arguments
 
@@ -35,9 +40,16 @@ ask).
 
 ### 1. Resolve the item
 
-Locate the item's front door (`items/<slug>/<slug>.md`, checking top-level
-then `backlog/` — never `archived/`, since that's already closed). If the
-slug is ambiguous or missing, ask.
+Locate the item's front door at `items/<slug>/<slug>.md` — **top-level only**.
+If the slug is ambiguous or missing, ask.
+
+Do not resolve into `backlog/` or `archived/`. `archived/` is already closed;
+`backlog/` would fail at step 5, because `workitem complete`/`cancel` refuse
+any item that isn't top-level (`items/CLAUDE.md`, "Attention zones") — and by
+then this skill has already written a permanent `## Retrospective` and
+rewritten `## Current state`, leaving a half-closed item stranded in the wrong
+zone. A backlog item was never active work: activate it first if it genuinely
+needs closing out, or `workitem delete` it if it's simply not going anywhere.
 
 ### 2. Gather its full lifetime
 
@@ -78,15 +90,27 @@ No confirm-before-writing gate here — unlike `retrospective`'s per-item
   `items/CLAUDE.md`.
 - Replace `## Current state` with the finalized paragraph; remove
   `## What's next` if it was there.
-- Set `status: completed` (or `cancelled`) and stamp `completed:` with
-  today's date directly in the frontmatter.
+
+**Do not touch `status:` or `completed:` here.** Step 5 owns both. Setting
+them in this step duplicates what `workitem complete` does anyway, and — more
+importantly — it is what turns a failed handoff into a corrupted item: an
+item marked `completed` whose directory never moved reads as archived to a
+human and as active to every tool. Leaving frontmatter alone until step 5
+means a failure at that point leaves an ordinary active item that happens to
+have its closing narrative already drafted, which is recoverable by rerunning
+the command.
 
 ### 5. Hand off to archive
 
 Run `workitem complete <slug>` (or `workitem cancel <slug>` if step 4 closed
-this out as cancelled) — status is already set from step 4, so this just
-re-confirms it, stamps `completed:`, and moves the directory; see
-`items/CLAUDE.md`'s "Archiving".
+this out as cancelled). This is what sets `status:`, stamps `completed:` with
+today's date, moves the directory into `archived/`, and removes the item's
+worktree(s); see `items/CLAUDE.md`'s "Archiving".
+
+If it fails, stop and report — do not hand-edit the frontmatter to
+"finish the job." The item is still active and intact, with its narrative
+drafted; whatever blocked the command (wrong zone, a worktree that wouldn't
+remove) is what needs fixing.
 
 ### 6. Print
 
