@@ -32,7 +32,9 @@ status automatically as a side effect of other edits.
 
 The `status:` field is required and takes one of:
 
-- **`proposed`** — captured but not yet committed to. Default for a new item.
+- **`proposed`** — captured but not yet committed to. What `workitem create
+  -b/--backlog` produces; a plain `workitem create` makes an `active`
+  top-level item instead.
 - **`active`** — currently in flight or queued to be worked.
 - **`blocked`** — active work that can't progress because of an external
   dependency (a person, a vendor, an upstream change). Involuntary.
@@ -224,7 +226,7 @@ Required:
 | Field | Notes |
 |-------|-------|
 | `title` | Human-readable name; matches the `#` heading. |
-| `status` | One of the six status values above. New items default to `proposed`. |
+| `status` | One of the six status values above. `workitem create` produces `active`; `workitem create -b/--backlog` produces `proposed`. |
 | `made` | `YYYY-MM-DD` when the item was first captured. |
 
 Optional:
@@ -256,21 +258,43 @@ enforces the `worktrees/<slug>/<repo>/` layout and resolves branches
 consistently). The command is a `bash` executable at `~/work/engine/bin/worktree`
 (on PATH) — shell-agnostic, so it works from any shell and inside the sandbox
 container; fish tab-completion lives at
-`~/work/engine/bin/completions/worktree.fish`, symlinked into
-`~/.config/fish/completions/`:
+`~/work/engine/bin/completions/worktree.fish`, picked up because
+`~/work/engine/bin/completions` is on `$fish_complete_path` (nothing is
+symlinked into `~/.config/fish/completions/`).
+
+`worktree --help` is the authoritative roster; in outline:
 
 ```
-worktree add  <slug> <repo> [branch]   # branch defaults to <slug>; an existing
+worktree add  <slug> <repo> [branch] [--base <ref>]
+                                       # branch defaults to <slug>; an existing
                                        # local or remote branch is checked out,
-                                       # else a new branch is created off HEAD
-worktree rm   <slug> [repo]            # remove the item's worktree(s); branch + history kept
-worktree list [slug]                   # show worktrees with branch, clean/dirty state, commits
-                                       # not merged into the clone's branch, and commits not
-                                       # pushed to origin (the actual "could this be lost" signal)
+                                       # else a new branch is created off --base
+                                       # (default HEAD). Also installs the
+                                       # Work-Item commit-msg hook in the clone.
+worktree rm   <slug> [repo] [--delete-branch]
+                                       # remove the item's worktree(s). Branch and
+                                       # history are kept UNLESS --delete-branch,
+                                       # which deletes it if merged (see below)
+worktree mv   <old-slug> <new-slug>    # relocate worktrees after workitem rename
+worktree list [slug]                   # branch, clean/dirty state, commits not merged
+                                       # into the clone's branch, and commits not pushed
+                                       # to origin (the "could this be lost" signal)
 worktree refresh [repo] [--if-stale]   # fast-forward the canonical clone's integration
-                                       # branch (all repos, or one); --if-stale skips
-                                       # clones fetched within the last 24h
+                                       # branch; --if-stale skips clones fetched <24h ago
+worktree prune-branches [repo] [--apply]
+                                       # branches with no live worktree, split into
+                                       # safe-to-delete and needs-review
 ```
+
+**Finishing an item deletes its branch when the branch has been merged.**
+`workitem complete`, `workitem cancel`, and `workitem delete` all call
+`worktree rm --delete-branch`, which runs `git branch -d` per repo: the branch
+goes away if it is merged into the clone's integration branch, and is left in
+place with a warning if it isn't. A bare `worktree rm` keeps the branch —
+but no lifecycle verb uses the bare form, so "the branch survives completion"
+is only true of unmerged work. The commits themselves are never lost either
+way; they are reachable from the integration branch once merged, and carry
+the item's `Work-Item:` trailer (see "Commit provenance").
 
 Most items reuse an existing feature branch, so pass the branch name
 explicitly — e.g. `worktree add nagios Ansible feature/nagios-pushover`. An
@@ -518,12 +542,19 @@ on its own the first time a session or tagged jot happens.
 
 ### Surfacing items
 
-Read `items/**` and surface by `status:` from frontmatter. The zone gives the
-fast filesystem glance; for precise queries, read frontmatter. Default
-surfacing of "what needs attention" = top-level (`active` + `blocked`), sorted
-by `due:` ascending (undated last), with `blocked` flagged. `backlog/`
-(`proposed` + `deferred`) is surfaced separately as "candidates / paused."
-`archived/` is excluded unless asked.
+**Use `workitem list` rather than walking the tree by hand** — it prints slug,
+status, due, and last-updated, defaults to top-level (`active` + `blocked`),
+and takes `--backlog` / `--archived` / `--all` plus `--status <value>`. That
+covers essentially every "what needs attention" query, already sorted and
+zone-aware. `workitem show <slug>` prints one item. Reach for a manual walk of
+`items/**` only when you need something the flags don't express.
+
+The model those commands implement, for when you do need it: the zone gives
+the fast filesystem glance, frontmatter gives precision. "What needs
+attention" = top-level (`active` + `blocked`), sorted by `due:` ascending
+(undated last), with `blocked` flagged. `backlog/` (`proposed` + `deferred`)
+is surfaced separately as "candidates / paused." `archived/` is excluded
+unless asked.
 
 ### Recording out-of-band work
 
@@ -582,13 +613,19 @@ archived item carries `completed` or `cancelled` status — there is no other
 valid status once in `archived/`. The body is preserved; archived content is
 read-only by convention (fix outright errors only).
 
-`workitem complete <slug>` and `workitem cancel <slug>` are the only
-supported paths — each sets the respective status, stamps `completed:` with
-today, moves the item to `items/archived/<slug>/`, and removes its
-worktree(s), if any. There's no bare "archive, decide later" verb: the verb
-itself is the status decision, made explicitly every time. Both apply to
-top-level items only; a `backlog` candidate that's being rejected is
+`workitem complete <slug>` and `workitem cancel <slug>` are the two verbs for
+it — each sets the respective status, stamps `completed:` with today, moves
+the item to `items/archived/<slug>/`, and removes its worktree(s) **with
+`--delete-branch`**, so a merged branch is deleted and an unmerged one is kept
+with a warning (see "Worktrees"). There's no bare "archive, decide later"
+verb: the verb itself is the status decision, made explicitly every time. Both
+apply to top-level items only; a `backlog` candidate that's being rejected is
 `workitem delete`d instead, not completed/cancelled — see "Attention zones."
+
+One item reaches `archived/` without either verb: an itemless `workitem log`
+note creates a `log-<timestamp>` item directly there, born `completed` (see
+"Recording out-of-band work"). That's a whole lifecycle collapsed into one
+instant, not a transition.
 
 ### Promoting a reminder into an item
 

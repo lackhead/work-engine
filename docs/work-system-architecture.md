@@ -63,7 +63,11 @@ How location encodes stage differs by type:
 - **Documents** (`docs/`) carry no status field at all; presence in `docs/` vs.
   `docs/archived/` (vs. promoted into an item) is the entire signal.
 
-Nothing is ever deleted; archiving preserves the body as historical record.
+Nothing that represents actual work is deleted; archiving preserves the body
+as historical record. Deletion exists only where there's demonstrably no body
+to preserve — a freshly-created item that accumulated nothing, a rejected
+backlog candidate, a mistaken reminder, the `incoming/` transfer buffer — and
+each case is enumerated in the root [[CLAUDE]]'s principle 5.
 
 ### Two actionable types, split on one question
 
@@ -112,18 +116,28 @@ Shell-agnostic `bash` executables on `PATH`, tracked in the `work-engine` repo
 tracked" below). These are the verbs of the system:
 
 - **`workreminder`** — capture a reminder.
-- **`workitem`** — create, list, and manage work items (subcommands
-  `create`/`list`/`show`/`log`/`activate`/`defer`/`block`/`unblock`/`archive`/`delete`).
+- **`workitem`** — create, list, and manage work items. See `workitem --help`
+  for the verb roster rather than a copy of it here; the lifecycle *semantics*
+  live in `schema/items/CLAUDE.md`.
 - **`workon`** — open a Claude Code session for an item, in the right place (its
   worktree, or its folder), resume-aware.
-- **`worktree`** — create/list/remove the per-item git worktrees.
+- **`worktree`** — create/relocate/list/remove the per-item git worktrees, plus
+  clone refresh and stale-branch pruning.
 - **`workinit`** — idempotently materialize or verify an instance's `~/work`
-  skeleton (the `data/` subdirectories, the two symlinks into `engine/`).
+  skeleton (the `data/` subdirectories, `repos/`, `worktrees/`, `incoming/`,
+  `keys/`, and the two symlinks into `engine/`).
 - **`sandbox`** — lifecycle for the container Claude runs inside.
 - **`work-backup`** — commit the vault (`~/work/data`) and push it offsite (run
   by launchd).
-- **`work-session-breadcrumb`** — the `SessionEnd` hook that writes a factual
-  breadcrumb to that item's own `log/` when a session ends.
+- **`work-session-breadcrumb`** — writes a factual breadcrumb to an item's own
+  `log/` when a session ends. Not a Claude Code hook: it was a `SessionEnd`
+  hook originally, but that fired unreliably on some exit paths (a long
+  session ended by a hard exit could leave no breadcrumb at all), so `workon`
+  invokes it deterministically host-side once the session returns. It still
+  reads its payload on stdin, so it can be run by hand for recovery.
+- **`work-session-catchup`** — the one genuine Claude Code hook
+  (`SessionStart`), surfacing any `workitem log` note newer than the item's
+  last session breadcrumb so a fresh session picks it up unprompted.
 - **`hooks/commit-msg`** — a git `commit-msg` hook template; `worktree`
   installs it into each canonical clone so every commit made in one of that
   repo's worktrees is stamped `Work-Item: <slug>`, independent of the item's
@@ -137,22 +151,27 @@ than noisy. (Coding conventions for these scripts:
 
 ### Skills — `~/work/engine/skills/`
 
-Two LLM skills do the work that needs judgment rather than a fixed script:
+Three LLM skills do the work that needs judgment rather than a fixed script:
 
 - **`dashboard`** — reads items, reminders, breadcrumbs, and git, ranks
   in-flight work, and regenerates [[index]]. It's read-derived: it ranks and
   presents what's captured, never invents state. (It owns most of `index.md` but
   leaves the hand-written "Notes / current focus" block and the retrospective
   pointer alone.)
-- **`retrospective`** — rolls up a time window (day, week, quarter, range) from
-  breadcrumbs, logged notes, and your own git commits; writes a dated
-  retrospective and *proposes* a refreshed `## Current state` for items that saw
-  real progress (never writing without confirmation).
+- **`retrospective`** — rolls up a time window (day, week, month, quarter,
+  range) from breadcrumbs, logged notes, and your own git commits; writes a
+  dated retrospective and *proposes* a refreshed `## Current state` for items
+  that saw real progress (never writing without confirmation).
+- **`complete-item`** — closes out a finished item: drafts a permanent
+  `## Retrospective` and a final `## Current state` from the item's whole
+  history, writes them, then hands off to `workitem complete`/`cancel`. The
+  one item-scoped retrospective that's persisted, because the item is leaving
+  circulation for good.
 
-The division of labor is deliberate: the **hook is dumb** (records git/session
-facts only), the **skills are smart** (frame and curate), and the two never
-overlap. A breadcrumb says "a session happened on item X"; the retrospective is
-where that becomes "here's what moved."
+The division of labor is deliberate: the **breadcrumb writer is dumb** (records
+git/session facts only), the **skills are smart** (frame and curate), and the
+two never overlap. A breadcrumb says "a session happened on item X"; the
+retrospective is where that becomes "here's what moved."
 
 ## The sandbox — isolated Claude workspace
 
@@ -170,9 +189,9 @@ item's plan]]):
   aren't needed because every artifact is git-backed.
 - **`~/work` is bind-mounted at the same absolute path** inside the container as
   on the host, and the container's `$HOME` mirrors the host's. So every path —
-  the vault, transcripts, `--add-dir`, the hook's `$HOME/work` match — is
-  identical inside and out, with no translation. The host keeps Obsidian and the
-  backup job.
+  the vault, transcripts, `--add-dir`, the item and worktree paths the
+  breadcrumb writer resolves — is identical inside and out, with no
+  translation. The host keeps Obsidian and the backup job.
 - **One persistent, shared container.** Every session `docker exec`s into a
   single long-lived box (`work-sandbox`), auto-started at login (`--restart
   unless-stopped` + Docker Desktop start-at-login). `workon X` just works.

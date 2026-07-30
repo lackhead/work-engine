@@ -27,10 +27,16 @@ brew install --cask docker
 mkdir -p ~/work
 ```
 
-`git`, `fish`, and Docker Desktop are required. `fzf` and `jq` are recommended
-but optional: `fzf` drives the interactive item picker in `workitem log` and
-`workreminder` (both fall back to a numbered menu without it), and `jq` speeds
-up the session breadcrumb's JSON parsing (a `sed` fallback covers its absence).
+`git`, `fish`, and Docker Desktop are required. `fzf` is recommended but
+optional: it drives the interactive item picker in `workitem log` and
+`workreminder`, both of which fall back to a numbered menu without it.
+
+`jq` is **effectively required**, though it degrades unevenly rather than
+failing loudly: the session breadcrumb and the catch-up hook both carry a
+`sed` fallback for its absence, but `claude-statusline` calls it
+unconditionally with no fallback, so without `jq` the status line silently
+renders empty. It's installed in the sandbox image regardless; this matters
+only for running the tools on a host that lacks it.
 
 `~/work` is just the default — any directory works as long as `$WORK_ROOT`
 points at it (see `~/work/engine/schema/CLAUDE.md`). The rest of this doc
@@ -59,9 +65,15 @@ git clone git@github.com:lackhead/work-engine ~/work/repos/work-engine
 ```
 
 Edit through a worktree, same as any other repo (`worktree add <slug>
-work-engine`), never by hand-editing the deployed `~/work/engine/` copy —
-pull the merged result into it with a plain `git pull` (see
-`~/work/engine/schema/CLAUDE.md` principle 10).
+work-engine`), never by hand-editing the clone at `~/work/repos/work-engine`
+or the deployed `~/work/engine/` copy — pull the merged result into the latter
+with a plain `git pull` (see `~/work/engine/schema/CLAUDE.md` principle 10).
+
+This is enforced, not just advised: the sandbox denies `Edit`/`Write` under
+both `~/work/engine/**` and `~/work/repos/**`, so an in-session edit to either
+is refused. The worktree at `~/work/worktrees/<slug>/work-engine/` is the only
+path that works. (Git operations are unaffected — `pull`, `merge`, and `push`
+all run through Bash.)
 
 ## 2. Get your data
 
@@ -83,8 +95,8 @@ git clone <your-vault-remote> ~/work/data
 workinit -v
 ```
 
-Creates `~/work/{repos,worktrees,keys}` and `data/{items,reminders,docs,
-retrospectives,.claude}` if missing, and the two symlinks
+Creates `~/work/{repos,worktrees,incoming,keys}` and `data/{items,reminders,
+docs,retrospectives,.claude}` if missing, and the two symlinks
 (`data/CLAUDE.md`, `data/.claude/skills`) into `engine/`. `keys/` is created
 mode `700` — it's where the next step puts the sandbox's SSH credentials.
 Never overwrites unexpected state — it flags anything odd instead (exit code
@@ -187,10 +199,17 @@ Confirm with `sandbox status`. The container auto-starts on future logins
 workon <any-active-item>    # drops into a containerized Claude session
 ```
 
-From inside that session, confirm `dashboard` and `retrospective` show up as
-available skills, and that ending the session writes a breadcrumb into that
-item's own `log/`. If you restored an existing vault, also run `dashboard`
-once to regenerate `index.md` against the current host.
+From inside that session, confirm `dashboard`, `retrospective`, and
+`complete-item` show up as available skills, and that ending the session
+writes a breadcrumb into that item's own `log/`. If you restored an existing
+vault, also run `dashboard` once to regenerate `index.md` against the current
+host.
+
+Note that inside the sandbox, `Edit`/`Write` are denied under
+`~/work/engine/**` and `~/work/repos/**` (see
+`sandbox/home/claude-settings.json`). That's deliberate — both are meant to be
+changed through a worktree, never in place — so an in-session attempt to edit
+either will be refused rather than silently succeeding.
 
 ## Team-code repos
 
