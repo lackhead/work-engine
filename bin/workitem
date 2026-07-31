@@ -581,9 +581,9 @@ wi_log() {
         shift
     done
 
-    # --- Step 1: repo/commit context (same vault-git guard as the
-    # SessionEnd hook). Independent of item resolution below -- gathered
-    # here regardless of whether a slug ends up resolved at all. ---
+    # --- Step 1: repo/commit context (same vault-git guard the breadcrumb
+    # writer uses). Independent of item resolution below -- gathered here
+    # regardless of whether a slug ends up resolved at all. ---
     local gitdir='' from_cwd=false top
     if [ -n "$repo_opt" ]; then
         gitdir="$WORK/repos/$repo_opt"

@@ -173,12 +173,17 @@ block × six scripts, plus `kebab`/`trunc`/`iso_now`) and inline copies had begu
 to drift. One source of truth means a change to the output convention — or a
 future `print_quiet` — is a single edit.
 
-**What does *not* source it:** the hooks (`work-session-breadcrumb`,
-`work-session-catchup`), `work-backup`, and `claude-statusline`. They run in the
-most constrained contexts, don't use the `print_*` block, and stay fully
-self-contained — carrying their own `WORK` line inline (and `iso_now`, in the
-breadcrumb's case). Self-containedness matters most there; the lib is for the
-interactive `work*`/`sandbox` tools.
+**What does *not* source it:** `work-session-breadcrumb`,
+`work-session-catchup`, `work-backup`, `claude-statusline`, and the git hook
+template `hooks/commit-msg`. They run in the most constrained contexts, don't
+use the `print_*` block, and stay fully self-contained — carrying their own
+`WORK` line inline (and `iso_now`, in the breadcrumb's case).
+Self-containedness matters most there; the lib is for the interactive
+`work*`/`sandbox` tools.
+
+`work-backup` is the one variation worth knowing about: its inline line is
+`WORK="${WORK_ROOT:-$HOME/work}/data"` — the vault, not the root — so `$WORK`
+means something narrower there than it does everywhere else.
 
 ---
 
@@ -251,7 +256,7 @@ the schema docs for design-level readers — not in `--help`.
 
 ## Argument parsing
 
-Three patterns cover all current scripts.
+Two patterns cover all current scripts.
 
 ### Pattern 1: global-flag scripts (workon)
 
@@ -386,9 +391,11 @@ fi
 
 Worktrees are exempt for free: each has its own `.git` that shadows the vault,
 so `git -C <worktree>` resolves to the worktree, not `~/work/data`. Tools that
-only ever use explicit `repos/<repo>` or worktree paths (`workon`, `worktree`)
-need no guard — the rule is specifically for tools that *infer* the repo from
-the current directory (`work-session-breadcrumb`, `workitem log`).
+only ever use explicit `repos/<repo>` or worktree paths (`workon`, `worktree`,
+and `work-session-breadcrumb`, which resolves the slug from cwd and then reads
+`$WORK/worktrees/<slug>/*/` explicitly) need no guard — the rule is
+specifically for tools that *infer the repo itself* from the current
+directory. `workitem log` is the current example.
 
 ---
 
@@ -461,8 +468,11 @@ Conventions:
   `print_status`). Subcommand functions are prefixed with the script's
   abbreviation (`wt_`, `run_`, etc.) to keep them distinct from utilities.
 - **Constants at the top:** all script-level vars before any functions.
-  The output block (`RED`/`GREEN`/etc. + `DEBUG` + `print_*`) comes
-  immediately after the initial constants.
+  Constants that don't depend on `$WORK` may sit above the `lib.sh` source;
+  anything derived from it necessarily comes after. (The output block —
+  `RED`/`GREEN`/etc. + `DEBUG` + `print_*` — is no longer part of this: it
+  lives in `lib.sh` and arrives with the source line. See "The shared
+  library" above.)
 - **Comments:** only when the WHY is non-obvious — a constraint, a
   subtle invariant, a workaround. Don't narrate what the code does. The
   account-mgmt scripts set a good example here: short, purposeful comments

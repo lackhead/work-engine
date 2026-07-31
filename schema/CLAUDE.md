@@ -64,16 +64,27 @@ ever serve.
      the signal: present in `docs/`, archived in `docs/archived/`, or promoted
      into a work item (gone from `docs/` entirely).
    Nothing that represents actual work is deleted; archiving preserves the
-   body, and transitions are deliberate, not automatic. The one deliberate
-   exception is narrow and explicit: an item that `workon` created this
-   session (via `--quick` or a plain create-on-the-fly) and that never
-   accumulated any content at all — no commits, no uncommitted changes, no
-   files added to its folder, no notes written into the front door itself —
-   is deleted outright at session end rather than archived, because there's
-   no body to preserve for a placeholder that was never used. An item that
-   already existed before the session is never subject to this. See
-   `items/CLAUDE.md`'s "Quick items and the empty-item sweep" section for the
-   mechanics.
+   body, and transitions are deliberate, not automatic. Deletion exists, but
+   only where there is demonstrably no body to preserve, and each case is
+   explicit rather than incidental:
+   - **The empty-item sweep** — an item that `workon` created *this* session
+     (via `--quick` or a plain create-on-the-fly) and that never accumulated
+     anything at all — no commits, no uncommitted changes, no files added to
+     its folder, no notes written into the front door itself — is deleted at
+     session end rather than archived. An item that already existed before
+     the session is never subject to this. See `items/CLAUDE.md`'s "Quick
+     items and the empty-item sweep".
+   - **Rejecting a candidate** — `workitem delete <slug> --force` on a
+     `backlog/` item that isn't going anywhere. It also works on a top-level
+     item, and **refuses `archived/` outright**: once something has been
+     completed or cancelled it is preserved work, not a candidate.
+   - **Discarding a mistaken reminder** — `workreminder delete <name>`, which
+     prompts, and requires `--force` non-interactively.
+   - **`incoming/`'s weekly purge** — a transfer buffer, not storage; see the
+     Directory structure section below.
+   Everything else archives. Anything that has accumulated real content —
+   commits, files, prose — has a body worth keeping, and there is no tooled
+   path that throws one away.
 6. **Two actionable types: reminders and work items, split on whether work
    gets a session.** A reminder is an atomic note you action or flip without
    sitting down to work it. A work item is something you sit down and work in
@@ -108,9 +119,10 @@ ever serve.
    `~/work/engine/docs/bin-coding-standards.md` (a backticked path, not a
    wikilink — it lives in the `work-engine` repo, not this vault; see
    principle 10). The old `daily-summary`, `session-capture`, and
-   `standup-prep` skills are retired, superseded by the hook, `retrospective`,
-   and the dashboard. Skills that are general work-practice (useful outside
-   this tree) live in dotfiles at `~/.claude/skills/`.
+   `standup-prep` skills are retired, superseded by the session breadcrumb
+   `workon` writes, `retrospective`, and the dashboard. Skills that are
+   general work-practice (useful outside this tree) live in dotfiles at
+   `~/.claude/skills/`.
 10. **The engine (this schema, the skills, the tooling) and the data (this
     vault's actual content) are separate sibling repos under `~/work`, not one
     tree.** `~/work/data/` is this instance's private content — items,
@@ -165,10 +177,11 @@ ever serve.
 ```
 ~/work/                    # WORK_ROOT — a plain directory, not itself a repo
 ├── engine/                 # the work-engine repo — deployed copy, kept on main, `git pull` to refresh
-│   ├── bin/                 # engine tooling (workon, worktree, workinit, sandbox, breadcrumb hook, work*); on PATH
-│   │   └── completions/     # shell completions (fish), symlinked into ~/.config/fish/completions/
+│   ├── bin/                 # engine tooling (workon, worktree, workinit, sandbox, work*, breadcrumb, statusline); on PATH
+│   │   ├── completions/     # shell completions (fish); on $fish_complete_path, not symlinked
+│   │   └── hooks/           # git hook templates (commit-msg: the Work-Item trailer)
 │   ├── schema/               # this file + the per-directory CLAUDE.md set (canonical source)
-│   ├── skills/               # dashboard, retrospective (canonical source)
+│   ├── skills/               # dashboard, retrospective, complete-item (canonical source)
 │   ├── sandbox/              # Docker recipe for the isolated Claude workspace
 │   └── docs/                 # engine-facing docs (architecture, usage, bin coding standards)
 ├── data/                   # this instance's private content — the vault
@@ -213,9 +226,9 @@ the box. So drop a file in `incoming/`, tell Claude it's there, and it can read
 it or move it into a work item. It's scratch, not storage — files are meant to
 be consumed (moved into an item's `artifacts/`/`docs/`) as they're used, and
 the sandbox sweeps anything older than a week on every start. That auto-deletion
-is a deliberate, narrow exception to "nothing is deleted" (principle 5), like
-a freshly-created item swept for having accumulated nothing: a transfer
-buffer holds nothing worth preserving.
+is one of the deletion cases principle 5 enumerates, on the same grounds as a
+freshly-created item swept for having accumulated nothing: a transfer buffer
+holds nothing worth preserving.
 
 `keys/` holds the sandbox container's SSH credentials and `~/.ssh/config` —
 created (mode 700) by `workinit`, otherwise entirely hand-populated, and
@@ -379,8 +392,8 @@ window — cross-item or scoped to a single item — and proposes a refreshed
 section and final `## Current state`, then hands off to `workitem
 complete`/`workitem cancel`).
 Read a skill's `SKILL.md` before invoking it. The old `daily-summary`, `session-capture`,
-and `standup-prep` skills are retired — superseded by the `SessionEnd`
-breadcrumb hook, `retrospective`, and `dashboard`. Capture is manual via the
+and `standup-prep` skills are retired — superseded by the session breadcrumb
+`workon` writes, `retrospective`, and `dashboard`. Capture is manual via the
 `work*` commands (`workreminder` / `workitem`) in
 `~/work/engine/bin/`. General work-practice skills (useful outside this
 system) also live at `~/.claude/skills/` in dotfiles, not here.

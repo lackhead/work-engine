@@ -33,7 +33,10 @@ on the **host**. The capture commands (`workreminder` / `workitem`),
 `worktree`, and the skills just operate on vault files and work anywhere the
 vault is mounted — host or inside a session.
 
-Every `work*` command takes `-h/--help`, `-v/--verbose`, and `-d/--debug`.
+Every command here takes `-h/--help`. The subcommand tools — `workitem`,
+`workreminder`, `workon`, `worktree`, `workinit`, `sandbox` — also take
+`-v/--verbose` and `-d/--debug` (`-d` implies `-v`). `work-backup` is the
+exception: `-h` only.
 
 ## A typical day
 
@@ -136,12 +139,17 @@ workitem complete nagios
 workon nagios                            # opens the item folder; attaches any worktrees
 workon ad-upgrade -r Ansible             # ensure/attach the Ansible worktree, then open
 workon new-idea -r Ansible -r Internal   # multi-repo: attach both
+workon some-new-thing -c                 # create the item without prompting, then open
+workon -q                                # throwaway item, generated slug
+workon -q fix the lint warning           # throwaway item titled from the args
 ```
 
 What it does:
 
-- Resolves the item (must be an **active, top-level** item — not `backlog/` or
-  `archived/`; offers to create it if the slug doesn't exist).
+- Resolves the item (must be a **top-level** item — not `backlog/` or
+  `archived/`; offers to create it if the slug doesn't exist, or `-c/--create`
+  to skip the prompt). `-q/--quick` creates a throwaway item with a generated
+  slug for work too small to name.
 - Opens the session with the **item's own folder** as the working directory —
   always, never a specific repo's worktree.
 - Attaches **every** worktree the item has via `--add-dir`, all equally
@@ -156,6 +164,19 @@ What it does:
 The item folder is the session's home and carries cross-repo context; a
 multi-repo item is one session with several worktrees attached, not several
 sessions.
+
+**The empty-item sweep.** If `workon` *created* the item this run — via
+`-q/--quick` or by creating a slug that didn't exist — it checks at session
+end whether anything landed: commits (merged or not), uncommitted changes,
+files added to the item folder, or notes written into the front door. If
+nothing did, the item is deleted outright rather than archived, and `workon`
+prints one line saying so. There's no body to preserve for a placeholder that
+was never used.
+
+An item that **already existed** before the invocation is never swept, no
+matter how uneventful the session. So a planning session that produced nothing
+on an established item is always safe; only a brand-new placeholder is at
+risk.
 
 ### `worktree` — manage per-item worktrees
 
@@ -197,24 +218,33 @@ retrospective this quarter
 retrospective 2026-06-01..2026-06-15
 ```
 
-It reads breadcrumbs, logged notes, status entries, and *your own* git commits
-across the worktrees, writes a dated file to `retrospectives/`, and **proposes**
-curated `status/` write-backs for items that saw real progress (writing only on
+It reads breadcrumbs, logged notes, and *your own* git commits across the
+worktrees, writes a dated file to `retrospectives/`, and **proposes** a
+refreshed `## Current state` for items that saw real progress (writing only on
 your per-item confirmation). A standup is just a retrospective over the
 since-last-standup window plus a dashboard glance — no separate tool.
 
 ## Changing an item's lifecycle
 
-These are deliberate edits, not commands (the schema is in [[items/CLAUDE]]):
+Every transition is a command — don't move directories or hand-edit `status:`
+(the schema is in [[items/CLAUDE]]). Each verb does the frontmatter edit and
+the directory move together, so the two can't drift apart:
 
-- **Activate a candidate:** move `items/backlog/<x>` → `items/`, set
-  `status: active`. Then `worktree add` if it touches code.
-- **Pause:** move `items/<x>` → `items/backlog/`, set `status: deferred`.
-- **Block/unblock:** just flip `status:` between `active` and `blocked` — *no
-  move* (both live at top level), so the most frequent transition is free.
+- **Activate a candidate:** `workitem activate <slug>` — `backlog/` → top
+  level, `status: active`. Then `worktree add` if it touches code.
+- **Pause:** `workitem defer <slug>` — top level → `backlog/`,
+  `status: deferred`.
+- **Block/unblock:** `workitem block <slug>` / `workitem unblock <slug>` —
+  flips `status:` between `active` and `blocked` with *no move* (both live at
+  top level), so the most frequent transition is the cheapest.
+- **Rename:** `workitem rename <old> <new>` — renames the directory and front
+  door, relocates worktrees, and records the old name in `former-slugs:`.
+  Inbound `[[old-slug]]` wikilinks are **not** rewritten; fix those by hand.
 - **Finish:** `workitem complete <slug>` / `workitem cancel <slug>` — sets
-  `status:` and the `completed:` date, moves to `items/archived/`, and
-  removes its worktree(s) if any, all in one step.
+  `status:` and the `completed:` date, moves to `items/archived/`, and removes
+  its worktree(s) if any, all in one step. For an item with enough history to
+  deserve a closing narrative, run the `complete-item` skill instead; it
+  drafts the retrospective and then calls these itself.
 
 Reminders archive as a single coupled move: `workreminder complete <name>` /
 `workreminder cancel <name>` set `status:` to `completed` or `cancelled` *and*
@@ -298,14 +328,18 @@ scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
 | `workitem list [--backlog\|--archived\|--all] [--status <v>]` | Quick glance at items | vault |
 | `workitem complete <slug>` / `workitem cancel <slug>` | Close out an item | vault |
 | `workon <slug> [-r <repo>]...` | Open a Claude session for an item | host → container |
-| `worktree add/rm/list/refresh` | Manage per-item git worktrees | vault/repos |
-| `sandbox up/down/restart/status/shell/rebuild` | Container lifecycle | host |
+| `workitem rename <old> <new>` | Rename an item, worktrees and all | vault |
+| `worktree add/rm/mv/list/refresh/prune-branches` | Manage per-item git worktrees | vault/repos |
+| `sandbox up/down/restart/status/shell/build/recreate/rebuild` | Container lifecycle | host |
 | `work-backup` | Commit + push the vault offsite now | host |
 | `dashboard` (skill) | Rank in-flight work, regenerate `index.md` | vault |
 | `retrospective [window]` (skill) | Recap a window, propose Current state write-backs | vault |
+| `complete-item [slug]` (skill) | Draft an item's closing retrospective, then archive it | vault |
 
-All commands accept `-h/--help`; the `work*` family and `worktree`/`sandbox`
-also take `-v/--verbose` and `-d/--debug`.
+All commands accept `-h/--help`; the subcommand tools also take
+`-v/--verbose` and `-d/--debug` (`work-backup` excepted — see above). Each
+tool's `--help` is the authoritative roster; this table is a glance, not a
+substitute.
 
 ## Where to go next
 

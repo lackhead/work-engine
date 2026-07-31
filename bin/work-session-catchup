@@ -16,10 +16,11 @@
 # so the new session picks them up as context, unprompted.
 #
 # Session breadcrumbs themselves are never re-surfaced here: every one is
-# written automatically by the SessionEnd hook the moment its session ends,
-# so the newest one *is* the cutoff by construction — nothing can ever be
-# newer than the max of itself. Only log entries have no such automatic
-# visibility, so they're the only thing this hook looks for.
+# written automatically by `workon` (host-side, via work-session-breadcrumb)
+# the moment its session ends, so the newest one *is* the cutoff by
+# construction — nothing can ever be newer than the max of itself. Only log
+# entries have no such automatic visibility, so they're the only thing this
+# hook looks for.
 #
 # It is a user-global hook, so it fires for every Claude Code session start;
 # for any session not under ~/work, or with nothing new to report, it exits
