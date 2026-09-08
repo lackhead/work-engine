@@ -51,23 +51,37 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pandoc libreoffice-writer poppler-utils fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Secret scanners — gitleaks (git-history-aware rules, fast full-history sweep)
-# and trufflehog (broad detector set, can verify a found credential is live).
-# Foundational rather than per-instance: any instance of this system points
-# Claude at repos, and "did something leak into this history" is a question
-# that comes up everywhere. Neither is packaged in Debian, so both come from
-# their upstream GitHub releases — pinned version, arch-mapped asset, verified
-# against the release's own checksums file. A bump is a one-line ARG edit plus
-# `sandbox build`. Note the two projects name architectures differently:
-# gitleaks ships x64/arm64, trufflehog amd64/arm64.
+# graphviz renders pytm's data-flow diagram: `python3 tm.py --dfd` emits DOT on
+# stdout and `dot` turns it into an image. Deliberately no Java/plantuml here,
+# which pytm's own requirements also list — that is only for its sequence
+# diagram (`--seq`), and a JRE is a couple hundred MB for the one output nobody
+# reaches for. The threat report itself needs neither.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        graphviz \
+    && rm -rf /var/lib/apt/lists/*
+
+# Repo scanners, all three Go binaries off their upstream GitHub releases:
+# gitleaks (git-history-aware secret rules, fast full-history sweep),
+# trufflehog (broader secret detector set, can verify a found credential is
+# live), and osv-scanner (dependency manifests/lockfiles against the OSV
+# vulnerability database). Foundational rather than per-instance: any instance
+# of this system points Claude at repos, so "did something leak into this
+# history" and "is anything we depend on known-vulnerable" are questions that
+# come up everywhere. None is packaged in Debian, hence releases — each pinned
+# to a version, arch-mapped, and checksum-verified against that release's own
+# sums file before it is installed. A bump is a one-line ARG edit plus
+# `sandbox build`. Mind the naming drift between the three: gitleaks ships
+# x64/arm64, trufflehog and osv-scanner amd64/arm64, and osv-scanner publishes
+# bare binaries rather than tarballs.
 ARG GITLEAKS_VERSION=8.30.1
 ARG TRUFFLEHOG_VERSION=3.97.4
+ARG OSV_SCANNER_VERSION=2.5.1
 RUN set -eux; \
     deb_arch="$(dpkg --print-architecture)"; \
     case "$deb_arch" in \
         amd64) gl_arch=x64 ;; \
         arm64) gl_arch=arm64 ;; \
-        *) echo "unsupported architecture for gitleaks/trufflehog: $deb_arch" >&2; exit 1 ;; \
+        *) echo "unsupported architecture for the repo scanners: $deb_arch" >&2; exit 1 ;; \
     esac; \
     tmp="$(mktemp -d)"; cd "$tmp"; \
     gl_base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"; \
@@ -84,9 +98,16 @@ RUN set -eux; \
     grep " ${th_tgz}$" "trufflehog_${TRUFFLEHOG_VERSION}_checksums.txt" | sha256sum -c -; \
     tar -xzf "$th_tgz" trufflehog; \
     install -m 0755 trufflehog /usr/local/bin/trufflehog; \
+    osv_base="https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}"; \
+    osv_bin="osv-scanner_linux_${deb_arch}"; \
+    curl -fsSL -O "${osv_base}/${osv_bin}"; \
+    curl -fsSL -O "${osv_base}/osv-scanner_SHA256SUMS"; \
+    grep " ${osv_bin}$" osv-scanner_SHA256SUMS | sha256sum -c -; \
+    install -m 0755 "$osv_bin" /usr/local/bin/osv-scanner; \
     cd /; rm -rf "$tmp"; \
     gitleaks version; \
-    trufflehog --version
+    trufflehog --version; \
+    osv-scanner --version
 
 # Non-root user whose HOME is the host's HOME path. Required: Claude Code refuses
 # --dangerously-skip-permissions (Phase 2) as root. The vault and ~/.claude are
@@ -98,12 +119,13 @@ RUN useradd --create-home --home-dir "$HOME_DIR" --shell /usr/bin/fish "$USER_NA
     && chown -R "$USER_NAME:$USER_NAME" "$HOME_DIR"
 
 ENV HOME=$HOME_DIR
-# ~/.venvs/docs/bin: python-docx/pypdf/markdown/reportlab, isolated from the
-# externally-managed system Python (PEP 668) — see below. ~/.local/bin: the
-# native Claude binary. ~/work/engine/bin: the work-system engine tools
-# (workon, worktree, workinit, work*, statusline, breadcrumb hook) off the
-# mounted ~/work tree.
-ENV PATH=$HOME_DIR/.venvs/docs/bin:$HOME_DIR/.local/bin:$HOME_DIR/work/engine/bin:/usr/local/bin:/usr/bin:/bin
+# ~/.venvs/tools/bin: the shared library venv, isolated from the
+# externally-managed system Python (PEP 668) — see below. It is first on PATH,
+# so it is what plain `python3` resolves to and its libraries import without
+# ceremony. ~/.local/bin: the native Claude binary, plus pipx-installed CLIs
+# (semgrep). ~/work/engine/bin: the work-system engine tools (workon, worktree,
+# workinit, work*, statusline, breadcrumb hook) off the mounted ~/work tree.
+ENV PATH=$HOME_DIR/.venvs/tools/bin:$HOME_DIR/.local/bin:$HOME_DIR/work/engine/bin:/usr/local/bin:/usr/bin:/bin
 
 # Install Claude Code's native binary AS THE USER (writes into ~/.local).
 USER $USER_NAME
@@ -111,15 +133,34 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 # To pin a version instead of latest stable:
 #   RUN curl -fsSL https://claude.ai/install.sh | bash -s <version>
 
-# Python libraries for scripting docx/pdf generation and extraction directly
-# (complementing pandoc/libreoffice above, which cover whole-document
-# conversion but not programmatic construction/parsing) — a dedicated venv
-# since Debian's system Python refuses `pip install` directly (PEP 668).
-# python-docx: read/write .docx structurally. pypdf: read/inspect PDFs.
-# markdown: markdown -> HTML. reportlab: build PDFs directly from Python.
-RUN python3 -m venv "$HOME_DIR/.venvs/docs" \
-    && "$HOME_DIR/.venvs/docs/bin/pip" install --no-cache-dir \
-        python-docx pypdf markdown reportlab
+# The shared library venv — Python packages meant to be *imported* by scripts,
+# as opposed to CLIs, which go through pipx below. A venv rather than the
+# system Python because Debian marks the latter externally-managed and refuses
+# `pip install` outright (PEP 668); it sits first on PATH so `python3 foo.py`
+# picks it up with no activation step.
+#   Document tooling, complementing pandoc/libreoffice above (which convert
+#   whole documents but cannot construct or parse them programmatically) —
+#   python-docx: read/write .docx structurally. pypdf: read/inspect PDFs.
+#   markdown: markdown -> HTML. reportlab: build PDFs directly from Python.
+#   pytm: OWASP threat modelling. It ships no CLI at all — a model is a Python
+#   file that does `from pytm import TM, Server, ...` and calls tm.process(),
+#   so it has to be importable by the default interpreter, which is exactly
+#   what this venv is. Renders via graphviz (installed above).
+RUN python3 -m venv "$HOME_DIR/.venvs/tools" \
+    && "$HOME_DIR/.venvs/tools/bin/pip" install --no-cache-dir \
+        python-docx pypdf markdown reportlab \
+        pytm \
+    && "$HOME_DIR/.venvs/tools/bin/python" -c 'import pytm'
+
+# semgrep — static analysis over a large community rule registry, the
+# complement to the secret/dependency scanners above: those ask what leaked and
+# what is known-vulnerable, this one asks what the code itself does wrong.
+# Installed with pipx rather than into the venv above because it is a CLI, not
+# a library to import, and pipx gives it an isolated venv with its entry points
+# on ~/.local/bin (already on PATH). Note rules are fetched from the registry
+# at scan time, so `semgrep scan --config=...` wants network unless pointed at
+# a local ruleset.
+RUN pipx install semgrep
 
 # This is the base image only — instance-specific tooling (e.g. the
 # Ansible/pre-commit toolchain a work instance needs but a personal one
