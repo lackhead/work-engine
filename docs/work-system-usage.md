@@ -284,19 +284,21 @@ Recreating the container loses nothing — login and transcripts live on the
 Dragging a file onto the terminal (or pasting from Finder) only inserts a
 *host* path the container can't read — the Mac filesystem isn't mounted in the
 box, except `~/work`. So to hand a file (a screenshot, a PDF, an export) to a
-session, drop it in **`~/work/incoming/`** and tell Claude it's there:
+session, copy it into the item's own `incoming/` and tell Claude it's there:
 
 ```
-> I dropped foo.png in incoming
+$ workitem add nagios ~/Desktop/foo.png
+> I added foo.png to nagios's incoming
 ```
 
-Because `~/work` is bind-mounted at the same path inside the box, Claude reads
-it directly and can move it into the relevant item
-(`items/<slug>/artifacts/` or `docs/`) if it's worth keeping. `incoming/` is
-scratch, not storage — ungit'd, never backed up, and the sandbox auto-purges
-anything older than a week on start. (Clipboard *image* paste still won't
-work — there's no clipboard bridge into the container — so the
-drop-in-`incoming` path is the way.)
+`workitem add <slug> <path>...` copies one or more files/directories into
+`items/<slug>/incoming/`, creating that directory the first time it's used
+— most items never grow one. Because `~/work` is bind-mounted at the same
+path inside the box, Claude reads it directly from there and can move it
+into `artifacts/` or `docs/` if it's worth keeping; anything left in
+`incoming/` just stays there — nothing is ever auto-deleted from it.
+(Clipboard *image* paste still won't work — there's no clipboard bridge into
+the container — so `workitem add` is the way.)
 
 ## Backups
 
@@ -322,6 +324,7 @@ scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
 | Command | Does | Runs on |
 |---------|------|---------|
 | `workitem log [-r\|--repo <repo>] [item-slug]` | Log ad-hoc work outside a session | vault |
+| `workitem add <slug> <path>...` | Copy files into an item's `incoming/` | vault |
 | `workreminder create [-i\|--item <slug>] [desc...]` | Capture a follow-up reminder | vault |
 | `workreminder promote <name> [workitem create args...]` | Turn a reminder into a work item | vault |
 | `workitem create [title...]` | Create a work item | vault |

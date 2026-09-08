@@ -95,7 +95,7 @@ git clone <your-vault-remote> ~/work/data
 workinit -v
 ```
 
-Creates `~/work/{repos,worktrees,incoming,keys}` and `data/{items,reminders,
+Creates `~/work/{repos,worktrees,keys}` and `data/{items,reminders,
 docs,retrospectives,.claude}` if missing, and the two symlinks
 (`data/CLAUDE.md`, `data/.claude/skills`) into `engine/`. `keys/` is created
 mode `700` — it's where the next step puts the sandbox's SSH credentials.

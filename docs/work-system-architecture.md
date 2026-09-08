@@ -66,8 +66,8 @@ How location encodes stage differs by type:
 Nothing that represents actual work is deleted; archiving preserves the body
 as historical record. Deletion exists only where there's demonstrably no body
 to preserve — a freshly-created item that accumulated nothing, a rejected
-backlog candidate, a mistaken reminder, the `incoming/` transfer buffer — and
-each case is enumerated in the root [[CLAUDE]]'s principle 5.
+backlog candidate, a mistaken reminder — and each case is enumerated in the
+root [[CLAUDE]]'s principle 5.
 
 ### Two actionable types, split on one question
 
@@ -124,7 +124,7 @@ tracked" below). These are the verbs of the system:
 - **`worktree`** — create/relocate/list/remove the per-item git worktrees, plus
   clone refresh and stale-branch pruning.
 - **`workinit`** — idempotently materialize or verify an instance's `~/work`
-  skeleton (the `data/` subdirectories, `repos/`, `worktrees/`, `incoming/`,
+  skeleton (the `data/` subdirectories, `repos/`, `worktrees/`,
   `keys/`, and the two symlinks into `engine/`).
 - **`sandbox`** — lifecycle for the container Claude runs inside.
 - **`work-backup`** — commit the vault (`~/work/data`) and push it offsite (run

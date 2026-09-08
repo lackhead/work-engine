@@ -26,6 +26,7 @@ Usage:
    workitem [ -v|--verbose ] [ -d|--debug ] list     [--backlog|--archived|--all] [--status <value>]
    workitem [ -v|--verbose ] [ -d|--debug ] show     <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] log      [-r|--repo <repo>] [item-slug]
+   workitem [ -v|--verbose ] [ -d|--debug ] add      <slug> <path>...
    workitem [ -v|--verbose ] [ -d|--debug ] activate <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] defer    <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] block    <slug>
@@ -63,6 +64,10 @@ Description:
             current directory is one of its worktrees; else asks whether
             it belongs to an existing item (top-level items only, picked
             interactively) or creates a new completed item to hold it.
+
+   add      Copies one or more files/directories into items/<slug>/incoming/,
+            creating that directory the first time it's used. Item must be
+            top-level or backlog (not archived).
 
    activate Moves a backlog item to items/<slug>/, status active.
 
@@ -663,6 +668,61 @@ wi_log() {
     fi
 }
 
+# Copies $2... into $1's incoming/, creating it on first use. Reports each
+# destination on success; a missing source is reported and skipped rather
+# than aborting the whole batch, so one bad path in a multi-file `add`
+# doesn't lose the rest.
+wi_add_copy() {
+    local item_dir=$1; shift
+    local incoming="$item_dir/incoming" src base dest any=false
+    for src in "$@"; do
+        if [ ! -e "$src" ]; then
+            print_error "No such file or directory: $src"
+            continue
+        fi
+        mkdir -p "$incoming"
+        base=$(basename "$src")
+        dest="$incoming/$base"
+        if cp -R "$src" "$dest"; then
+            print_success "Added → ${dest/#$HOME/\~}"
+            any=true
+        else
+            print_error "Failed to copy: $src"
+        fi
+    done
+    [ "$any" = true ]
+}
+
+wi_add() {
+    local slug='' paths=() a
+    for a in "$@"; do
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$slug" ]; then slug=$a
+                else paths+=("$a")
+                fi ;;
+        esac
+    done
+    if [ -z "$slug" ] || [ ${#paths[@]} -eq 0 ]; then
+        print_error "Usage: workitem add <slug> <path>..."
+        return 1
+    fi
+
+    local zone; zone=$(wi_locate "$slug")
+    case "$zone" in
+        top)      ;;
+        backlog)  ;;
+        archived) print_error "'$slug' is archived — can't add to a closed item."; return 1 ;;
+        *)        print_error "No item '$slug' found."; return 1 ;;
+    esac
+    local item_dir="$WORK/data/items"
+    [ "$zone" = backlog ] && item_dir="$item_dir/backlog"
+    item_dir="$item_dir/$slug"
+
+    wi_add_copy "$item_dir" "${paths[@]}"
+}
+
 # activate/defer/block/unblock deliberately never touch worktrees, unlike
 # archive/delete: the item is staying in play, just changing zone/status,
 # not leaving active circulation.
@@ -1017,6 +1077,7 @@ case "$cmd" in
     list)     wi_list "$@" ;;
     show)     wi_show "$@" ;;
     log)      wi_log "$@" ;;
+    add)      wi_add "$@" ;;
     activate) wi_activate "$@" ;;
     defer)    wi_defer "$@" ;;
     block)    wi_block "$@" ;;

@@ -135,8 +135,11 @@ The front-door file is named **`<name>.md`** (matching the directory), *not*
 
 Optional, added only when earned: **`docs/`** (item-specific documentation —
 not a duplicate of repo docs), **`artifacts/`** (diagrams, exports, binaries),
-**`bin/`** (item-scoped tooling), **`CLAUDE.md`** (per-item conventions for
-complex items), **`risks.md`** (formal risk tracking).
+**`incoming/`** (raw file drops via `workitem add <slug> <path>...` — created
+the first time it's used, never on a timer or by default; anything durable
+gets promoted into `artifacts/`/`docs/`, the rest just stays there, never
+auto-deleted), **`bin/`** (item-scoped tooling), **`CLAUDE.md`** (per-item
+conventions for complex items), **`risks.md`** (formal risk tracking).
 
 ## Session log (`log/`)
 
@@ -394,7 +397,8 @@ session returns (deliberately not `exec`'d into it — see `bin/workon`'s
 header comment): if nothing ever landed — no commits in any attached
 worktree (checked two ways, see below), no uncommitted changes, nothing
 added to the item folder beyond its front-door file (its auto-written `log/`
-breadcrumb doesn't count), and no notes written into the front-door file's
+breadcrumb doesn't count — a populated `incoming/` from `workitem add` does),
+and no notes written into the front-door file's
 own content — it runs `workitem delete <slug> --force` on it: worktree(s)
 removed, item directory gone outright, no `archived/` copy. There's nothing
 to preserve for a placeholder that was never used, which is why this is
