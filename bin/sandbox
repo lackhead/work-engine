@@ -16,6 +16,13 @@ BASE_IMAGE=work-sandbox-base:latest
 CONTAINER=work-sandbox
 VOLUME=claude-home
 CACHE_VOLUME=claude-cache
+# Host-local marker, touched on every successful build() (covers `build`,
+# `rebuild`, and the auto-build inside `up()`). Not the container's own
+# ~/.cache (that's CACHE_VOLUME, mounted inside the box) -- this is the Mac's
+# own ~/.cache, read by `workon`'s freshness check via mtime, same idiom as
+# `worktree`'s FETCH_HEAD-mtime staleness check. Ungit'd, same spirit as
+# SANDBOX_ENV below.
+BUILD_STAMP="$HOME/.cache/work-sandbox-build-stamp"
 # Shared boilerplate: WORK root, print_* output functions, trim/kebab/trunc/
 # iso_now. Resolves to lib.sh in this script's own bin/ dir. See
 # docs/bin-coding-standards.md.
@@ -88,6 +95,9 @@ Description:
    `USER root` (see the file's own template comments). No file means the
    base image ships as-is.
 
+   Every successful build/rebuild touches ~/.cache/work-sandbox-build-stamp;
+   workon warns when it's older than SANDBOX_STALE_DAYS (default 30).
+
 Examples:
    sandbox up            # start or create the container
    sandbox restart       # stop + start, no rebuild (e.g. a hung container)
@@ -129,6 +139,8 @@ build() {
         print_verbose "No overlay at $LOCAL_DOCKERFILE — $IMAGE is the base image"
         docker tag "$BASE_IMAGE" "$IMAGE"
     fi
+
+    mkdir -p "$(dirname "$BUILD_STAMP")" && touch "$BUILD_STAMP"
 }
 
 run_container() {
