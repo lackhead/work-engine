@@ -305,6 +305,23 @@ if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER"; then
     }
 fi
 
+###
+### Sandbox freshness check
+###
+# Informational only, non-fatal. The image's packages (including the pinned
+# gitleaks/trufflehog scanner versions) are only ever refreshed by an
+# explicit `sandbox build`/`rebuild` -- Docker's own layer cache means a
+# plain rebuild with an unchanged Dockerfile silently reuses old layers. The
+# marker is touched by `sandbox build`'s success path; same mtime-based
+# staleness idiom as `worktree`'s FETCH_HEAD check, so there's no date
+# arithmetic to get wrong across the Mac's BSD tools. No marker means
+# nothing's been built since this check shipped -- skip rather than guess.
+stale_marker="$HOME/.cache/work-sandbox-build-stamp"
+stale_days="${SANDBOX_STALE_DAYS:-30}"
+if [ -f "$stale_marker" ] && [ -n "$(find "$stale_marker" -mtime +"$stale_days" 2>/dev/null)" ]; then
+    print_warning "Sandbox image hasn't been rebuilt in over $stale_days days — run 'sandbox rebuild' to refresh packages and secret-scanner versions."
+fi
+
 # Resume if a session already exists for this directory. Claude stores transcripts
 # under ~/.claude/projects/<encoded-cwd>/ (the cwd with '/' and '.' turned to '-').
 # The transcript store lives on the container's named volume, so probe inside the
