@@ -51,6 +51,43 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         pandoc libreoffice-writer poppler-utils fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
+# Secret scanners — gitleaks (git-history-aware rules, fast full-history sweep)
+# and trufflehog (broad detector set, can verify a found credential is live).
+# Foundational rather than per-instance: any instance of this system points
+# Claude at repos, and "did something leak into this history" is a question
+# that comes up everywhere. Neither is packaged in Debian, so both come from
+# their upstream GitHub releases — pinned version, arch-mapped asset, verified
+# against the release's own checksums file. A bump is a one-line ARG edit plus
+# `sandbox build`. Note the two projects name architectures differently:
+# gitleaks ships x64/arm64, trufflehog amd64/arm64.
+ARG GITLEAKS_VERSION=8.30.1
+ARG TRUFFLEHOG_VERSION=3.97.4
+RUN set -eux; \
+    deb_arch="$(dpkg --print-architecture)"; \
+    case "$deb_arch" in \
+        amd64) gl_arch=x64 ;; \
+        arm64) gl_arch=arm64 ;; \
+        *) echo "unsupported architecture for gitleaks/trufflehog: $deb_arch" >&2; exit 1 ;; \
+    esac; \
+    tmp="$(mktemp -d)"; cd "$tmp"; \
+    gl_base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"; \
+    gl_tgz="gitleaks_${GITLEAKS_VERSION}_linux_${gl_arch}.tar.gz"; \
+    curl -fsSL -O "${gl_base}/${gl_tgz}"; \
+    curl -fsSL -O "${gl_base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"; \
+    grep " ${gl_tgz}$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -; \
+    tar -xzf "$gl_tgz" gitleaks; \
+    install -m 0755 gitleaks /usr/local/bin/gitleaks; \
+    th_base="https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}"; \
+    th_tgz="trufflehog_${TRUFFLEHOG_VERSION}_linux_${deb_arch}.tar.gz"; \
+    curl -fsSL -O "${th_base}/${th_tgz}"; \
+    curl -fsSL -O "${th_base}/trufflehog_${TRUFFLEHOG_VERSION}_checksums.txt"; \
+    grep " ${th_tgz}$" "trufflehog_${TRUFFLEHOG_VERSION}_checksums.txt" | sha256sum -c -; \
+    tar -xzf "$th_tgz" trufflehog; \
+    install -m 0755 trufflehog /usr/local/bin/trufflehog; \
+    cd /; rm -rf "$tmp"; \
+    gitleaks version; \
+    trufflehog --version
+
 # Non-root user whose HOME is the host's HOME path. Required: Claude Code refuses
 # --dangerously-skip-permissions (Phase 2) as root. The vault and ~/.claude are
 # overlaid by mounts at runtime; we create the mount points here so a fresh
