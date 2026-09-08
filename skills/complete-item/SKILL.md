@@ -26,8 +26,8 @@ entirely and go straight to `workitem complete`/`workitem cancel` instead
   the directory directly. The exception is an item with real history behind
   it: *why* something was abandoned after weeks of work is exactly the kind
   of thing worth recording, so this skill does support closing one out —
-  see the `**Cancelled.**` variant in step 3 and the `workitem cancel`
-  handoff in step 5. Judge by whether there's a story, not by which verb
+  see the `**Cancelled.**` variant in step 4 and the `workitem cancel`
+  handoff in step 6. Judge by whether there's a story, not by which verb
   ends up running.
 
 ## Arguments
@@ -44,14 +44,43 @@ Locate the item's front door at `items/<slug>/<slug>.md` — **top-level only**.
 If the slug is ambiguous or missing, ask.
 
 Do not resolve into `backlog/` or `archived/`. `archived/` is already closed;
-`backlog/` would fail at step 5, because `workitem complete`/`cancel` refuse
+`backlog/` would fail at step 6, because `workitem complete`/`cancel` refuse
 any item that isn't top-level (`items/CLAUDE.md`, "Attention zones") — and by
 then this skill has already written a permanent `## Retrospective` and
 rewritten `## Current state`, leaving a half-closed item stranded in the wrong
 zone. A backlog item was never active work: activate it first if it genuinely
 needs closing out, or `workitem delete` it if it's simply not going anywhere.
 
-### 2. Gather its full lifetime
+### 2. Check every worktree is merged
+
+For each repo the item has a worktree for (`worktrees/<slug>/<repo>/`),
+compare it against that repo's canonical clone's integration branch
+(`repos/<repo>`, current branch there):
+
+```bash
+git -C worktrees/<slug>/<repo> rev-list --count "<intbr>..HEAD"
+```
+
+A nonzero count means real, committed work on that branch hasn't reached the
+integration branch yet. **Stop and report — do not draft or write
+anything.** `workitem complete`/`cancel` (step 6) delete the worktree's
+branch with `--delete-branch`, which git itself refuses for an unmerged
+branch (non-destructive — the branch is left in place, not lost), but by
+then the item would already be marked `completed`/`cancelled` and archived,
+which is a lie: the item reads as done while its actual code change isn't
+integrated anywhere main pulls from. Catching this before step 4 (Draft)
+avoids that state entirely rather than leaving it for the user to notice
+later. Tell the user which repo(s) are unmerged and how many commits, and
+that merging (or opening/merging a PR) and re-running the command is the
+way forward — don't merge on their behalf without asking.
+
+This only checks merge status, not a dirty working tree (uncommitted
+changes) — git's own refusal to remove a dirty worktree is already
+non-destructive on its own, so it doesn't corrupt the item's status the way
+an unmerged branch does; leave that case to surface naturally at step 6 if
+it comes up.
+
+### 3. Gather its full lifetime
 
 Read the same sources `retrospective`'s item-scoped run reads — session
 breadcrumbs and logged notes in `items/<slug>/log/`, plus the user's own
@@ -61,7 +90,7 @@ repeated here) across every repo the item has a worktree for — but windowed
 from the item's `made:` date through today, not a parsed window phrase. This
 is the item's whole life, not a slice of it.
 
-### 3. Draft the closing content
+### 4. Draft the closing content
 
 Two pieces, both drafted but not yet written:
 
@@ -80,7 +109,7 @@ Two pieces, both drafted but not yet written:
 - **Drop `## What's next`**, if the item has one — nothing is next once an
   item is done.
 
-### 4. Write
+### 5. Write
 
 No confirm-before-writing gate here — unlike `retrospective`'s per-item
 `## Current state` proposals, write the draft straight to the file:
@@ -91,16 +120,16 @@ No confirm-before-writing gate here — unlike `retrospective`'s per-item
 - Replace `## Current state` with the finalized paragraph; remove
   `## What's next` if it was there.
 
-**Do not touch `status:` or `completed:` here.** Step 5 owns both. Setting
+**Do not touch `status:` or `completed:` here.** Step 6 owns both. Setting
 them in this step duplicates what `workitem complete` does anyway, and — more
 importantly — it is what turns a failed handoff into a corrupted item: an
 item marked `completed` whose directory never moved reads as archived to a
-human and as active to every tool. Leaving frontmatter alone until step 5
+human and as active to every tool. Leaving frontmatter alone until step 6
 means a failure at that point leaves an ordinary active item that happens to
 have its closing narrative already drafted, which is recoverable by rerunning
 the command.
 
-### 5. Hand off to archive
+### 6. Hand off to archive
 
 Run `workitem complete <slug>` (or `workitem cancel <slug>` if step 4 closed
 this out as cancelled). This is what sets `status:`, stamps `completed:` with
@@ -112,7 +141,7 @@ If it fails, stop and report — do not hand-edit the frontmatter to
 drafted; whatever blocked the command (wrong zone, a worktree that wouldn't
 remove) is what needs fixing.
 
-### 6. Print
+### 7. Print
 
 Print the `## Retrospective` and finalized `## Current state` content that
 was just written, plus the archive result (destination path, worktree(s)
