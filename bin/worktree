@@ -260,16 +260,27 @@ wt_rm() {
         branches+=("$(git -C "$slug_dir/$r" rev-parse --abbrev-ref HEAD 2>/dev/null)")
     done
 
+    # Removed independently per repo, never bailing out on the first failure:
+    # a repo that refuses (uncommitted changes, locked worktree) must not
+    # abandon its siblings mid-loop. An early `return` here used to leave an
+    # already-removed sibling's worktree gone but its branch never reaching
+    # the --delete-branch pass below (that pass never ran at all) -- exactly
+    # the kind of orphan this flag exists to prevent.
+    local removed_ok=() rc=0
     for r in "${targets[@]}"; do
         print_status "Removing worktrees/$slug/$r"
-        if ! git -C "$root/repos/$r" worktree remove "$slug_dir/$r"; then
+        if git -C "$root/repos/$r" worktree remove "$slug_dir/$r"; then
+            removed_ok+=(1)
+        else
             print_error "git refused to remove worktrees/$slug/$r (uncommitted changes or locked worktree — resolve, or 'git -C repos/$r worktree remove -f' manually)"
-            return 1
+            removed_ok+=(0)
+            rc=1
         fi
     done
 
     # Finder can drop a .DS_Store into worktrees/<slug>/ if it's ever browsed,
     # which would make rmdir see a non-empty dir and silently leave it behind.
+    # A repo left in place above means this rmdir is a harmless no-op.
     rm -f "$slug_dir/.DS_Store" 2>/dev/null
     rmdir "$slug_dir" 2>/dev/null
 
@@ -277,6 +288,10 @@ wt_rm() {
         local i=0 branch
         for r in "${targets[@]}"; do
             branch=${branches[$i]}
+            if [ "${removed_ok[$i]}" != 1 ]; then
+                i=$((i + 1))
+                continue
+            fi
             i=$((i + 1))
             if [ -z "$branch" ] || [ "$branch" = HEAD ]; then
                 print_warning "Couldn't determine branch for $r — left in place."
@@ -290,10 +305,18 @@ wt_rm() {
                 print_warning "Branch '$branch' not merged into $r's integration branch — left in place (see 'worktree prune-branches $r')"
             fi
         done
-        print_success "Done"
-    else
-        print_success "Done (branches and history left intact)"
     fi
+
+    if [ "$rc" -eq 0 ]; then
+        if [ "$delete_branch" -eq 1 ]; then
+            print_success "Done"
+        else
+            print_success "Done (branches and history left intact)"
+        fi
+    else
+        print_warning "Some worktrees under '$slug' could not be removed — see errors above."
+    fi
+    return "$rc"
 }
 
 # Relocate every worktree under worktrees/<old>/ to worktrees/<new>/ via
