@@ -20,11 +20,14 @@ ARG HOME_DIR=/Users/clake
 # Surrounding kit only: the native Claude binary is self-contained (ripgrep
 # bundled) on glibc, so this is git+ssh (the channels out), fish (interactive
 # shell), jq (catch-up hook + statusline), fzf (workitem/workreminder pickers),
-# fd/python3/less for day-to-day.
+# fd/python3/less for day-to-day, tzdata (full IANA zoneinfo db, so glibc/`date`
+# can resolve the host's zone name -- `sandbox` injects it as TZ at container
+# creation, see bin/sandbox -- and handle its DST transitions without any
+# re-injection).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl git openssh-client \
         fish jq fzf fd-find python3 python3-venv python3-pip pipx make shellcheck \
-        less procps rsync vim \
+        less procps rsync vim tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd
 
