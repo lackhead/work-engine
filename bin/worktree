@@ -85,9 +85,11 @@ Description:
 
    prune-branches finds local branches with no live worktree and sorts
    them into SAFE (an ancestor of the clone's current branch, or of a
-   branch some other live worktree has checked out) and REVIEW
-   (everything else). Without --apply it only prints the split; with
-   --apply it deletes the SAFE set and leaves REVIEW alone.
+   branch some other live worktree has checked out, or every commit on
+   it already applied to the integration branch some other way — e.g.
+   cherry-picked) and REVIEW (everything else). Without --apply it only
+   prints the split; with --apply it deletes the SAFE set and leaves
+   REVIEW alone.
 
 Examples:
    worktree add nagios Ansible feature/nagios-pushover
@@ -420,6 +422,18 @@ wt_list() {
 # --apply, which deletes (git branch -D -- safe here because ancestry was
 # already verified via merge-base, not git's own weaker "merged into current
 # HEAD" check) only the SAFE bucket; REVIEW branches are never touched.
+#
+# Ancestry alone misses a repo that pushes straight to its integration branch
+# instead of merging feature branches (a deliberate workflow some team repos
+# use, not a mistake) -- a cherry-picked or manually reapplied commit never
+# becomes an ancestor of anything, no matter how thoroughly its content
+# landed. So a branch that fails the ancestry check gets one more look via
+# `git cherry`, which compares by patch-id (the actual diff) rather than
+# commit identity: if every commit unique to the branch has an equivalent
+# already on the integration branch, it's SAFE too, just for a different
+# reason -- surfaced in the message so the two cases aren't confused. A
+# branch with some but not all commits landed this way reports the split
+# and stays REVIEW; nothing here changes what --apply is willing to delete.
 wt_prune_branches() {
     local apply=0 want='' a
     while [ $# -gt 0 ]; do
@@ -466,6 +480,7 @@ wt_prune_branches() {
 
         echo "=== $r ==="
         local branch merged_into is_live lb found_any=0
+        local cl cherry_landed cherry_total cherry_unlanded
         while IFS= read -r branch; do
             [ -n "$branch" ] || continue
             [ "$branch" = "$intbr" ] && continue
@@ -497,9 +512,47 @@ wt_prune_branches() {
                 else
                     printf '  %-6s %-32s merged into %s\n' SAFE "$branch" "$merged_into"
                 fi
+                continue
+            fi
+
+            # Not an ancestor of anything -- but a repo that pushes straight to
+            # main rather than merging feature branches (no merge commit, often
+            # a cherry-pick or a manual reapply) leaves a branch that will NEVER
+            # become an ancestor even once its content has fully landed.
+            # git cherry compares commits by patch-id instead of identity, so a
+            # reapplied commit still reads as equivalent to its origin. Only
+            # checked against the integration branch -- landing into some other
+            # live worktree branch this way is rare enough not to bother with.
+            cherry_landed=0 cherry_total=0 cherry_unlanded=false
+            if [ -n "$intbr" ]; then
+                while IFS= read -r cl; do
+                    [ -n "$cl" ] || continue
+                    cherry_total=$((cherry_total + 1))
+                    case "$cl" in
+                        -\ *) cherry_landed=$((cherry_landed + 1)) ;;
+                        +\ *) cherry_unlanded=true ;;
+                    esac
+                done < <(git -C "$repo_dir" cherry "$intbr" "$branch" 2>/dev/null)
+            fi
+
+            if [ "$cherry_total" -gt 0 ] && [ "$cherry_unlanded" = false ]; then
+                safe_count=$((safe_count + 1))
+                if [ "$apply" -eq 1 ]; then
+                    if git -C "$repo_dir" branch -D "$branch" >/dev/null 2>&1; then
+                        printf '  %-6s %-32s deleted (all %d commit(s) already applied to %s)\n' SAFE "$branch" "$cherry_total" "$intbr"
+                    else
+                        printf '  %-6s %-32s FAILED to delete (all commits already applied to %s)\n' SAFE "$branch" "$intbr"
+                    fi
+                else
+                    printf '  %-6s %-32s all %d commit(s) already applied to %s (cherry-picked, not merged)\n' SAFE "$branch" "$cherry_total" "$intbr"
+                fi
             else
                 review_count=$((review_count + 1))
-                printf '  %-6s %-32s not an ancestor of %s or any live worktree branch\n' REVIEW "$branch" "${intbr:-<none>}"
+                if [ "$cherry_total" -gt 0 ] && [ "$cherry_landed" -gt 0 ]; then
+                    printf '  %-6s %-32s %d of %d commit(s) already applied to %s -- rest outstanding\n' REVIEW "$branch" "$cherry_landed" "$cherry_total" "$intbr"
+                else
+                    printf '  %-6s %-32s not an ancestor of %s or any live worktree branch\n' REVIEW "$branch" "${intbr:-<none>}"
+                fi
             fi
         done < <(git -C "$repo_dir" for-each-ref --format='%(refname:short)' refs/heads)
 
