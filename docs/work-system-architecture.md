@@ -212,16 +212,12 @@ process now runs in the box.
 
 ## Backup
 
-All of this instance's data lives in `~/work/data` — a plain directory tree,
-backed up however you choose (git to a remote host, GitHub, Time Machine,
-rsync, whatever fits). The engine needs no backup of its own beyond its
-GitHub remote (`~/work/engine` is just a clone); `repos/`/`worktrees/` are
-regenerable team code.
-
-This job instance backs `data/` up via git to an on-prem remote, pushed
-automatically by a launchd job. That's an *instance-specific* choice, not
-part of the engine, so it's documented with the vault rather than here:
-`~/work/data/docs/work-data-backup.md`.
+`~/work/data` is the only thing that needs backing up — the engine is a
+GitHub clone, `repos/`/`worktrees/` are regenerable — for the same reason
+the sibling-repos split above keeps each piece's provenance separate. See
+`~/work/engine/docs/work-system-usage.md`'s "Backups" for the day-to-day
+commands, and `~/work/data/docs/work-data-backup.md` for this instance's
+actual remote and launchd job.
 
 ## How it's all tracked — sibling repos, not one tree
 
