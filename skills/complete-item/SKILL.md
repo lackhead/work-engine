@@ -156,17 +156,3 @@ Print the `## Retrospective` and finalized `## Current state` content that
 was just written, plus the archive result (destination path, worktree(s)
 removed if any) — the user reviews what actually landed and can amend the
 file by hand afterward if anything needs a correction.
-
-## Notes
-
-- **Persists by exception.** Every other item-scoped `retrospective` run is
-  print-only, never saved — this is the one case a closing narrative is
-  written permanently, directly into the item's own front door, because the
-  item is leaving circulation and this is its one lasting home for that
-  story.
-- **Write, then let review happen after.** No confirm-before-writing gate,
-  unlike `retrospective` — the draft is written and printed in the same
-  step; review is a look-back-and-amend, not a look-before-you-write.
-- **Not for trivial items or cancellations.** See "Scope" above — both have
-  a faster, ceremony-free path through `workitem complete`/`workitem cancel`
-  directly.

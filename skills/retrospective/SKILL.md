@@ -115,14 +115,9 @@ Collect:
   and date range (see the git filtering rule below).
 
 **An item's `log/` is the whole record — there is no second place to look.**
-Breadcrumbs predating item-owned `log/` directories once lived in a dated
-`data/diary/<YYYY>/<MM>/<DD>/` tree; those were migrated into the owning
-items' `log/` on 2026-07-30 and the tree was removed. The oldest entries may
-carry a `session-id:` key that current breadcrumbs don't — harmless, nothing
-reads it. If you encounter any other dated breadcrumb tree outside
-`items/**/log/`, treat it as a bug worth reporting rather than a source to
-read: history hiding in a second location is exactly what that migration
-removed.
+If you encounter a dated breadcrumb tree outside `items/**/log/` (a relic of
+an older layout — see `items/CLAUDE.md`'s "Session log"), treat it as a bug
+worth reporting rather than a source to read.
 
 **Cross-item run:** for every date in the window, walk every item's
 `items/**/log/` (including `archived/`, since an item's activity during the
@@ -250,16 +245,6 @@ Print the recap to stdout, plus the saved file path for cross-item runs
 
 ## Notes
 
-- **Local only — no Slack, no calendar.** The retrospective recaps captured
-  work. Things never captured (a hallway ask you didn't `workitem log`) won't
-  appear; that's the accepted trade of intentional curation.
-- **Propose, don't autonomously mutate.** Step 6 never writes into an item
-  without per-item confirmation.
-- **Read-derived.** Source of truth is each item's `log/` frontmatter (plus
-  instant `log-<timestamp>` items' front-door bodies) and git history; the
-  retrospective ranks and frames, it doesn't invent.
-- **Re-runs are safe.** The retrospective file regenerates for cross-item runs;
-  the `## Current state` write-back happens only on confirmation.
 - **Past windows are immutable.** Regenerating the current window is fine;
   treat regenerating an *old* window as fix-outright-errors-only — a
   retrospective reflects what was captured at the time.
