@@ -83,7 +83,7 @@ print_debug "Engine found at $WORK/engine"
 ###
 ### Directories — mkdir -p is naturally idempotent
 ###
-for d in repos worktrees incoming \
+for d in repos worktrees \
          data/items data/reminders data/docs data/retrospectives data/.claude; do
     if [ -d "$WORK/$d" ]; then
         print_verbose "Already present: $d/"

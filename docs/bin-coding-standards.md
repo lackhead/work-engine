@@ -167,11 +167,8 @@ container — and `lib.sh` always ships alongside the scripts (same repo, same
 `git pull`), so the resolution can't fail short of copying a lone script out of
 the tree (not a supported workflow).
 
-This replaces the older "paste the block into every script" rule. That rule was
-justified while the shared code was ~10 lines, but it grew past that (the output
-block × six scripts, plus `kebab`/`trunc`/`iso_now`) and inline copies had begun
-to drift. One source of truth means a change to the output convention — or a
-future `print_quiet` — is a single edit.
+One source of truth means a change to the output convention — or a future
+`print_quiet` — is a single edit instead of six drifting copies.
 
 **What does *not* source it:** `work-session-breadcrumb`,
 `work-session-catchup`, `work-backup`, `claude-statusline`, and the git hook
@@ -353,9 +350,8 @@ them in — don't re-inline them:
   downstream reader — `workitem list`, the skills, Obsidian — down with it. It
   also quotes bare numbers and YAML's bool/null keywords, so a title like
   `2026` or `No` round-trips as the string it was. This is the root
-  `CLAUDE.md`'s "quote values YAML would otherwise coerce" rule made mechanical
-  — the rule existed for a long time before anything implemented it, and two
-  writers were silently emitting invalid frontmatter in the meantime.
+  `CLAUDE.md`'s "quote values YAML would otherwise coerce" rule made
+  mechanical.
 
 A self-contained script that needs just one of these (the breadcrumb hook uses
 `iso_now`) keeps its own copy inline rather than sourcing `lib.sh`.

@@ -170,15 +170,7 @@ stdout so it's readable immediately, then print the `index.md` path.
 
 ## Notes
 
-- **Read-derived and local.** No Slack, calendar, or external sources — capture
-  is manual via the `work*` commands, and the dashboard only reflects what's in
-  the tree, each item's `log/`, and git. (Filing new reminders/items is
-  `workreminder` / `workitem`, not the dashboard.)
-- **Ranking is derived, upkeep-free.** No item needs a `priority:`; absence just
-  means "rank me from due + status + staleness." `priority:` is an override for
-  the rare item that warrants it.
-- **Re-runs are safe.** `index.md` is regenerated each run; the hand-owned
-  Notes block and the Latest retrospective pointer are preserved, so nothing
-  hand-authored is lost.
-- **Reminders/items are surfaced, not mutated** — the dashboard reflects current
-  frontmatter; it never changes statuses or files.
+- **Never mutates** reminders or items — only reads them. Filing new ones is
+  `workreminder`/`workitem`, not the dashboard.
+- **`priority:` is an override, not upkeep** — an item with none still ranks
+  correctly from due date, status, and staleness alone.

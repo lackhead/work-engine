@@ -80,11 +80,14 @@ if [ -n "$transcript" ] && [ -f "$transcript" ]; then
 fi
 
 # --- context window: model map, env override, lift if clearly large ---
+# Every current model has a 1M window except Haiku, which stays at 200k --
+# default to 1M and carve out the Haiku exception, rather than the reverse
+# (matching specific non-Haiku model-id substrings goes stale every release).
 win="${CLAUDE_CONTEXT_WINDOW:-}"
 if [ -z "$win" ]; then
     case "$model_id" in
-        *opus-4-8*) win=1000000 ;;
-        *)          win=200000 ;;
+        *haiku*) win=200000 ;;
+        *)       win=1000000 ;;
     esac
 fi
 [ "$big" = "true" ] && [ "$win" -lt 1000000 ] && win=1000000

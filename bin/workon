@@ -60,7 +60,11 @@ Arguments:
                      it now — for work too small or exploratory to warrant
                      even typing a slug. [title...] becomes the item title
                      (kebab-cased into the slug); omit it for an
-                     auto-generated timestamp title.
+                     auto-generated timestamp title. If a top-level item
+                     already exists under that exact slug, resumes it
+                     instead of creating a new one — so re-running the same
+                     `workon -q <title>` (e.g. via shell history) gets back
+                     into the same item rather than minting a duplicate.
 
                      Any item workon creates this run — via -q/--quick or a
                      plain `workon <newslug> -c` — is swept at session end if
@@ -152,17 +156,33 @@ item_created_this_run=false
 
 if [ "$quick" = true ]; then
     if [ ${#title_parts[@]} -gt 0 ]; then
-        slug=$(workitem create --quick "${title_parts[@]}")
+        # A title colliding with an existing top-level item under the exact
+        # slug `workitem create --quick` would generate is most often the
+        # same command re-run from shell history to get back into an
+        # earlier quick session -- not a request for a second, unrelated
+        # item of the same name. Resume it instead of minting a "-2"
+        # duplicate. A name that's genuinely free (or sitting in
+        # backlog/archived, where resuming doesn't apply) still goes
+        # through create, -2 suffix and all.
+        quick_title="$(trim "${title_parts[*]}")"
+        quick_candidate=$(kebab "$quick_title")
+        if [ -f "$root/data/items/$quick_candidate/$quick_candidate.md" ]; then
+            slug=$quick_candidate
+            print_verbose "Quick item '$slug' already exists — resuming it"
+        else
+            slug=$(workitem create --quick "${title_parts[@]}")
+            item_created_this_run=true
+        fi
     else
         slug=$(workitem create --quick)
+        item_created_this_run=true
     fi
     if [ -z "$slug" ]; then
         print_error "Could not create a quick item."
         exit 1
     fi
     itemdir="$root/data/items/$slug"
-    item_created_this_run=true
-    print_success "Quick item created: $slug"
+    [ "$item_created_this_run" = true ] && print_success "Quick item created: $slug"
 else
     if [ -f "$root/data/items/$slug/$slug.md" ]; then
         itemdir="$root/data/items/$slug"

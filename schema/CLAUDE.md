@@ -80,8 +80,6 @@ ever serve.
      completed or cancelled it is preserved work, not a candidate.
    - **Discarding a mistaken reminder** — `workreminder delete <name>`, which
      prompts, and requires `--force` non-interactively.
-   - **`incoming/`'s weekly purge** — a transfer buffer, not storage; see the
-     Directory structure section below.
    Everything else archives. Anything that has accumulated real content —
    commits, files, prose — has a body worth keeping, and there is no tooled
    path that throws one away.
@@ -192,6 +190,7 @@ ever serve.
 │   │   ├── <name>/           # every item is a directory: front door <name>.md
 │   │   │                     #   (always) + plan.md (if earned) + log/ (auto-populated)
 │   │   │                     #   log/ holds dated session breadcrumbs + workitem log entries
+│   │   │                     #   incoming/ (raw file drops via `workitem add`, if any land)
 │   │   ├── backlog/          # proposed + deferred items
 │   │   └── archived/         # items out of active circulation, including instant
 │   │                         #   "log-<timestamp>" items born straight to completed
@@ -207,28 +206,26 @@ ever serve.
 │   └── <repo-name>/         # one per repo; kept on the integration branch, not worked in directly
 ├── worktrees/              # per-item git worktrees off the canonical clones
 │   └── <slug>/<repo>/        # one checkout per active item per repo it touches
-├── keys/                   # sandbox SSH credentials + config (mode 700, ungit'd, never in a repo)
-│   ├── sandbox_github         # per-instance private key(s), whatever this instance's sandbox needs
-│   └── ssh_config             # this instance's ~/.ssh/config content — see sandbox/home/ssh_config.example
-└── incoming/               # transient host→sandbox file drop zone (ungit'd, auto-purged weekly)
+└── keys/                   # sandbox SSH credentials + config (mode 700, ungit'd, never in a repo)
+    ├── sandbox_github         # per-instance private key(s), whatever this instance's sandbox needs
+    └── ssh_config             # this instance's ~/.ssh/config content — see sandbox/home/ssh_config.example
 ```
 
 `engine/` and `data/` are separate git repos (see principle 10); `repos/`,
-`worktrees/`, `keys/`, and `incoming/` are ungit'd. For each major `data/`
+`worktrees/`, and `keys/` are ungit'd. For each major `data/`
 subdirectory, see its schema at `engine/schema/<name>/CLAUDE.md` for content
 rules, filename conventions, and frontmatter fields. The root file deliberately
 stops at one level of depth.
 
-`incoming/` is a **transfer buffer** for handing files from the host into a
-sandbox session: a drag-drop or paste only inserts a host path the container
-can't read, but anything under `~/work` is readable at the *same* path inside
-the box. So drop a file in `incoming/`, tell Claude it's there, and it can read
-it or move it into a work item. It's scratch, not storage — files are meant to
-be consumed (moved into an item's `artifacts/`/`docs/`) as they're used, and
-the sandbox sweeps anything older than a week on every start. That auto-deletion
-is one of the deletion cases principle 5 enumerates, on the same grounds as a
-freshly-created item swept for having accumulated nothing: a transfer buffer
-holds nothing worth preserving.
+Getting a file from the host into a session goes through the item itself,
+not a shared drop zone: `workitem add <slug> <path>...` copies the given
+files/directories into `items/<slug>/incoming/` (created the first time
+it's used — most items never grow one), then tell Claude it's there. Claude
+decides what's durable — worth promoting into the item's `artifacts/`/`docs/`
+— versus what can simply stay in `incoming/`; nothing there is ever deleted
+automatically. Because it lives inside the item's own directory, it's part
+of the vault like everything else under `items/<name>/` — tracked, backed
+up, never swept on a timer.
 
 `keys/` holds the sandbox container's SSH credentials and `~/.ssh/config` —
 created (mode 700) by `workinit`, otherwise entirely hand-populated, and

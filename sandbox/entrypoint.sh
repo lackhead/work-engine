@@ -55,16 +55,5 @@ else
 fi
 chown "$USER_NAME:$USER_NAME" "$CLAUDE_JSON"
 
-# Purge the transfer buffer (~/work/incoming) of stale drops on every start.
-# ~/work is bind-mounted from the host; incoming/ is ungit'd scratch, never
-# backed up, so a file dropped for hand-off but never consumed is cleared after
-# a week. Best-effort — never block startup on it. (This is the only reliable
-# "on sandbox start" hook: the login auto-start restarts the container without
-# running the host `sandbox` script, but the entrypoint always runs.)
-INCOMING="$HOME/work/incoming"
-if [ -d "$INCOMING" ]; then
-    find "$INCOMING" -mindepth 1 -mtime +7 -delete 2>/dev/null || true
-fi
-
 # Keep PID 1 alive; `docker exec` attaches the actual sessions.
 exec "$@"

@@ -149,7 +149,10 @@ What it does:
 - Resolves the item (must be a **top-level** item — not `backlog/` or
   `archived/`; offers to create it if the slug doesn't exist, or `-c/--create`
   to skip the prompt). `-q/--quick` creates a throwaway item with a generated
-  slug for work too small to name.
+  slug for work too small to name — unless a title is given and it matches an
+  existing top-level item's slug exactly, in which case that item is resumed
+  instead (so re-running the same `workon -q <title>` from shell history
+  doesn't mint a duplicate).
 - Opens the session with the **item's own folder** as the working directory —
   always, never a specific repo's worktree.
 - Attaches **every** worktree the item has via `--add-dir`, all equally
@@ -265,6 +268,8 @@ sandbox status    # image / container / volume state
 sandbox shell     # drop into a fish shell inside the box
 sandbox down      # stop it (keeps the container + the claude-home volume)
 sandbox restart   # stop then start — no rebuild (e.g. a hung container)
+sandbox recreate  # drop and recreate the container on the current image — no rebuild
+sandbox build     # build the image from ~/work/engine/sandbox/
 sandbox rebuild   # rebuild the image (--no-cache) and recreate the container
 ```
 
@@ -273,6 +278,11 @@ it if it's down. You need it mainly when:
 
 - **You changed the recipe** (`~/work/engine/sandbox/Dockerfile`, `entrypoint.sh`,
   the settings seed): `sandbox rebuild` to bake the change in.
+- **You added/changed the auth env-file** (`~/.config/claude-sandbox.env`)
+  after the container already existed: `sandbox recreate` picks it up, no
+  rebuild needed. A change to `data/sandbox/Dockerfile.local` needs
+  `sandbox build` (or `rebuild`) first — it's baked into the image, not
+  injected at container creation the way the env-file is.
 - **Something seems off:** `sandbox status`, then `sandbox shell` to look around
   inside.
 
@@ -284,19 +294,21 @@ Recreating the container loses nothing — login and transcripts live on the
 Dragging a file onto the terminal (or pasting from Finder) only inserts a
 *host* path the container can't read — the Mac filesystem isn't mounted in the
 box, except `~/work`. So to hand a file (a screenshot, a PDF, an export) to a
-session, drop it in **`~/work/incoming/`** and tell Claude it's there:
+session, copy it into the item's own `incoming/` and tell Claude it's there:
 
 ```
-> I dropped foo.png in incoming
+$ workitem add nagios ~/Desktop/foo.png
+> I added foo.png to nagios's incoming
 ```
 
-Because `~/work` is bind-mounted at the same path inside the box, Claude reads
-it directly and can move it into the relevant item
-(`items/<slug>/artifacts/` or `docs/`) if it's worth keeping. `incoming/` is
-scratch, not storage — ungit'd, never backed up, and the sandbox auto-purges
-anything older than a week on start. (Clipboard *image* paste still won't
-work — there's no clipboard bridge into the container — so the
-drop-in-`incoming` path is the way.)
+`workitem add <slug> <path>...` copies one or more files/directories into
+`items/<slug>/incoming/`, creating that directory the first time it's used
+— most items never grow one. Because `~/work` is bind-mounted at the same
+path inside the box, Claude reads it directly from there and can move it
+into `artifacts/` or `docs/` if it's worth keeping; anything left in
+`incoming/` just stays there — nothing is ever auto-deleted from it.
+(Clipboard *image* paste still won't work — there's no clipboard bridge into
+the container — so `workitem add` is the way.)
 
 ## Backups
 
@@ -322,6 +334,7 @@ scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
 | Command | Does | Runs on |
 |---------|------|---------|
 | `workitem log [-r\|--repo <repo>] [item-slug]` | Log ad-hoc work outside a session | vault |
+| `workitem add <slug> <path>...` | Copy files into an item's `incoming/` | vault |
 | `workreminder create [-i\|--item <slug>] [desc...]` | Capture a follow-up reminder | vault |
 | `workreminder promote <name> [workitem create args...]` | Turn a reminder into a work item | vault |
 | `workitem create [title...]` | Create a work item | vault |

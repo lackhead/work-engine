@@ -66,8 +66,8 @@ How location encodes stage differs by type:
 Nothing that represents actual work is deleted; archiving preserves the body
 as historical record. Deletion exists only where there's demonstrably no body
 to preserve — a freshly-created item that accumulated nothing, a rejected
-backlog candidate, a mistaken reminder, the `incoming/` transfer buffer — and
-each case is enumerated in the root [[CLAUDE]]'s principle 5.
+backlog candidate, a mistaken reminder — and each case is enumerated in the
+root [[CLAUDE]]'s principle 5.
 
 ### Two actionable types, split on one question
 
@@ -124,7 +124,7 @@ tracked" below). These are the verbs of the system:
 - **`worktree`** — create/relocate/list/remove the per-item git worktrees, plus
   clone refresh and stale-branch pruning.
 - **`workinit`** — idempotently materialize or verify an instance's `~/work`
-  skeleton (the `data/` subdirectories, `repos/`, `worktrees/`, `incoming/`,
+  skeleton (the `data/` subdirectories, `repos/`, `worktrees/`,
   `keys/`, and the two symlinks into `engine/`).
 - **`sandbox`** — lifecycle for the container Claude runs inside.
 - **`work-backup`** — commit the vault (`~/work/data`) and push it offsite (run
@@ -212,16 +212,12 @@ process now runs in the box.
 
 ## Backup
 
-All of this instance's data lives in `~/work/data` — a plain directory tree,
-backed up however you choose (git to a remote host, GitHub, Time Machine,
-rsync, whatever fits). The engine needs no backup of its own beyond its
-GitHub remote (`~/work/engine` is just a clone); `repos/`/`worktrees/` are
-regenerable team code.
-
-This job instance backs `data/` up via git to an on-prem remote, pushed
-automatically by a launchd job. That's an *instance-specific* choice, not
-part of the engine, so it's documented with the vault rather than here:
-`~/work/data/docs/work-data-backup.md`.
+`~/work/data` is the only thing that needs backing up — the engine is a
+GitHub clone, `repos/`/`worktrees/` are regenerable — for the same reason
+the sibling-repos split above keeps each piece's provenance separate. See
+`~/work/engine/docs/work-system-usage.md`'s "Backups" for the day-to-day
+commands, and `~/work/data/docs/work-data-backup.md` for this instance's
+actual remote and launchd job.
 
 ## How it's all tracked — sibling repos, not one tree
 

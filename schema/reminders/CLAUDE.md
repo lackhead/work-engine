@@ -179,26 +179,17 @@ frontmatter table above.
 
 ### Archiving (completing or cancelling)
 
-A reminder leaves active circulation by being **completed** or **cancelled**,
-and that is a single coupled transition — set the `status:` and move the file
-together:
+`workreminder complete <slug>` / `workreminder cancel <slug>` set the
+respective `status:` and move the file to `archived/` in one step, mirroring
+`workitem complete`/`workitem cancel` (see "Archive" above for why the two
+always happen together). There's no bare "archive, decide later" verb — the
+verb itself is the status decision. By hand: edit `status:` to `completed`
+or `cancelled`, then move the file to
+`~/work/data/reminders/archived/<name>.md` — both parts of the same edit.
 
-1. Edit the frontmatter `status:` to `completed` (followed up / resolved) or
-   `cancelled` (no follow-up needed after all).
-2. Move the file to `~/work/data/reminders/archived/<name>.md`.
-
-`workreminder complete <slug>` and `workreminder cancel <slug>` automate
-this — each sets the respective `status:` and moves the file in one step,
-mirroring `workitem complete`/`workitem cancel`. There's no bare "archive,
-decide later" verb: the verb itself is the status decision.
-
-Both steps always happen together — don't set `completed`/`cancelled` while
-leaving the file at the top level, and don't move a file to `archived/`
-without recording the reason in `status:`. (The only edge case is genuinely
-abandoning tracking with no opinion on outcome — prefer `cancelled` for that
-rather than inventing a third state.)
-
-The body is preserved as-is; don't rewrite history.
+For genuinely abandoning tracking with no opinion on outcome, prefer
+`cancelled` rather than inventing a third state. The body is preserved as-is
+— archiving never rewrites history.
 
 ### Deleting a reminder created in error
 
@@ -240,13 +231,7 @@ either.
   Repos are git working trees nested in the vault but conceptually
   separate — reference by path, never wikilink.
 
-## Templates
-
-The two examples below show the range — one frontmatter-only (the
-common case), one with a brief body for context that the filename
-alone wouldn't capture.
-
-### Example 1: frontmatter only
+## Template
 
 ```markdown
 ---
@@ -259,23 +244,5 @@ related-item: "[[auto-update-backstop]]"
 # Check on first paris auto-update notification
 ```
 
-### Example 2: with brief body for context
-
-```markdown
----
-created: 2026-04-30
-status: active
-source: backfill-from-log
-tags: [rocky-linux]
----
-
-# Revisit the Rocky firewall quirk from the prototype build
-
-While building the Rocky 9 prototype on 2026-04-29 I noticed
-firewalld was rejecting the SSH config push even after the rule
-was added — needed an explicit `firewall-cmd --reload` that the
-Debian path doesn't require. Worked around it for the demo. Worth
-deciding whether the Ansible role should learn to do the reload
-on Rocky, or whether this is signal that I'm hand-rolling
-something firewalld already does cleanly via a different mechanism.
-```
+Most reminders are frontmatter-only, as above; add body prose only when
+context would otherwise be lost (see "File structure" above).

@@ -45,7 +45,7 @@ Description:
    list     Display active reminders, sorted by created date;
             --archived/--all broaden the scope
 
-   show     Prints the reminder informatio — piped through $PAGER if set,
+   show     Prints the reminder information — piped through $PAGER if set,
             else plain output
 
    complete Sets status to completed and moves the reminder to
