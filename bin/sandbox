@@ -75,10 +75,14 @@ Description:
 
    A gitignored env-file at ~/.config/claude-sandbox.env (if present) is
    injected at container creation via --env-file, making CLAUDE_CODE_OAUTH_TOKEN
-   available inside for passwordless auth. This and data/sandbox/Dockerfile.local
-   (below) are only read at container *creation* — restart stops and starts
-   the same container, so it won't pick up a change to either one. Use
-   recreate for an env-file change, rebuild if the Dockerfile itself changed.
+   available inside for passwordless auth. The host's IANA timezone (read from
+   /etc/localtime) is injected the same way, as TZ — so the container's clock
+   reads the same wall time as the host and DST shifts happen on their own,
+   no re-injection needed. These, and data/sandbox/Dockerfile.local (below),
+   are only read at container *creation* — restart stops and starts the same
+   container, so it won't pick up a change to any of them. Use recreate for
+   an env-file change or a genuine host timezone change (not a DST shift),
+   rebuild if the Dockerfile itself changed.
 
    SSH credentials/config are different: they live under ~/work/keys/
    (mode 700, never in any repo — see the root CLAUDE.md and
@@ -119,6 +123,20 @@ need_docker() {
 container_exists()  { docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER"; }
 container_running() { docker ps    --format '{{.Names}}' | grep -qx "$CONTAINER"; }
 
+# Host's IANA zone name (e.g. America/Denver), read off macOS's /etc/localtime
+# symlink -- it points at /usr/share/zoneinfo/<Zone>, so stripping everything up
+# to and including "zoneinfo/" recovers the zone name itself. Empty (not an
+# error) when it can't be determined -- no symlink, or it doesn't resolve under
+# a zoneinfo dir -- so run_container() can just skip injecting TZ and let the
+# container fall back to its image default (UTC).
+host_timezone() {
+    local link
+    link=$(readlink /etc/localtime 2>/dev/null) || return 0
+    case "$link" in
+        */zoneinfo/*) printf '%s' "${link##*/zoneinfo/}" ;;
+    esac
+}
+
 ###
 ### Commands
 ###
@@ -151,6 +169,19 @@ run_container() {
         print_verbose "Injecting env-file: $SANDBOX_ENV"
     else
         print_verbose "No env-file at $SANDBOX_ENV — no oauth token injection"
+    fi
+
+    # Host timezone, as an IANA zone name rather than a fixed offset -- tzdata
+    # in the image then handles DST transitions on its own, so this only needs
+    # re-injecting (via recreate) if the host's zone itself changes, never for
+    # a DST shift.
+    local tz
+    tz="$(host_timezone)"
+    if [ -n "$tz" ]; then
+        env_args+=( -e "TZ=$tz" )
+        print_verbose "Injecting host timezone: TZ=$tz"
+    else
+        print_verbose "Could not read host timezone from /etc/localtime — container defaults to UTC"
     fi
 
     print_verbose "Creating container: name=$CONTAINER hostname=sandbox image=$IMAGE"
