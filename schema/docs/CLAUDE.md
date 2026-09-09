@@ -72,9 +72,10 @@ lifecycle signal — frontmatter doesn't need to duplicate it.
 
 `~/work/data/docs/archived/` is for documents moved out of active
 circulation but worth preserving. Archival is a directory move; no
-status edit accompanies it (there's no status field to edit).
-Archived documents stay readable but become read-only by convention
-— don't edit content under `archived/` except to fix outright errors.
+status edit accompanies it (there's no status field to edit — see
+"Lifecycle" above). Archived documents stay readable but become
+read-only by convention — don't edit content under `archived/` except
+to fix outright errors.
 
 ### Promoting to a work item
 
@@ -190,9 +191,8 @@ filenames basically *are* their titles.
 
 ### Archiving
 
-To archive a document, move the file to
-`~/work/data/docs/archived/<name>.md`. No status edit is needed — the
-location is the signal. The body is preserved as-is.
+Move the file to `~/work/data/docs/archived/<name>.md` — see "Archive"
+under Lifecycle above for what that means; nothing else to do.
 
 ### Deleting
 
@@ -201,11 +201,9 @@ default. If unsure, archive.
 
 ### Promoting to a work item
 
-When a document seeds a work item being scaffolded, decide which file
-inside the new item absorbs it (see "Promoting to a work item"
-under Lifecycle for the typical patterns). Move the file into the
-item, integrate or trim as needed, and update relevant
-cross-references. The original file leaves `~/work/data/docs/`.
+Decide which file inside the new item absorbs it, using the patterns
+under "Promoting to a work item" in Lifecycle above, then do the move
+described there.
 
 ## Cross-references
 
@@ -221,14 +219,11 @@ cross-references. The original file leaves `~/work/data/docs/`.
   the vault but conceptually separate — reference by path, never
   wikilink.
 
-## Templates
+## Template
 
-The two examples below show the range — one is a substantial
-proposal-shaped document (the canonical seed-for-a-project case),
-the other is a shorter analytical piece intended to live in `docs/`
-long-term.
-
-### Example 1: work-item proposal
+A proposal-shaped document (the canonical seed-for-a-project case) is
+typically sectioned like this; a long-lived reference piece is looser —
+whatever sections the topic calls for.
 
 ```markdown
 ---
@@ -241,54 +236,20 @@ tags: [proposal, infrastructure]
 
 ## Why
 
-The fleet of long-lived Linux servers under SCI has accumulated
-configuration drift over roughly five years of in-place upgrades and
-ad-hoc patching. Three distinct generations of base build coexist;
-roles in the Ansible repo carry conditionals to paper over the
-differences; new feature work has to verify against all three or
-risk silent skew. This is paying off badly.
+[the case for doing this]
 
 ## What
 
-Rebuild the Linux server fleet from a single current base build,
-phased over Q3, with each rebuild driven by Ansible end-to-end
-(no hand-tuning surviving the rebuild).
+[what "done" looks like]
 
 ## Open questions
 
-- Which hosts are in scope? (Production-critical SCI services
-  vs. dev/scratch hosts.)
-- How do we handle hosts with non-standard installed software not
-  yet captured in Ansible?
-- What's the cutover protocol for stateful services?
+- [...]
 
 ## What this isn't
 
-Not a re-architecture. The point is to converge the existing fleet
-on a single clean base; the application layout stays the same.
+[scope boundary, if one is worth stating]
 ```
 
-### Example 2: standalone analysis
-
-```markdown
----
-title: Notes on Canonical archive resilience
-created: 2026-05-04
-tags: [postmortem-adjacent, infrastructure]
----
-
-# Notes on Canonical archive resilience
-
-The 2026-05-01 Canonical archive DDoS exposed a pattern worth
-thinking through: our auto-update path treats apt mirror
-availability as transient, which it usually is, but a multi-day
-outage of this scale puts hosts in a state where automated
-update-or-fail logic isn't useful.
-
-The earlier draft of a "permanent stale-cache mode" was rejected as
-too much complexity for an event that's been rare. But the
-analytical question is: at what frequency or duration would the
-cost-benefit flip? Some napkin math…
-
-[continued]
-```
+This is a skeleton, not a length target — see "File structure" above for
+how substantial a real document runs.
