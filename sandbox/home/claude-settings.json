@@ -8,7 +8,9 @@
       "Read(~/.netrc)",
       "Read(~/.git-credentials)",
       "Edit(~/work/engine/**)",
-      "Edit(~/work/repos/**)"
+      "Edit(~/work/repos/**)",
+      "Write(~/work/engine/**)",
+      "Write(~/work/repos/**)"
     ],
     "ask": [
       "Bash(git push:*)"
@@ -20,6 +22,15 @@
     "SessionStart": [
       {
         "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/work/engine/bin/work-session-catchup"
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
         "hooks": [
           {
             "type": "command",

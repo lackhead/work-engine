@@ -265,6 +265,8 @@ sandbox status    # image / container / volume state
 sandbox shell     # drop into a fish shell inside the box
 sandbox down      # stop it (keeps the container + the claude-home volume)
 sandbox restart   # stop then start — no rebuild (e.g. a hung container)
+sandbox recreate  # drop and recreate the container on the current image — no rebuild
+sandbox build     # build the image from ~/work/engine/sandbox/
 sandbox rebuild   # rebuild the image (--no-cache) and recreate the container
 ```
 
@@ -273,6 +275,11 @@ it if it's down. You need it mainly when:
 
 - **You changed the recipe** (`~/work/engine/sandbox/Dockerfile`, `entrypoint.sh`,
   the settings seed): `sandbox rebuild` to bake the change in.
+- **You added/changed the auth env-file** (`~/.config/claude-sandbox.env`)
+  after the container already existed: `sandbox recreate` picks it up, no
+  rebuild needed. A change to `data/sandbox/Dockerfile.local` needs
+  `sandbox build` (or `rebuild`) first — it's baked into the image, not
+  injected at container creation the way the env-file is.
 - **Something seems off:** `sandbox status`, then `sandbox shell` to look around
   inside.
 

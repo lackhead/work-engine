@@ -171,8 +171,16 @@ wt_add() {
     print_verbose "Adding worktree: slug=$slug repo=$repo branch=$branch"
     print_debug   "Work root: $root"
 
-    # Worktrees are only set up for active (top-level) work items.
-    if [ ! -f "$root/data/items/$slug.md" ] && [ ! -f "$root/data/items/$slug/$slug.md" ]; then
+    # Worktrees are only set up for active (top-level) work items -- the
+    # directory form only. A legacy single-file item (items/<slug>.md, no
+    # directory) is refused here too, matching workon's own refusal, rather
+    # than silently accepting a form the schema no longer produces.
+    if [ -f "$root/data/items/$slug.md" ] && [ ! -f "$root/data/items/$slug/$slug.md" ]; then
+        print_error "'$slug' is a legacy single-file item (items/$slug.md, no directory)."
+        print_error "Migrate it by hand: create items/$slug/$slug.md and remove the old file."
+        return 1
+    fi
+    if [ ! -f "$root/data/items/$slug/$slug.md" ]; then
         print_error "'$slug' is not an active work item under items/ — activate it first (it may be in backlog/ or archived/)."
         return 1
     fi
