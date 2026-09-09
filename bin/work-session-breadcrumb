@@ -56,20 +56,36 @@ end_ts="$(field end)"
 since_ref="$(field since_ref)"
 [ -n "$cwd" ] || exit 0
 
-# --- derive the slug + item directory from the cwd -------------------------
-# cwd is an item folder (workon launches sessions there). Capture the zone
-# prefix too, not just the slug, so the breadcrumb lands in that item's own
-# log/ wherever it currently sits (top level, backlog/, archived/).
+# --- derive the slug from the cwd -----------------------------------------
+# cwd is an item folder (workon launches sessions there). Which zone prefix
+# matched doesn't matter beyond pulling out the slug -- the zone itself is
+# re-resolved fresh below, since cwd can be stale by session end.
 slug=""
-zone_prefix=""
 case "$cwd" in
-    "$WORK/data/items/backlog/"*)  zone_prefix="$WORK/data/items/backlog";  rest="${cwd#"$WORK"/data/items/backlog/}";  slug="${rest%%/*}" ;;
-    "$WORK/data/items/archived/"*) zone_prefix="$WORK/data/items/archived"; rest="${cwd#"$WORK"/data/items/archived/}"; slug="${rest%%/*}" ;;
-    "$WORK/data/items/"*)          zone_prefix="$WORK/data/items";          rest="${cwd#"$WORK"/data/items/}";          slug="${rest%%/*}" ;;
+    "$WORK/data/items/backlog/"*)  rest="${cwd#"$WORK"/data/items/backlog/}";  slug="${rest%%/*}" ;;
+    "$WORK/data/items/archived/"*) rest="${cwd#"$WORK"/data/items/archived/}"; slug="${rest%%/*}" ;;
+    "$WORK/data/items/"*)          rest="${cwd#"$WORK"/data/items/}";          slug="${rest%%/*}" ;;
     *) exit 0 ;;
 esac
 [ -n "$slug" ] || exit 0
-item_dir="$zone_prefix/$slug"
+
+# `cwd` reflects wherever `workon` cd'd at session *start* -- if the item
+# moved zones mid-session (most commonly: archived by the `complete-item`
+# skill running `workitem complete`/`cancel` before the interactive session
+# actually exits), that zone is now stale. Re-check all three zones for
+# whichever currently holds the front door, so the breadcrumb lands in the
+# item's real current location instead of recreating an empty,
+# already-abandoned directory at the stale path. If none currently has a
+# front door (item deleted/swept elsewhere in the meantime), there's
+# nothing left to attribute this breadcrumb to.
+item_dir=""
+for candidate in "$WORK/data/items/$slug" "$WORK/data/items/backlog/$slug" "$WORK/data/items/archived/$slug"; do
+    if [ -f "$candidate/$slug.md" ]; then
+        item_dir="$candidate"
+        break
+    fi
+done
+[ -n "$item_dir" ] || exit 0
 
 # --- timestamps ----------------------------------------------------------
 # workon supplies start/end (local). end falls back to "now" for a hand
