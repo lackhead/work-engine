@@ -380,7 +380,11 @@ repo-less session just to run a skill (`dashboard`, `retrospective`) or
 answer a question. It's a normal item in every structural sense (same
 directory, same frontmatter, same `worktree` machinery); the only difference
 is `workitem create --quick` skips every prompt (title is generated from a
-timestamp if none is given, status is always `active`/top-level).
+timestamp if none is given, status is always `active`/top-level). A given
+title that matches an existing top-level item's slug exactly resumes that
+item instead of creating another one — most often the same `workon -q
+<title>` re-run from shell history — so `--quick` doesn't always create;
+see `workon --help`.
 
 Whether an item is swept at session end has nothing to do with `--quick`
 specifically — it's keyed on whether *this* `workon` invocation is the one

@@ -149,7 +149,10 @@ What it does:
 - Resolves the item (must be a **top-level** item — not `backlog/` or
   `archived/`; offers to create it if the slug doesn't exist, or `-c/--create`
   to skip the prompt). `-q/--quick` creates a throwaway item with a generated
-  slug for work too small to name.
+  slug for work too small to name — unless a title is given and it matches an
+  existing top-level item's slug exactly, in which case that item is resumed
+  instead (so re-running the same `workon -q <title>` from shell history
+  doesn't mint a duplicate).
 - Opens the session with the **item's own folder** as the working directory —
   always, never a specific repo's worktree.
 - Attaches **every** worktree the item has via `--add-dir`, all equally
