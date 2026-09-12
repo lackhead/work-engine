@@ -53,8 +53,10 @@ Description:
             to top-level (active + blocked); --backlog/--archived/--all
             broaden the scope.
 
-   show     Prints the item's front door (<slug>.md) — piped through
-            $PAGER if set, else plain output.
+   show     Prints the item's front door (<slug>.md), plus a generated
+            "Related reminders" section listing any active reminders whose
+            related-item points at it (omitted if there are none) — piped
+            through $PAGER if set, else plain output.
 
    log      Records a note for work done outside a Claude Code session.
             Prompts for the latest commit (in the given -r/--repo, or the
@@ -276,6 +278,31 @@ wi_unique_slug() {
     printf '%s' "$slug"
 }
 
+# Echoes tab-separated (due, desc, name) rows for every ACTIVE reminder whose
+# related-item points at <slug>. Archived reminders are left out -- they're
+# already resolved, per items/CLAUDE.md's "Related reminders" -- which is why
+# this only ever looks at reminders/*.md, never reminders/archived/: active
+# and top-level are the same thing for a reminder (see reminders/CLAUDE.md).
+# Purely a grep at display time -- items carry no reverse field to keep in
+# sync.
+wi_related_reminders() {
+    local slug=$1 root="$WORK/data/reminders"
+    local needle="related-item: \"[[$slug]]\""
+    local f due desc
+    for f in "$root"/*.md; do
+        [ -f "$f" ] || continue
+        grep -qF -- "$needle" "$f" || continue
+        due=$(sed -n 's/^due: *//p' "$f" | head -1)
+        desc=$(sed -n 's/^# *//p' "$f" | head -1)
+        # "${due:--}" -- never emit an empty leading field: bash's `read`
+        # collapses runs of IFS whitespace (tab included, regardless of what
+        # else is in IFS), so a genuinely empty first field silently merges
+        # into the next one instead of round-tripping as empty. Same fix
+        # `wr_list` already uses for the same reason.
+        printf '%s\t%s\t%s\n' "${due:--}" "$desc" "$(basename "$f" .md)"
+    done
+}
+
 ###
 ### Subcommands
 ###
@@ -418,12 +445,28 @@ wi_show() {
     local dir="$root/$slug"; [ "$zone" != top ] && dir="$root/$zone/$slug"
     local front="$dir/$slug.md"
 
+    # Front door as-is, plus a generated "Related reminders" section --
+    # appended here rather than stored on the item, so it can never drift
+    # out of sync with the reminder side (see wi_related_reminders above).
+    local content; content=$(cat "$front")
+    local rows; rows=$(wi_related_reminders "$slug")
+    if [ -n "$rows" ]; then
+        content+=$'\n\n## Related reminders\n'
+        local due desc name line
+        while IFS=$'\t' read -r due desc name; do
+            [ -n "$name" ] || continue
+            line="- [[reminders/$name]] — $desc"
+            [ "$due" != '-' ] && line+=" (due $due)"
+            content+="$line"$'\n'
+        done <<< "$rows"
+    fi
+
     if [ -n "${PAGER:-}" ]; then
         # Intentionally unquoted: $PAGER commonly carries flags (e.g. "less -R"),
         # and quoting it would treat the whole string as one command name.
-        $PAGER "$front"
+        printf '%s\n' "$content" | $PAGER
     else
-        cat "$front"
+        printf '%s\n' "$content"
     fi
 }
 

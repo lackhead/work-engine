@@ -340,8 +340,9 @@ scope, but the root conventions still apply.
 - For a specific work item, its front door is the working context:
   `items/<name>/<name>.md` — read it first, along with `plan.md` when present
   and the most recent `log/` entries for detailed session-by-session history.
-  A per-item `CLAUDE.md` may exist for complex items; treat it as
-  supplementary context when present.
+  Also check for any reminders pointing back at it — see `items/CLAUDE.md`'s
+  "Related reminders". A per-item `CLAUDE.md` may exist for complex items;
+  treat it as supplementary context when present.
 
 ### Adding or updating content
 
