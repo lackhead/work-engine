@@ -43,8 +43,9 @@ Arguments:
                      remote-tracking branch is checked out, else a new
                      branch is created off --base
    --base <ref>      Base ref for a new branch (default: clone HEAD)
-   --delete-branch   (rm) Also delete the branch, but only if it's merged
-                     into the clone's current branch; left in place otherwise
+   --delete-branch   (rm) Also delete the branch if its content has landed
+                     in the clone's current branch (merge or cherry-pick);
+                     left in place otherwise
    <old-slug>        (mv) Existing worktree slug to relocate
    <new-slug>        (mv) Slug to relocate it to
    --if-stale        (refresh) Skip clones fetched within the last 24h
@@ -285,7 +286,7 @@ wt_rm() {
     rmdir "$slug_dir" 2>/dev/null
 
     if [ "$delete_branch" -eq 1 ]; then
-        local i=0 branch
+        local i=0 branch intbr cl cherry_landed cherry_total cherry_unlanded
         for r in "${targets[@]}"; do
             branch=${branches[$i]}
             if [ "${removed_ok[$i]}" != 1 ]; then
@@ -297,10 +298,49 @@ wt_rm() {
                 print_warning "Couldn't determine branch for $r — left in place."
                 continue
             fi
-            # -d (not -D): only deletes if merged into repos/$r's current
-            # (integration) branch. Refuses otherwise rather than losing work.
-            if git -C "$root/repos/$r" branch -d "$branch" >/dev/null 2>&1; then
-                print_success "Deleted branch '$branch' from $r (merged)"
+
+            intbr=$(git -C "$root/repos/$r" rev-parse --abbrev-ref HEAD 2>/dev/null)
+            [ "$intbr" = HEAD ] && intbr=''
+
+            # merge-base --is-ancestor, not git branch -d/-D's own check:
+            # -d also refuses when a branch is merged into repos/$r's
+            # current branch but not into its own @{upstream} (a feature
+            # branch whose remote was never kept in sync with later
+            # commits) -- a false negative hit in practice. Ancestry
+            # verified ourselves means -D (force) is safe here, same
+            # reasoning wt_prune_branches already uses.
+            if [ -n "$intbr" ] && git -C "$root/repos/$r" merge-base --is-ancestor "$branch" "$intbr" 2>/dev/null; then
+                if git -C "$root/repos/$r" branch -D "$branch" >/dev/null 2>&1; then
+                    print_success "Deleted branch '$branch' from $r (merged)"
+                else
+                    print_warning "Couldn't delete branch '$branch' from $r — left in place."
+                fi
+                continue
+            fi
+
+            # Not an ancestor -- but a repo that pushes straight to its
+            # integration branch instead of merging feature branches (see
+            # wt_prune_branches) leaves a branch that never becomes an
+            # ancestor even once its content has fully landed. Fall back to
+            # git cherry, which compares by patch-id rather than identity.
+            cherry_landed=0 cherry_total=0 cherry_unlanded=false
+            if [ -n "$intbr" ]; then
+                while IFS= read -r cl; do
+                    [ -n "$cl" ] || continue
+                    cherry_total=$((cherry_total + 1))
+                    case "$cl" in
+                        -\ *) cherry_landed=$((cherry_landed + 1)) ;;
+                        +\ *) cherry_unlanded=true ;;
+                    esac
+                done < <(git -C "$root/repos/$r" cherry "$intbr" "$branch" 2>/dev/null)
+            fi
+
+            if [ "$cherry_total" -gt 0 ] && [ "$cherry_unlanded" = false ]; then
+                if git -C "$root/repos/$r" branch -D "$branch" >/dev/null 2>&1; then
+                    print_success "Deleted branch '$branch' from $r (all $cherry_total commit(s) already applied to $intbr)"
+                else
+                    print_warning "Couldn't delete branch '$branch' from $r — left in place."
+                fi
             else
                 print_warning "Branch '$branch' not merged into $r's integration branch — left in place (see 'worktree prune-branches $r')"
             fi
