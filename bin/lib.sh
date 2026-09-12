@@ -129,3 +129,44 @@ yaml_scalar() {
         printf '%s' "$s"
     fi
 }
+
+# Resolve $1 to a bare YYYY-MM-DD date. Passes a literal YYYY-MM-DD straight
+# through; otherwise accepts a small set of relative forms, case-insensitive:
+# "today", "tomorrow", and weekday names (full or 3-letter, "monday"/"mon")
+# resolving to the next occurrence of that weekday with today itself
+# counting (naming today's own weekday resolves to today, not a week out).
+# Echoes the resolved date and returns 0; returns 1 with nothing echoed for
+# anything else, leaving the error message to the caller.
+#
+# Epoch arithmetic (not `date -d`/`date -v` relative parsing) so this works
+# unchanged on both GNU (Linux sandbox) and BSD (host Mac) date -- see
+# docs/bin-coding-standards.md's shebang note on the two target
+# environments. `date -r <epoch>` (BSD: epoch -> date) is tried first and
+# falls back to `date -d "@<epoch>"` (GNU) when it fails, since GNU's `-r`
+# means something else entirely (a file's mtime).
+resolve_date() {
+    local in=$1 lc offset target_dow today_dow epoch
+    [[ "$in" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && { printf '%s' "$in"; return 0; }
+
+    lc=$(printf '%s' "$in" | tr '[:upper:]' '[:lower:]')
+    case "$lc" in
+        today)         offset=0 ;;
+        tomorrow)      offset=1 ;;
+        mon|monday)    target_dow=1 ;;
+        tue|tuesday)   target_dow=2 ;;
+        wed|wednesday) target_dow=3 ;;
+        thu|thursday)  target_dow=4 ;;
+        fri|friday)    target_dow=5 ;;
+        sat|saturday)  target_dow=6 ;;
+        sun|sunday)    target_dow=7 ;;
+        *) return 1 ;;
+    esac
+
+    if [ -n "${target_dow:-}" ]; then
+        today_dow=$(date +%u)
+        offset=$(( (target_dow - today_dow + 7) % 7 ))
+    fi
+
+    epoch=$(( $(date +%s) + offset * 86400 ))
+    date -r "$epoch" +%F 2>/dev/null || date -d "@$epoch" +%F
+}
