@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# workreminder — create, list, show, complete, cancel, delete, and set due
-# dates on reminders under ~/work/data/reminders/.
+# workreminder — create, list, show, complete, cancel, delete, set due
+# dates, and manage related-item associations on reminders under
+# ~/work/data/reminders/.
 #
 # Engine tool for the work system. Lives at ~/work/engine/bin/workreminder
 # (the work-engine repo, on PATH). Companion completion:
@@ -18,7 +19,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workreminder: create, list, show, complete, cancel, delete, promote, and set due dates on reminders
+workreminder: create, list, show, complete, cancel, delete, promote, set due dates, and manage related-item associations on reminders
 
 Usage:
    workreminder [ -h|--help ]
@@ -29,6 +30,7 @@ Usage:
    workreminder [ -v|--verbose ] [ -d|--debug ] cancel   <name>
    workreminder [ -v|--verbose ] [ -d|--debug ] delete   <name> [--force]
    workreminder [ -v|--verbose ] [ -d|--debug ] due      <name> [date]
+   workreminder [ -v|--verbose ] [ -d|--debug ] item     <name> [slug|--clear]
    workreminder [ -v|--verbose ] [ -d|--debug ] promote  <name> [workitem create args...]
 
 Arguments:
@@ -61,6 +63,10 @@ Description:
    due      Sets or changes the (optional) due date (bare YYYY-MM-DD format);
             omitting the date clears any existing due date.
 
+   item     Sets the related-item association to <slug>. With no slug,
+            picks one interactively (same picker as create). --clear
+            removes the association.
+
    promote  Creates a work item (title defaults to the reminder's own
             heading unless overridden by trailing args) and completes the
             reminder, in one step.
@@ -76,6 +82,9 @@ Examples:
    workreminder cancel beta-lm-license-hague
    workreminder due check-on-mikes-pr-progress 2026-05-15
    workreminder due check-on-mikes-pr-progress
+   workreminder item check-on-mikes-pr-progress nagios
+   workreminder item check-on-mikes-pr-progress
+   workreminder item check-on-mikes-pr-progress --clear
    workreminder promote check-on-mikes-pr-progress
    workreminder promote check-on-mikes-pr-progress -b Review Mike's PR properly
 
@@ -162,6 +171,17 @@ wr_pick_item() {
     fi
 }
 
+# True (0) if <slug> resolves to an existing item file in any zone (top,
+# backlog/, archived/); false (1) otherwise. Used to warn -- not block --
+# when tagging a reminder to a slug that doesn't (yet) exist. Shared by
+# wr_create and wr_item.
+wr_item_known() {
+    local slug=$1
+    [ -f "$WORK/data/items/$slug/$slug.md" ] \
+        || [ -f "$WORK/data/items/backlog/$slug/$slug.md" ] \
+        || [ -f "$WORK/data/items/archived/$slug/$slug.md" ]
+}
+
 wr_create() {
     local item='' desc_parts=() a
     while [ $# -gt 0 ]; do
@@ -202,9 +222,7 @@ wr_create() {
     # Unconditional on $item being non-empty, exactly as before -- quick
     # mode can only populate $item via -i, so this still fires correctly
     # for -i in quick mode with zero special-casing.
-    if [ -n "$item" ] && [ ! -f "$WORK/data/items/$item/$item.md" ] \
-       && [ ! -f "$WORK/data/items/backlog/$item/$item.md" ] \
-       && [ ! -f "$WORK/data/items/archived/$item/$item.md" ]; then
+    if [ -n "$item" ] && ! wr_item_known "$item"; then
         print_warning "'$item' isn't an existing item; tagging anyway."
     fi
 
@@ -571,6 +589,70 @@ wr_due() {
     fi
 }
 
+# Set, pick, or clear a reminder's related-item association.
+#   item <name> <slug>   -- set directly (tab-completable)
+#   item <name>          -- interactive picker (same one create uses)
+#   item <name> --clear  -- remove the association
+wr_item() {
+    local name='' item='' clear=false a
+    for a in "$@"; do
+        case "$a" in
+            --clear) clear=true ;;
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$name" ]; then name=$a
+                elif [ -z "$item" ]; then item=$a
+                else print_error "Too many arguments."; return 1
+                fi ;;
+        esac
+    done
+    if [ -z "$name" ]; then
+        print_error "Usage: workreminder item <name> [slug|--clear]"; return 1
+    fi
+    if [ "$clear" = true ] && [ -n "$item" ]; then
+        print_error "--clear doesn't take a slug."; return 1
+    fi
+
+    local src
+    src="$(resolve_reminder "$name")" || {
+        print_error "No reminder '$name' found."; return 1
+    }
+
+    if [ "$clear" = true ]; then
+        if ! grep -q '^related-item:' "$src"; then
+            print_status "'$name' has no related item — nothing to clear."
+            return 0
+        fi
+        local tmp; tmp=$(mktemp)
+        sed '/^related-item:/d' "$src" > "$tmp"
+        mv "$tmp" "$src"
+        print_success "Cleared related item on ${src/#$HOME/\~}"
+        return 0
+    fi
+
+    # No slug given -- fall back to the same interactive picker `create`
+    # uses, rather than treating a bare `item <name>` as a clear the way
+    # `due` treats a bare date arg; unlike due dates, items already have a
+    # picker, so that's the more useful default and leaves --clear as the
+    # one unambiguous way to remove.
+    if [ -z "$item" ]; then
+        item=$(wr_pick_item) || return 1
+    fi
+
+    if ! wr_item_known "$item"; then
+        print_warning "'$item' isn't an existing item; tagging anyway."
+    fi
+
+    local tmp; tmp=$(mktemp)
+    if grep -q '^related-item:' "$src"; then
+        sed "s|^related-item:.*|related-item: \"[[$item]]\"|" "$src" > "$tmp"
+    else
+        awk -v i="$item" '/^status:/ { print; print "related-item: \"[[" i "]]\""; next } { print }' "$src" > "$tmp"
+    fi
+    mv "$tmp" "$src"
+    print_success "Set related item: $item on ${src/#$HOME/\~}"
+}
+
 ###
 ### Dispatch
 ###
@@ -596,6 +678,7 @@ case "$cmd" in
     cancel)   wr_cancel "$@" ;;
     delete)   wr_delete "$@" ;;
     due)      wr_due "$@" ;;
+    item)     wr_item "$@" ;;
     promote)  wr_promote "$@" ;;
     '')      printf '%s\n' "$usage" ;;
     *)       print_error "Unknown command '$cmd' (try: workreminder help)"; exit 1 ;;

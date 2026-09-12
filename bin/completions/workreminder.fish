@@ -1,4 +1,4 @@
-# Completions for `workreminder` (create/list/show/complete/cancel/delete/due/promote subcommands).
+# Completions for `workreminder` (create/list/show/complete/cancel/delete/due/item/promote subcommands).
 # Canonical location: ~/work/engine/bin/completions/workreminder.fish (the work-engine repo);
 # autoloaded via fish_complete_path → ~/work/engine/bin/completions.
 
@@ -40,7 +40,7 @@ end
 # Active reminder names (top level only), never archived/ -- archived
 # reminders are never tab-completed anywhere in this file; reaching one
 # (show, delete) means typing the name out by hand. Shared by show, complete,
-# cancel, delete, due, and promote.
+# cancel, delete, due, item, and promote.
 function __workreminder_active_names
     set -l root (__workreminder_root)/data/reminders
     test -d $root; or return
@@ -63,6 +63,7 @@ complete -c workreminder -n __fish_use_subcommand -a complete -d 'Complete a rem
 complete -c workreminder -n __fish_use_subcommand -a cancel   -d 'Cancel a reminder and archive it'
 complete -c workreminder -n __fish_use_subcommand -a delete   -d 'Delete a reminder outright'
 complete -c workreminder -n __fish_use_subcommand -a due      -d 'Set or clear a due date'
+complete -c workreminder -n __fish_use_subcommand -a item     -d 'Set, pick, or clear the related item'
 complete -c workreminder -n __fish_use_subcommand -a promote  -d 'Promote to a work item'
 
 # create [-i|--item <slug>] [description...] -- description given -> fires
@@ -97,6 +98,13 @@ complete -c workreminder -n '__fish_seen_subcommand_from due; and test (__workre
     -a '(__workreminder_active_names)' -d reminder
 complete -c workreminder -n '__fish_seen_subcommand_from due; and test (__workreminder_nargs) -eq 1' \
     -x -d 'YYYY-MM-DD (omit to clear)'
+
+# item <name> [slug|--clear] -- no slug -> interactive picker; --clear removes
+complete -c workreminder -n '__fish_seen_subcommand_from item; and test (__workreminder_nargs) -eq 0' \
+    -a '(__workreminder_active_names)' -d reminder
+complete -c workreminder -n '__fish_seen_subcommand_from item; and test (__workreminder_nargs) -eq 1' \
+    -x -a '(__workreminder_item_slugs)' -d 'related work item'
+complete -c workreminder -n '__fish_seen_subcommand_from item' -l clear -d 'Remove the related-item association'
 
 # promote <name> [workitem create args...] -- no completion attempt for the
 # pass-through args, achieved by simply not adding a rule for nargs >= 1
