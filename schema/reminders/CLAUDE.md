@@ -177,6 +177,19 @@ first), so stale ones surface naturally.
 omitting the date clears it. There is no `due-type` for reminders — see the
 frontmatter table above.
 
+### Setting, changing, or clearing the related item
+
+`workreminder item <slug> <item-slug>` sets or changes the optional
+`related-item:` field directly (`<item-slug>` is tab-completable, any
+zone). `workreminder item <slug>` with no item given picks one
+interactively — the same picker `create`'s "attach to an existing item?"
+prompt uses (`fzf`, or a numbered-menu fallback), across all three item
+zones, archived entries marked `(archived)`. `workreminder item <slug>
+--clear` removes the association entirely. Unlike `due` (where omitting the
+value clears it), a bare `item <slug>` opens the picker rather than
+clearing — `related-item:` already has a picker to fall back to, so
+`--clear` is the one unambiguous way to remove it.
+
 ### Archiving (completing or cancelling)
 
 `workreminder complete <slug>` / `workreminder cancel <slug>` set the
