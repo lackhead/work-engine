@@ -352,6 +352,12 @@ them in — don't re-inline them:
   `2026` or `No` round-trips as the string it was. This is the root
   `CLAUDE.md`'s "quote values YAML would otherwise coerce" rule made
   mechanical.
+- **`resolve_date <s>`** — resolve `s` to a bare `YYYY-MM-DD`: a literal date
+  passes through; `today`, `tomorrow`, and weekday names (`mon`/`monday`,
+  etc., case-insensitive) resolve relative to the current date. Returns 1
+  with nothing echoed for anything else — the caller reports the error.
+  Uses epoch arithmetic rather than `date -d`/`date -v` relative parsing so
+  it works unchanged on both GNU and BSD `date`.
 
 A self-contained script that needs just one of these (the breadcrumb hook uses
 `iso_now`) keeps its own copy inline rather than sourcing `lib.sh`.

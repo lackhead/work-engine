@@ -60,8 +60,9 @@ Description:
             for confirmation; --force skips the prompt and is required to
             delete non-interactively.
 
-   due      Sets or changes the (optional) due date (bare YYYY-MM-DD format);
-            omitting the date clears any existing due date.
+   due      Sets or changes the (optional) due date. Accepts YYYY-MM-DD, or
+            a relative form: today, tomorrow, a weekday name (mon, monday,
+            ...). Omitting the date clears any existing due date.
 
    item     Sets the related-item association to <slug>. With no slug,
             picks one interactively (same picker as create). --clear
@@ -81,6 +82,8 @@ Examples:
    workreminder complete check-on-mikes-pr-progress
    workreminder cancel beta-lm-license-hague
    workreminder due check-on-mikes-pr-progress 2026-05-15
+   workreminder due check-on-mikes-pr-progress monday
+   workreminder due check-on-mikes-pr-progress tomorrow
    workreminder due check-on-mikes-pr-progress
    workreminder item check-on-mikes-pr-progress nagios
    workreminder item check-on-mikes-pr-progress
@@ -564,8 +567,13 @@ wr_due() {
         print_error "No reminder '$name' found."; return 1
     }
 
-    if [ -n "$newdate" ] && ! [[ "$newdate" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-        print_error "Date must be YYYY-MM-DD."; return 1
+    if [ -n "$newdate" ]; then
+        local resolved
+        resolved=$(resolve_date "$newdate") || {
+            print_error "Date must be YYYY-MM-DD, or a relative form (today, tomorrow, a weekday name)."
+            return 1
+        }
+        newdate="$resolved"
     fi
 
     local tmp; tmp=$(mktemp)
