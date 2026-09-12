@@ -564,6 +564,18 @@ attention" = top-level (`active` + `blocked`), sorted by `due:` ascending
 is surfaced separately as "candidates / paused." `archived/` is excluded
 unless asked.
 
+### Related reminders
+
+The link is one-directional: a reminder's `related-item:` points at an item,
+but an item carries no reverse field — so there's nothing on the item side to
+keep in sync. `workitem show <slug>` surfaces this automatically: it appends
+a generated "## Related reminders" section listing every **active** reminder
+whose `related-item:` matches the slug (omitted entirely when there are
+none), by grepping `reminders/*.md` at display time — nothing is stored, so
+it can't drift. Archived reminders are left out; they're already resolved
+and rarely worth mentioning. When engaging with an item some other way (not
+through `workitem show`), do the same check by hand.
+
 ### Recording out-of-band work
 
 `workitem log [-r|--repo <repo>] [item-slug]` records a note for work that
