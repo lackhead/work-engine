@@ -1,12 +1,12 @@
 ---
 name: dashboard
-description: Answer "where does everything stand and what should I work on now" by reading work items, active reminders, each item's own log/, and worktree git activity — then regenerate ~/work/data/index.md as a ranked snapshot. Ranking is derived (due-date, status, staleness, optional priority), not hand-set. Read-derived and local — no external sources.
+description: Answer "where does everything stand and what should I work on now" by reading work items, active tasks, each item's own log/, and worktree git activity — then regenerate ~/work/data/index.md as a ranked snapshot. Ranking is derived (due-date, status, staleness, optional priority), not hand-set. Read-derived and local — no external sources.
 user_invocable: true
 ---
 
 Generate the curated front-page view of the work system and write it to
 `~/work/data/index.md`. The dashboard is **read-derived and local**: it computes
-everything from the tree (item frontmatter, reminders), each item's own `log/`
+everything from the tree (item frontmatter, tasks), each item's own `log/`
 (session breadcrumbs and logged notes), and git (worktree activity). It never
 invents state — the source of truth is frontmatter and git history, and the
 dashboard only ranks and presents it. Capture is manual (the `work*` commands);
@@ -46,9 +46,9 @@ non-heading line of the front-door body (trim to ~one clause). This becomes the
 item's blurb in `index.md` — derived, so the index doesn't need hand-written
 summaries.
 
-### 2. Read active reminders
+### 2. Read active tasks
 
-Read `~/work/data/reminders/*.md` (exclude `archived/`), keep `status: active`. Parse
+Read `~/work/data/tasks/*.md` (exclude `archived/`), keep `status: active`. Parse
 `created`, the `#` heading (human description), and `related-item` if set. Sort
 by `created` ascending (oldest first). Flag any older than `STALE_ITEM_DAYS` as
 stale.
@@ -117,7 +117,7 @@ explicit high priority).
 
 ### 5. Approaching deadlines
 
-Collect, from both items (`due`) and reminders (a date in the heading/body or a
+Collect, from both items (`due`) and tasks (a date in the heading/body or a
 `due`-like field), anything falling within `DUE_SOON_DAYS` (plus anything
 overdue). Sort ascending by date. This is a cross-cutting view, separate from
 the per-zone listings.
@@ -136,7 +136,7 @@ sections and replaces them wholesale each run:
 - `## Backlog` — `proposed` + `deferred` from `items/backlog/`, each annotated
   with its status.
 - `## Approaching deadlines` — step 5, soonest first; omit the section if empty.
-- `## Active reminders` — step 2; mark stale ones.
+- `## Active tasks` — step 2; mark stale ones.
 - `## Suggested focus` — the 1–3 picks with their "why now".
 
 The dashboard **does not touch** these regions — copy them through verbatim:
@@ -170,7 +170,7 @@ stdout so it's readable immediately, then print the `index.md` path.
 
 ## Notes
 
-- **Never mutates** reminders or items — only reads them. Filing new ones is
-  `workreminder`/`workitem`, not the dashboard.
+- **Never mutates** tasks or items — only reads them. Filing new ones is
+  `worktask`/`workitem`, not the dashboard.
 - **`priority:` is an override, not upkeep** — an item with none still ranks
   correctly from due date, status, and staleness alone.

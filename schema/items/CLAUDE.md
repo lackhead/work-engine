@@ -9,12 +9,12 @@ that gets a dedicated session — differing only in how much tracking
 scaffolding they carry. That difference is *weight*, not *type*, so they're
 one type now, with structure that scales.
 
-Work items are distinct from **reminders** (`reminders/`). The dividing line
+Work items are distinct from **tasks** (`tasks/`). The dividing line
 is operational: *does this get its own work session?* If yes, it's a work
 item; if it's just an atomic "do this / check this / don't lose this" note you
-action or flip without sitting down to work it, it's a reminder. A reminder
+action or flip without sitting down to work it, it's a task. A task
 can graduate into a work item when it earns a session — see
-`reminders/CLAUDE.md`.
+`tasks/CLAUDE.md`.
 
 Vault-wide conventions (markdown style, frontmatter rules, linking, file
 naming) live in [[CLAUDE]]. This file specifies how those apply to work items
@@ -503,7 +503,7 @@ lookups**, and the field is what repairs both:
 
 2. **Wikilinks.** Rename does **not** rewrite `[[<slug>]]` references elsewhere
    in the vault — `related-items` on other items, mentions in docs or
-   reminders, and so on are left pointing at the old name and need fixing by
+   tasks, and so on are left pointing at the old name and need fixing by
    hand. `former-slugs:` is what lets a reader (or a link checker) resolve such
    a link to the item that used to carry that name, rather than seeing only a
    dead link.
@@ -528,7 +528,7 @@ item links never include the zone:
 - **Never put the zone in a link** (`[[items/backlog/foo]]` would rot when foo
   moves). Don't write `[[items/...]]` paths at all; the bare/suffix forms
   resolve regardless of zone.
-- **Reminders:** `[[reminders/<name>]]`. **Documents:**
+- **Tasks:** `[[tasks/<name>]]`. **Documents:**
   `[[docs/<name>]]`. **Repos:** backticked paths, never wikilinks.
 
 ## How Claude should engage with work items
@@ -564,15 +564,15 @@ attention" = top-level (`active` + `blocked`), sorted by `due:` ascending
 is surfaced separately as "candidates / paused." `archived/` is excluded
 unless asked.
 
-### Related reminders
+### Related tasks
 
-The link is one-directional: a reminder's `related-item:` points at an item,
+The link is one-directional: a task's `related-item:` points at an item,
 but an item carries no reverse field — so there's nothing on the item side to
 keep in sync. `workitem show <slug>` surfaces this automatically: it appends
-a generated "## Related reminders" section listing every **active** reminder
+a generated "## Related tasks" section listing every **active** task
 whose `related-item:` matches the slug (omitted entirely when there are
-none), by grepping `reminders/*.md` at display time — nothing is stored, so
-it can't drift. Archived reminders are left out; they're already resolved
+none), by grepping `tasks/*.md` at display time — nothing is stored, so
+it can't drift. Archived tasks are left out; they're already resolved
 and rarely worth mentioning. When engaging with an item some other way (not
 through `workitem show`), do the same check by hand.
 
@@ -647,11 +647,11 @@ note creates a `log-<timestamp>` item directly there, born `completed` (see
 "Recording out-of-band work"). That's a whole lifecycle collapsed into one
 instant, not a transition.
 
-### Promoting a reminder into an item
+### Promoting a task into an item
 
-When a reminder earns a session, create the item
-(`items/<name>/<name>.md`), set the reminder's `status: completed`, and
-optionally archive the reminder. See `reminders/CLAUDE.md`.
+When a task earns a session, create the item
+(`items/<name>/<name>.md`), set the task's `status: completed`, and
+optionally archive the task. See `tasks/CLAUDE.md`.
 
 ## Template
 

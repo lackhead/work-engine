@@ -19,7 +19,7 @@ ARG HOME_DIR=/Users/clake
 
 # Surrounding kit only: the native Claude binary is self-contained (ripgrep
 # bundled) on glibc, so this is git+ssh (the channels out), fish (interactive
-# shell), jq (catch-up hook + statusline), fzf (workitem/workreminder pickers),
+# shell), jq (catch-up hook + statusline), fzf (workitem/worktask pickers),
 # fd/python3/less for day-to-day, tzdata (full IANA zoneinfo db, so glibc/`date`
 # can resolve the host's zone name -- `sandbox` injects it as TZ at container
 # creation, see bin/sandbox -- and handle its DST transitions without any

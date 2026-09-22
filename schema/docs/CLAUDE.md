@@ -8,7 +8,7 @@ position paper, a "thinking out loud" essay I want to work through
 before deciding what to do with it.
 
 The defining trait of a document is that it stands alone — it's
-readable on its own, has substantive content (more than a reminder's
+readable on its own, has substantive content (more than a task's
 filename-as-title shape), and doesn't yet have a home in any
 work item. As soon as a document becomes tied to a work item, it moves
 into that item's directory and stops being a top-level document.
@@ -16,7 +16,7 @@ into that item's directory and stops being a top-level document.
 The broader principle: `~/work/` is where all of my managed work
 lives. Code goes in repos and some work happens directly on machines,
 but at some point all of it is referred to from a work item,
-document, or reminder within `~/work/`. `~/work/data/docs/`
+document, or task within `~/work/`. `~/work/data/docs/`
 exists so that work artifacts that don't yet fit any other content
 type still have a home here rather than scattering across
 `~/Documents/` or random places.
@@ -28,8 +28,8 @@ Documents are not:
   capture with no topic to organize around is also a work item now — see
   `items/CLAUDE.md`'s "Recording out-of-band work" — not a separate content
   type to contrast against here.)
-- **Reminders** — low-overhead "this exists, don't lose it" pointers.
-  A document has substantive content; a reminder usually doesn't.
+- **Tasks** — low-overhead "this exists, don't lose it" pointers.
+  A document has substantive content; a task usually doesn't.
 - **Item-internal docs** — those live at `items/<name>/docs/`
   and are part of a specific work item. The directory name is shared
   with this directory by design; the location and the per-directory
@@ -63,7 +63,7 @@ it in `~/work/data/docs/` long-term:
   acceptable for genuine ephemera (rough drafts, false starts,
   anything where preservation has no value). When in doubt, archive.
 
-Unlike work items and reminders, documents do **not** carry a
+Unlike work items and tasks, documents do **not** carry a
 `status:` field. The document's existence in `docs/` (vs.
 `docs/archived/`, vs. having been promoted into a work item) is the
 lifecycle signal — frontmatter doesn't need to duplicate it.
@@ -165,7 +165,7 @@ up.
 Documents should be substantively populated from the start. A
 `# Title` followed by `_TODO_` is not a useful document. If there's
 not enough content to write meaningfully yet, the right move is
-usually a reminder ("come back to this when ready") or a work item
+usually a task ("come back to this when ready") or a work item
 ("write the X document"), not an empty document file.
 
 ### Surfacing documents
@@ -181,12 +181,12 @@ The docs index at `[[docs/index]]` uses the `[[path|display-text]]`
 form for entries — e.g.,
 `[[docs/roles-layout-proposal|Roles, OS, and Versioning Strategy]]`.
 This is a deliberate departure from the bare `[[path]]` form used in
-the root `[[index]]` for work items and reminders. The reason
+the root `[[index]]` for work items and tasks. The reason
 is that document filenames are topic-shorthand (e.g.,
 `roles-layout-proposal`) while document titles are the meaningful
 human-readable form ("Roles, OS, and Versioning Strategy") — readers
 benefit from seeing the title in the index, not just the filename.
-Work items and reminders don't have this gap because their
+Work items and tasks don't have this gap because their
 filenames basically *are* their titles.
 
 ### Archiving
@@ -212,7 +212,7 @@ described there.
 - **Item-internal documents:** `[[<name>/docs/<doc-name>]]`.
   Use when a standalone document needs to reference a doc that lives
   inside a specific work item.
-- **Reminders:** `[[reminders/<name>]]`.
+- **Tasks:** `[[tasks/<name>]]`.
 - **Other documents:** `[[docs/<name>]]`.
 - **Repositories:** plain backticked paths, e.g. `~/work/repos/Ansible`
   or `Ansible/bin/update-hosts`. Repos are git working trees nested in

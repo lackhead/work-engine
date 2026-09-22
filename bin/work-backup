@@ -21,7 +21,7 @@ Arguments:
    -h|--help    Show this help and exit
 
 Description:
-   Stages all changes under ~/work/data (the vault — items, reminders, docs,
+   Stages all changes under ~/work/data (the vault — items, tasks, docs,
    retrospectives, index.md; never engine/ or repos/worktrees), commits
    them, and pushes to the `origin` remote (work-backup:work-vault.git on
    sec.sci.utah.edu). A no-op when nothing changed. Built to run unattended

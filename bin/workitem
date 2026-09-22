@@ -54,7 +54,7 @@ Description:
             broaden the scope.
 
    show     Prints the item's front door (<slug>.md), plus a generated
-            "Related reminders" section listing any active reminders whose
+            "Related tasks" section listing any active tasks whose
             related-item points at it (omitted if there are none) — piped
             through $PAGER if set, else plain output.
 
@@ -278,15 +278,15 @@ wi_unique_slug() {
     printf '%s' "$slug"
 }
 
-# Echoes tab-separated (due, desc, name) rows for every ACTIVE reminder whose
-# related-item points at <slug>. Archived reminders are left out -- they're
-# already resolved, per items/CLAUDE.md's "Related reminders" -- which is why
-# this only ever looks at reminders/*.md, never reminders/archived/: active
-# and top-level are the same thing for a reminder (see reminders/CLAUDE.md).
+# Echoes tab-separated (due, desc, name) rows for every ACTIVE task whose
+# related-item points at <slug>. Archived tasks are left out -- they're
+# already resolved, per items/CLAUDE.md's "Related tasks" -- which is why
+# this only ever looks at tasks/*.md, never tasks/archived/: active
+# and top-level are the same thing for a task (see tasks/CLAUDE.md).
 # Purely a grep at display time -- items carry no reverse field to keep in
 # sync.
-wi_related_reminders() {
-    local slug=$1 root="$WORK/data/reminders"
+wi_related_tasks() {
+    local slug=$1 root="$WORK/data/tasks"
     local needle="related-item: \"[[$slug]]\""
     local f due desc
     for f in "$root"/*.md; do
@@ -298,7 +298,7 @@ wi_related_reminders() {
         # collapses runs of IFS whitespace (tab included, regardless of what
         # else is in IFS), so a genuinely empty first field silently merges
         # into the next one instead of round-tripping as empty. Same fix
-        # `wr_list` already uses for the same reason.
+        # `task_list` already uses for the same reason.
         printf '%s\t%s\t%s\n' "${due:--}" "$desc" "$(basename "$f" .md)"
     done
 }
@@ -445,17 +445,17 @@ wi_show() {
     local dir="$root/$slug"; [ "$zone" != top ] && dir="$root/$zone/$slug"
     local front="$dir/$slug.md"
 
-    # Front door as-is, plus a generated "Related reminders" section --
+    # Front door as-is, plus a generated "Related tasks" section --
     # appended here rather than stored on the item, so it can never drift
-    # out of sync with the reminder side (see wi_related_reminders above).
+    # out of sync with the task side (see wi_related_tasks above).
     local content; content=$(cat "$front")
-    local rows; rows=$(wi_related_reminders "$slug")
+    local rows; rows=$(wi_related_tasks "$slug")
     if [ -n "$rows" ]; then
-        content+=$'\n\n## Related reminders\n'
+        content+=$'\n\n## Related tasks\n'
         local due desc name line
         while IFS=$'\t' read -r due desc name; do
             [ -n "$name" ] || continue
-            line="- [[reminders/$name]] — $desc"
+            line="- [[tasks/$name]] — $desc"
             [ "$due" != '-' ] && line+=" (due $due)"
             content+="$line"$'\n'
         done <<< "$rows"
@@ -907,7 +907,7 @@ wi_cancel() {
 # independent human-readable text (see items/CLAUDE.md's naming
 # conventions). A worktree keyed to the old slug, if any, is relocated to
 # match via `worktree mv`. Does NOT rewrite [[<slug>]] wikilinks elsewhere in
-# the vault (other items' related-items, docs, reminders) -- out of scope,
+# the vault (other items' related-items, docs, tasks) -- out of scope,
 # fixed by hand.
 wi_rename() {
     local old='' new_raw='' a
