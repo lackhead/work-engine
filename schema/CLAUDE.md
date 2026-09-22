@@ -1,7 +1,7 @@
 # Work — Personal Work-Management System (root schema)
 
 `~/work/` is a structured directory for managing my work life: planning,
-work-item tracking, reminders, and daily logging. It tracks the lifecycle of
+work-item tracking, tasks, and daily logging. It tracks the lifecycle of
 work I take on, work on, and deliver. It is not a knowledge base or wiki — the
 focus is on **work**, not on arbitrary information.
 
@@ -41,7 +41,7 @@ ever serve.
    current state, *generated* by the `dashboard` skill (it leaves the
    hand-owned focus block and the retrospective pointer untouched).
 5. **Status lives in frontmatter; location encodes lifecycle stage.** The
-   canonical state of a work item or reminder is the `status:` field in its
+   canonical state of a work item or task is the `status:` field in its
    frontmatter. Location is a separate, coarser signal that differs by type:
    - **Work items** (`items/`) sit in one of three attention zones by
      directory — top level (in-flight: `active`/`blocked`), `backlog/`
@@ -52,9 +52,9 @@ ever serve.
      frontmatter-only (no move), tooled via `workitem block`/`workitem
      unblock`. See `items/CLAUDE.md` for the full set of tooled transitions
      (`activate`/`defer`/`block`/`unblock`/`complete`/`cancel`).
-   - **Reminders** (`reminders/`) use the simpler two-way split: in active
+   - **Tasks** (`tasks/`) use the simpler two-way split: in active
      circulation at the top, moved out under `archived/`. Here status and
-     location are *coupled*, not independent: a reminder is either `active`
+     location are *coupled*, not independent: a task is either `active`
      (in circulation, top level) or archived, and the `status:` value records
      *why* it was archived — `completed` (followed up / resolved) or
      `cancelled` (turned out not to need follow-up). `completed`/`cancelled`
@@ -78,13 +78,13 @@ ever serve.
      `backlog/` item that isn't going anywhere. It also works on a top-level
      item, and **refuses `archived/` outright**: once something has been
      completed or cancelled it is preserved work, not a candidate.
-   - **Discarding a mistaken reminder** — `workreminder delete <name>`, which
+   - **Discarding a mistaken task** — `worktask delete <name>`, which
      prompts, and requires `--force` non-interactively.
    Everything else archives. Anything that has accumulated real content —
    commits, files, prose — has a body worth keeping, and there is no tooled
    path that throws one away.
-6. **Two actionable types: reminders and work items, split on whether work
-   gets a session.** A reminder is an atomic note you action or flip without
+6. **Two actionable types: tasks and work items, split on whether work
+   gets a session.** A task is an atomic note you action or flip without
    sitting down to work it. A work item is something you sit down and work in
    a dedicated session; it's always a directory (front door `<name>.md`,
    always present), with `plan.md` added only as it's earned and `log/`
@@ -102,7 +102,7 @@ ever serve.
    each subdirectory's `CLAUDE.md`.
 9. **System-specific skills live at `~/work/engine/skills/`**, reachable from
    inside this vault via a symlink at `~/work/data/.claude/skills`. The current
-   roster is `dashboard` (generates the index from items / reminders / item
+   roster is `dashboard` (generates the index from items / tasks / item
    `log/` / git), `retrospective` (rolls up a window, cross-item or
    scoped to one item, and proposes a refreshed `## Current state` for items
    with material progress), and `complete-item` (closes out a finished item —
@@ -110,7 +110,7 @@ ever serve.
    state`, then hands off to `workitem complete`/`workitem cancel`; see
    `items/CLAUDE.md`'s "Completing an item"). Capture is manual via the
    `work*` shell commands
-   (`workreminder`, `workitem`) — engine tooling that lives in
+   (`worktask`, `workitem`) — engine tooling that lives in
    `~/work/engine/bin/` (shell-agnostic, on PATH), not skills. Coding
    conventions for these scripts (output functions, help format, argument
    parsing, completions) are documented at
@@ -124,7 +124,7 @@ ever serve.
 10. **The engine (this schema, the skills, the tooling) and the data (this
     vault's actual content) are separate sibling repos under `~/work`, not one
     tree.** `~/work/data/` is this instance's private content — items,
-    reminders, docs, retrospectives, `index.md` — usually its own git
+    tasks, docs, retrospectives, `index.md` — usually its own git
     repo for offsite backup, and never shared between instances (a personal
     instance gets its own `data/`, on its own machine). `~/work/engine/` is the
     shared, versioned `work-engine` repo — this file's canonical source, the
@@ -194,9 +194,9 @@ ever serve.
 │   │   ├── backlog/          # proposed + deferred items
 │   │   └── archived/         # items out of active circulation, including instant
 │   │                         #   "log-<timestamp>" items born straight to completed
-│   ├── reminders/             # atomic notes that need follow-up (no work session)
+│   ├── tasks/                 # atomic notes that need follow-up (no work session)
 │   │   ├── <desc>.md          # created: date lives in frontmatter, not the filename
-│   │   └── archived/          # reminders moved out of active circulation
+│   │   └── archived/          # tasks moved out of active circulation
 │   ├── docs/                  # standalone documents not yet tied to a work item
 │   │   ├── <topic-name>.md    # any document
 │   │   └── archived/          # documents moved out of active circulation
@@ -265,7 +265,7 @@ rules:
 - Quote values that YAML would otherwise coerce — notably zero-padded
   numbers like `"01"`.
 - Inline arrays for short, flat lists: `repos: [Ansible, Internal]`.
-- Per-content-type fields (what a work item or reminder file must carry) are
+- Per-content-type fields (what a work item or task file must carry) are
   defined in the relevant subdirectory's `CLAUDE.md`.
 
 This file and `index.md` are singletons and don't carry frontmatter; their
@@ -340,8 +340,8 @@ scope, but the root conventions still apply.
 - For a specific work item, its front door is the working context:
   `items/<name>/<name>.md` — read it first, along with `plan.md` when present
   and the most recent `log/` entries for detailed session-by-session history.
-  Also check for any reminders pointing back at it — see `items/CLAUDE.md`'s
-  "Related reminders". A per-item `CLAUDE.md` may exist for complex items;
+  Also check for any tasks pointing back at it — see `items/CLAUDE.md`'s
+  "Related tasks". A per-item `CLAUDE.md` may exist for complex items;
   treat it as supplementary context when present.
 
 ### Adding or updating content
@@ -349,11 +349,11 @@ scope, but the root conventions still apply.
 - A work item's state lives **in the item** — its front door's `## Current
   state` (the only living narrative — rewritten in place, not dated history)
   and its frontmatter; its `log/` is the raw, auto-populated record
-  underneath, not something hand-maintained. A reminder's state lives in its
+  underneath, not something hand-maintained. A task's state lives in its
   own frontmatter. Update state where the work happens; that is the source of
   truth.
 - **Do not hand-edit `index.md`, and don't worry when it looks out of date.**
-  `index.md` is *generated* by the `dashboard` skill from items + reminders +
+  `index.md` is *generated* by the `dashboard` skill from items + tasks +
   breadcrumbs + git. It is a disposable snapshot, not a maintained file, so it
   is *expected* to lag reality between dashboard runs. When an item moves
   forward, update the item — never reconcile `index.md` to match. To refresh the
@@ -364,7 +364,7 @@ scope, but the root conventions still apply.
   `top → backlog`, finish `→ archived/`), move the file or directory to the new
   zone; the `status:` frontmatter edit is a separate act that usually
   accompanies the move. The dashboard reflects it on its next run — no index
-  edit. For reminders, archiving couples the two: the `→ archived/` move and
+  edit. For tasks, archiving couples the two: the `→ archived/` move and
   the `status:` edit to `completed` or `cancelled` are the same transition
   (active → archived-with-a-reason), done together.
 - Documents have their own per-directory index at [[docs/index]] (not the root
@@ -383,7 +383,7 @@ scope, but the root conventions still apply.
 
 System-specific skills live at `~/work/engine/skills/`, symlinked into this
 vault at `~/work/data/.claude/skills`: `dashboard` (generates `index.md` from
-items / reminders / item `log/` / git), `retrospective` (rolls up a
+items / tasks / item `log/` / git), `retrospective` (rolls up a
 window — cross-item or scoped to a single item — and proposes a refreshed
 `## Current state` for items with material progress), and `complete-item`
 (closes out a finished item — drafts its permanent `## Retrospective`
@@ -392,6 +392,6 @@ complete`/`workitem cancel`).
 Read a skill's `SKILL.md` before invoking it. The old `daily-summary`, `session-capture`,
 and `standup-prep` skills are retired — superseded by the session breadcrumb
 `workon` writes, `retrospective`, and `dashboard`. Capture is manual via the
-`work*` commands (`workreminder` / `workitem`) in
+`work*` commands (`worktask` / `workitem`) in
 `~/work/engine/bin/`. General work-practice skills (useful outside this
 system) also live at `~/.claude/skills/` in dotfiles, not here.

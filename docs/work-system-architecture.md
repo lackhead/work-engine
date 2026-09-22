@@ -18,7 +18,7 @@ pattern. Where a choice isn't obvious, the "why" is called out.
 
 `~/work` is a **work-management system**: a single, structured place that tracks
 the lifecycle of work I take on, work on, and deliver — planning, work-item
-tracking, reminders, and a dated activity log.
+tracking, tasks, and a dated activity log.
 
 It is deliberately **not** a knowledge base or a wiki. The organizing question
 is always *"what work is happening, and where is it in its lifecycle?"* — not
@@ -57,7 +57,7 @@ How location encodes stage differs by type:
   (in-flight), `backlog/` (candidates / paused), `archived/` (out of
   circulation). The zone is the coarse signal; the exact `status:` is in
   frontmatter.
-- **Reminders** (`reminders/`) use a simpler two-way split — top level (active)
+- **Tasks** (`tasks/`) use a simpler two-way split — top level (active)
   vs. `archived/` — and here status and location are *coupled*: archiving sets
   the `status:` to *why* (`completed` / `cancelled`) in the same move.
 - **Documents** (`docs/`) carry no status field at all; presence in `docs/` vs.
@@ -66,7 +66,7 @@ How location encodes stage differs by type:
 Nothing that represents actual work is deleted; archiving preserves the body
 as historical record. Deletion exists only where there's demonstrably no body
 to preserve — a freshly-created item that accumulated nothing, a rejected
-backlog candidate, a mistaken reminder — and each case is enumerated in the
+backlog candidate, a mistaken task — and each case is enumerated in the
 root [[CLAUDE]]'s principle 5.
 
 ### Two actionable types, split on one question
@@ -77,12 +77,12 @@ operational, not about size:
 - **Work item** — something you sit down and work in a dedicated session. Lives
   in `items/` as a directory (front door `<slug>/<slug>.md`), accreting
   `plan.md` and a `log/` as it earns the scaffolding.
-- **Reminder** — an atomic "do this / check this / don't lose this" note you
-  action or flip *without* a work session. Lives in `reminders/`. Usually
+- **Task** — an atomic "do this / check this / don't lose this" note you
+  action or flip *without* a work session. Lives in `tasks/`. Usually
   frontmatter-only, with the filename as the description.
 
-*Does it get its own working session?* Yes → work item. No → reminder. A
-reminder that grows enough to earn a session graduates into a work item.
+*Does it get its own working session?* Yes → work item. No → task. A
+task that grows enough to earn a session graduates into a work item.
 
 ## The content types
 
@@ -92,7 +92,7 @@ frontmatter, and lifecycle:
 | Type | Lives in | What it is | Schema |
 |------|----------|-----------|--------|
 | **Work items** | `data/items/` | Work you sit down and do (or an instant record of already-done work) | `engine/schema/items/CLAUDE.md` |
-| **Reminders** | `data/reminders/` | Atomic follow-ups, no session | `engine/schema/reminders/CLAUDE.md` |
+| **Tasks** | `data/tasks/` | Atomic follow-ups, no session | `engine/schema/tasks/CLAUDE.md` |
 | **Documents** | `data/docs/` | Standalone writing not yet tied to an item | `engine/schema/docs/CLAUDE.md` |
 | **Retrospectives** | `data/retrospectives/` | Window roll-ups of every item's activity | `engine/schema/retrospectives/CLAUDE.md` |
 
@@ -115,7 +115,7 @@ Shell-agnostic `bash` executables on `PATH`, tracked in the `work-engine` repo
 (deployed to `~/work/engine/`, never hand-edited in place — see "How it's all
 tracked" below). These are the verbs of the system:
 
-- **`workreminder`** — capture a reminder.
+- **`worktask`** — capture a task.
 - **`workitem`** — create, list, and manage work items. See `workitem --help`
   for the verb roster rather than a copy of it here; the lifecycle *semantics*
   live in `schema/items/CLAUDE.md`.
@@ -153,7 +153,7 @@ than noisy. (Coding conventions for these scripts:
 
 Three LLM skills do the work that needs judgment rather than a fixed script:
 
-- **`dashboard`** — reads items, reminders, breadcrumbs, and git, ranks
+- **`dashboard`** — reads items, tasks, breadcrumbs, and git, ranks
   in-flight work, and regenerates [[index]]. It's read-derived: it ranks and
   presents what's captured, never invents state. (It owns most of `index.md` but
   leaves the hand-written "Notes / current focus" block and the retrospective
@@ -225,7 +225,7 @@ actual remote and launchd job.
 independent repos and scratch space, each owning a distinct subtree so no two
 tools ever contend for the same path:
 
-1. **`data/`** (`items/`, `reminders/`, `docs/`, `retrospectives/`,
+1. **`data/`** (`items/`, `tasks/`, `docs/`, `retrospectives/`,
    `index.md`) → the vault git repo, pushed to `work-vault.git` offsite. This
    is the backup described above. Private, per-instance — never shared between
    a job vault and a personal one.

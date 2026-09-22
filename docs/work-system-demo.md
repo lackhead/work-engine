@@ -34,11 +34,11 @@ So: Markdown for content, **YAML frontmatter** for structured fields — human-r
 ---
 
 ## Quick definitions
-- **slug** — the lowercase-kebab-case identifier for an item or reminder; also its directory/file name (`nagios`, `ad-upgrade`)
-- **vault** — `~/work/data/` — my private content: items, reminders, docs, retrospectives, etc
+- **slug** — the lowercase-kebab-case identifier for an item or task; also its directory/file name (`nagios`, `ad-upgrade`)
+- **vault** — `~/work/data/` — my private content: items, tasks, docs, retrospectives, etc
 - **sandbox** — the isolated Docker container every Claude Code session actually runs inside
 - **work item** — something you sit down and work on in a dedicated session
-- **work reminder** — an atomic note you action or flip, no session needed
+- **work task** — an atomic note you action or flip, no session needed
 
 ---
 
@@ -79,7 +79,7 @@ So: Markdown for content, **YAML frontmatter** for structured fields — human-r
 ```
 ~/work/
 ├── engine/     schema + tooling + skills (shared, versioned, `git pull`)
-├── data/       my vault — items, reminders, docs (private, per-instance)
+├── data/       my vault — items, tasks, docs (private, per-instance)
 ├── repos/      canonical clones of team code
 ├── worktrees/  one git worktree per item per repo it touches
 └── keys/       this instance's sandbox SSH keys (never in a repo)
@@ -95,9 +95,9 @@ So: Markdown for content, **YAML frontmatter** for structured fields — human-r
 ## Two things you ever act on
 - **A work item** — something you sit down and work in a dedicated Claude Code session
   - `workitem create Rework the nagios push notifications`
-- **A reminder** — an atomic note you action or flip *without* a session — "don't lose this"
-  - `workreminder create Call John back about the firewall exception`
-- The split is operational, not about size: *does it get a session?* Yes → item. No → reminder
+- **A task** — an atomic note you action or flip *without* a session — "don't lose this"
+  - `worktask create Call John back about the firewall exception`
+- The split is operational, not about size: *does it get a session?* Yes → item. No → task
 - Everything else in the system exists to support one of these two
 
 ---
@@ -107,12 +107,12 @@ So: Markdown for content, **YAML frontmatter** for structured fields — human-r
 data/
 ├── items/            work items — top level (active/blocked),
 │                     backlog/, archived/
-├── reminders/        atomic follow-ups — top level, archived/
+├── tasks/            atomic follow-ups — top level, archived/
 ├── docs/             standalone documents, not yet tied to an item
 ├── retrospectives/   window roll-ups (dated, cross-item)
 └── index.md          generated snapshot — never hand-edited
 ```
-- Reminders follow the same zone pattern as items, just simpler — two-way (active / archived) instead of three
+- Tasks follow the same zone pattern as items, just simpler — two-way (active / archived) instead of three
 - `index.md` and everything under `retrospectives/` are both produced by skills — covered in "Claude skills: dashboard and retrospective"
 
 ---
@@ -196,20 +196,22 @@ archived/ (done, out of circulation)
 
 ---
 
-## Work Reminders: lifecycle
-- `workreminder create <description>` — fire-and-forget, one line, status `active`
+## Work Tasks: lifecycle
+- `worktask create <description>` — fire-and-forget, one line, status `active`
 - `-i <slug>` attaches it to a work item; otherwise it stands alone
 - Only two states: `active` (circulating) or archived — and archiving always records *why*: `completed` (followed up) or `cancelled` (turned out not to matter)
-- `workreminder promote <name>` — graduates a reminder into a full work item when it earns a session, archiving the reminder in the same step
+- `worktask log <name> [note]` — appends a timestamped progress note, no session needed
+- `worktask promote <name>` — graduates a task into a full work item when it earns a session, archiving the task in the same step
 
 ---
 
-## Work Reminders:  command quick reference
+## Work Tasks:  command quick reference
 | Command             | Does                                              |
 | ------------------- | ------------------------------------------------- |
-| `create [desc]`     | New reminder (`-i <slug>` attaches it to an item) |
-| `list`              | Active reminders (`--archived`/`--all`)           |
-| `show <name>`       | Print a reminder                                  |
+| `create [desc]`     | New task (`-i <slug>` attaches it to an item)     |
+| `list`              | Active tasks (`--archived`/`--all`)               |
+| `show <name>`       | Print a task                                      |
+| `log <name> [note]` | Append a timestamped progress note                |
 | `complete <name>`   | Followed up → `archived/`                         |
 | `cancel <name>`     | Turned out not to matter → `archived/`            |
 | `due <name> [date]` | Set or clear the due date                         |
@@ -219,7 +221,7 @@ archived/ (done, out of circulation)
 ---
 
 ## Claude skills: dashboard and retrospective
-- `dashboard` — regenerates `index.md` (vault root — see "Inside the vault"): ranked active/blocked items, backlog, due reminders, a suggested focus. Preserves the hand-owned "Notes" block
+- `dashboard` — regenerates `index.md` (vault root — see "Inside the vault"): ranked active/blocked items, backlog, due tasks, a suggested focus. Preserves the hand-owned "Notes" block
 - `retrospective [item] <window>` — rolls up a window (`today`, `this week`, `since Tuesday`, a quarter) cross-item or scoped to a single item; cross-item runs save a dated file under `data/retrospectives/`, plus a proposed refreshed `## Current state` for items with real movement — never written without confirmation
 - Both run *inside* a Claude Code session, not as standalone scripts — and both are **read-derived**: they rank and summarize what's already captured in `log/`, commits, and frontmatter, never inventing state
 
@@ -249,7 +251,7 @@ archived/ (done, out of circulation)
 |---|---|
 | `workitem create <title>` | New work item |
 | `workitem log [slug]` | Record work done outside a session |
-| `workreminder create <desc>` | Capture a follow-up, no session needed |
+| `worktask create <desc>` | Capture a follow-up, no session needed |
 | `workon <slug> [-r repo]` | Open a Claude session for an item |
 | `worktree add <slug> <repo>` | Attach a repo to an item |
 | `workitem complete <slug>` | Close it out |
@@ -276,7 +278,7 @@ archived/ (done, out of circulation)
 1. First thing: `dashboard` — what's due, what's falling behind on its plan, where to actually start
 2. `workon nagios` → Claude session opens, worktree attached, resumes last session. I'll often have two or three `workon` sessions going at once, switching between them while one's still thinking
 3. `workitem log -r Ansible` — quick fix outside a session, one line, attaches the commit
-4. `workreminder create check the alert threshold held overnight`
+4. `worktask create check the alert threshold held overnight`
 5. End of day: `workon -q` → throwaway session just to run `retrospective today` for standup material — nothing else lands in it, so it's swept away automatically when it ends
 
 ---

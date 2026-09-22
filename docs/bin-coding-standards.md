@@ -8,7 +8,7 @@ tags: [standards, tooling]
 
 Conventions for scripts in `~/work/engine/bin/` — the engine tooling for this
 work-management system (`workon`, `worktree`, `workinit`, `sandbox`,
-`workitem`, `workreminder`, and any future scripts). The goal is a
+`workitem`, `worktask`, and any future scripts). The goal is a
 consistent experience: the same help format, the same color-coded output,
 the same option flags, regardless of which script you're using.
 
@@ -281,7 +281,7 @@ while [ $# -gt 0 ]; do
 done
 ```
 
-### Pattern 2: subcommand scripts (sandbox, worktree, workitem, workreminder)
+### Pattern 2: subcommand scripts (sandbox, worktree, workitem, worktask)
 
 Parse global flags first with a `while` that `break`s at the first
 non-flag token, then dispatch to subcommand functions with the remaining

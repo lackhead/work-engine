@@ -29,7 +29,7 @@ mkdir -p ~/work
 
 `git`, `fish`, and Docker Desktop are required. `fzf` is recommended but
 optional: it drives the interactive item picker in `workitem log` and
-`workreminder`, both of which fall back to a numbered menu without it.
+`worktask`, both of which fall back to a numbered menu without it.
 
 `jq` is **effectively required**, though it degrades unevenly rather than
 failing loudly: the session breadcrumb and the catch-up hook both carry a
@@ -95,7 +95,7 @@ git clone <your-vault-remote> ~/work/data
 workinit -v
 ```
 
-Creates `~/work/{repos,worktrees,keys}` and `data/{items,reminders,
+Creates `~/work/{repos,worktrees,keys}` and `data/{items,tasks,
 docs,retrospectives,.claude}` if missing, and the two symlinks
 (`data/CLAUDE.md`, `data/.claude/skills`) into `engine/`. `keys/` is created
 mode `700` — it's where the next step puts the sandbox's SSH credentials.

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# workreminder — create, list, show, complete, cancel, delete, set due
-# dates, and manage related-item associations on reminders under
-# ~/work/data/reminders/.
+# worktask — create, list, show, log progress, complete, cancel, delete,
+# set due dates, and manage related-item associations on tasks under
+# ~/work/data/tasks/.
 #
-# Engine tool for the work system. Lives at ~/work/engine/bin/workreminder
+# Engine tool for the work system. Lives at ~/work/engine/bin/worktask
 # (the work-engine repo, on PATH). Companion completion:
-# ~/work/engine/bin/completions/workreminder.fish.
+# ~/work/engine/bin/completions/worktask.fish.
 #
 
 set -u
@@ -19,19 +19,20 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 IFS='' read -r -d '' usage <<"EOF"
 
-workreminder: create, list, show, complete, cancel, delete, promote, set due dates, and manage related-item associations on reminders
+worktask: create, list, show, log progress, complete, cancel, delete, promote, set due dates, and manage related-item associations on tasks
 
 Usage:
-   workreminder [ -h|--help ]
-   workreminder [ -v|--verbose ] [ -d|--debug ] create   [-i|--item <slug>] [description...]
-   workreminder [ -v|--verbose ] [ -d|--debug ] list     [--archived|--all]
-   workreminder [ -v|--verbose ] [ -d|--debug ] show     <name>
-   workreminder [ -v|--verbose ] [ -d|--debug ] complete <name>
-   workreminder [ -v|--verbose ] [ -d|--debug ] cancel   <name>
-   workreminder [ -v|--verbose ] [ -d|--debug ] delete   <name> [--force]
-   workreminder [ -v|--verbose ] [ -d|--debug ] due      <name> [date]
-   workreminder [ -v|--verbose ] [ -d|--debug ] item     <name> [slug|--clear]
-   workreminder [ -v|--verbose ] [ -d|--debug ] promote  <name> [workitem create args...]
+   worktask [ -h|--help ]
+   worktask [ -v|--verbose ] [ -d|--debug ] create   [-i|--item <slug>] [description...]
+   worktask [ -v|--verbose ] [ -d|--debug ] list     [--archived|--all]
+   worktask [ -v|--verbose ] [ -d|--debug ] show     <name>
+   worktask [ -v|--verbose ] [ -d|--debug ] log      <name> [note...]
+   worktask [ -v|--verbose ] [ -d|--debug ] complete <name>
+   worktask [ -v|--verbose ] [ -d|--debug ] cancel   <name>
+   worktask [ -v|--verbose ] [ -d|--debug ] delete   <name> [--force]
+   worktask [ -v|--verbose ] [ -d|--debug ] due      <name> [date]
+   worktask [ -v|--verbose ] [ -d|--debug ] item     <name> [slug|--clear]
+   worktask [ -v|--verbose ] [ -d|--debug ] promote  <name> [workitem create args...]
 
 Arguments:
    -h|--help     Show what you are seeing right now
@@ -39,24 +40,28 @@ Arguments:
    -d|--debug    Show diagnostic detail (implies --verbose)
 
 Description:
-   create   With a description given, creates reminders/<slug>.md
+   create   With a description given, creates tasks/<slug>.md
             immediately, no prompts. With none, prompts for the
             description, whether to attach an existing item (picked
             interactively), and a slug to confirm.
 
-   list     Display active reminders, sorted by created date;
+   list     Display active tasks, sorted by created date;
             --archived/--all broaden the scope
 
-   show     Prints the reminder information — piped through $PAGER if set,
+   show     Prints the task information — piped through $PAGER if set,
             else plain output
 
-   complete Sets status to completed and moves the reminder to
-            reminders/archived/.
+   log      Appends a timestamped note to the task's ## Log section. With
+            a note given, records it immediately; with none, prompts for
+            one. Works on active or archived tasks.
 
-   cancel   Sets status to cancelled and moves the reminder to
-            reminders/archived/.
+   complete Sets status to completed and moves the task to
+            tasks/archived/.
 
-   delete   Removes a reminder outright (delete from inventory). Prompts
+   cancel   Sets status to cancelled and moves the task to
+            tasks/archived/.
+
+   delete   Removes a task outright (delete from inventory). Prompts
             for confirmation; --force skips the prompt and is required to
             delete non-interactively.
 
@@ -68,35 +73,37 @@ Description:
             picks one interactively (same picker as create). --clear
             removes the association.
 
-   promote  Creates a work item (title defaults to the reminder's own
+   promote  Creates a work item (title defaults to the task's own
             heading unless overridden by trailing args) and completes the
-            reminder, in one step.
+            task, in one step.
 
 Examples:
-   workreminder create
-   workreminder create -i nagios
-   workreminder create Call John back about the firewall exception
-   workreminder list
-   workreminder list --all
-   workreminder show check-on-mikes-pr-progress
-   workreminder complete check-on-mikes-pr-progress
-   workreminder cancel beta-lm-license-hague
-   workreminder due check-on-mikes-pr-progress 2026-05-15
-   workreminder due check-on-mikes-pr-progress monday
-   workreminder due check-on-mikes-pr-progress tomorrow
-   workreminder due check-on-mikes-pr-progress
-   workreminder item check-on-mikes-pr-progress nagios
-   workreminder item check-on-mikes-pr-progress
-   workreminder item check-on-mikes-pr-progress --clear
-   workreminder promote check-on-mikes-pr-progress
-   workreminder promote check-on-mikes-pr-progress -b Review Mike's PR properly
+   worktask create
+   worktask create -i nagios
+   worktask create Call John back about the firewall exception
+   worktask list
+   worktask list --all
+   worktask show check-on-mikes-pr-progress
+   worktask log check-on-mikes-pr-progress
+   worktask log check-on-mikes-pr-progress Called Friday, no answer
+   worktask complete check-on-mikes-pr-progress
+   worktask cancel beta-lm-license-hague
+   worktask due check-on-mikes-pr-progress 2026-05-15
+   worktask due check-on-mikes-pr-progress monday
+   worktask due check-on-mikes-pr-progress tomorrow
+   worktask due check-on-mikes-pr-progress
+   worktask item check-on-mikes-pr-progress nagios
+   worktask item check-on-mikes-pr-progress
+   worktask item check-on-mikes-pr-progress --clear
+   worktask promote check-on-mikes-pr-progress
+   worktask promote check-on-mikes-pr-progress -b Review Mike's PR properly
 
 EOF
 
-# Resolve a reminder name to its full path, checking both zones. Echoes the
+# Resolve a task name to its full path, checking both zones. Echoes the
 # path and returns 0 if found; returns 1 with no output otherwise.
-resolve_reminder() {
-    local name=$1 root="$WORK/data/reminders"
+resolve_task() {
+    local name=$1 root="$WORK/data/tasks"
     if [ -f "$root/$name.md" ]; then
         printf '%s' "$root/$name.md"; return 0
     elif [ -f "$root/archived/$name.md" ]; then
@@ -109,7 +116,7 @@ resolve_reminder() {
 ### Subcommands
 ###
 # Interactive picker over item slugs across all three zones (top-level,
-# backlog/, archived/) -- a reminder's related-item is a soft cross-
+# backlog/, archived/) -- a task's related-item is a soft cross-
 # reference, not a write target the way workitem log's resolution is, so
 # unlike wi_log_pick_item this deliberately doesn't exclude backlog/archived.
 # fzf if available, else a numbered-menu fallback (copied, not shared --
@@ -118,7 +125,7 @@ resolve_reminder() {
 # shape wi_log_pick_item uses). Echoes the chosen slug on stdout; a clean
 # cancel (empty fzf selection, or a blank fallback answer) prints a status
 # line and returns 1 with nothing echoed -- never an error.
-wr_pick_item() {
+task_pick_item() {
     local root="$WORK/data/items" slugs=() titles=() zones=() p slug title_f z dir
     for z in '' backlog/ archived/; do
         dir="$root/$z"
@@ -176,16 +183,16 @@ wr_pick_item() {
 
 # True (0) if <slug> resolves to an existing item file in any zone (top,
 # backlog/, archived/); false (1) otherwise. Used to warn -- not block --
-# when tagging a reminder to a slug that doesn't (yet) exist. Shared by
-# wr_create and wr_item.
-wr_item_known() {
+# when tagging a task to a slug that doesn't (yet) exist. Shared by
+# task_create and task_item.
+task_item_known() {
     local slug=$1
     [ -f "$WORK/data/items/$slug/$slug.md" ] \
         || [ -f "$WORK/data/items/backlog/$slug/$slug.md" ] \
         || [ -f "$WORK/data/items/archived/$slug/$slug.md" ]
 }
 
-wr_create() {
+task_create() {
     local item='' desc_parts=() a
     while [ $# -gt 0 ]; do
         a=$1
@@ -209,7 +216,7 @@ wr_create() {
     if [ -n "$desc" ]; then
         quick=true
     else
-        read -r -p "reminder: " desc
+        read -r -p "task: " desc
         desc="$(trim "$desc")"
         if [ -z "$desc" ]; then
             print_error "Empty description — nothing created."; return 1
@@ -219,13 +226,13 @@ wr_create() {
     if [ -z "$item" ] && [ "$quick" = false ]; then
         read -r -p "Attach to an existing item? [y/N] " reply
         if printf '%s' "$reply" | grep -qiE '^y'; then
-            item=$(wr_pick_item) || item=''
+            item=$(task_pick_item) || item=''
         fi
     fi
     # Unconditional on $item being non-empty, exactly as before -- quick
     # mode can only populate $item via -i, so this still fires correctly
     # for -i in quick mode with zero special-casing.
-    if [ -n "$item" ] && ! wr_item_known "$item"; then
+    if [ -n "$item" ] && ! task_item_known "$item"; then
         print_warning "'$item' isn't an existing item; tagging anyway."
     fi
 
@@ -251,7 +258,7 @@ wr_create() {
     # once slugs are truncated/short, two unrelated descriptions legitimately
     # landing on the same slug is expected, not an error.
     local base="$slug" n=1
-    while [ -e "$WORK/data/reminders/$slug.md" ] || [ -e "$WORK/data/reminders/archived/$slug.md" ]; do
+    while [ -e "$WORK/data/tasks/$slug.md" ] || [ -e "$WORK/data/tasks/archived/$slug.md" ]; do
         n=$((n + 1))
         slug="$base-$n"
     done
@@ -259,8 +266,8 @@ wr_create() {
 
     local date_str file
     date_str=$(date +%Y-%m-%d)
-    file="$WORK/data/reminders/$slug.md"
-    print_verbose "Creating reminder: $file"
+    file="$WORK/data/tasks/$slug.md"
+    print_verbose "Creating task: $file"
 
     {
         echo "---"
@@ -280,7 +287,7 @@ wr_create() {
     print_success "Created → ${file/#$HOME/\~}"
 }
 
-wr_list() {
+task_list() {
     local scope=active a
     while [ $# -gt 0 ]; do
         a=$1
@@ -293,7 +300,7 @@ wr_list() {
         shift
     done
 
-    local root="$WORK/data/reminders"
+    local root="$WORK/data/tasks"
     local show_status=false
     [ "$scope" != active ] && show_status=true
 
@@ -344,7 +351,7 @@ wr_list() {
     done < <(printf '%s' "$rows" | sort -t $'\t' -k1,1)
 }
 
-wr_show() {
+task_show() {
     local name='' a
     for a in "$@"; do
         case "$a" in
@@ -356,12 +363,12 @@ wr_show() {
         esac
     done
     if [ -z "$name" ]; then
-        print_error "Usage: workreminder show <name>"; return 1
+        print_error "Usage: worktask show <name>"; return 1
     fi
 
     local src
-    src="$(resolve_reminder "$name")" || {
-        print_error "No reminder '$name' found."; return 1
+    src="$(resolve_task "$name")" || {
+        print_error "No task '$name' found."; return 1
     }
 
     if [ -n "${PAGER:-}" ]; then
@@ -373,16 +380,69 @@ wr_show() {
     fi
 }
 
-wr_finish() {
+# Append a timestamped entry to the task's ## Log section. A note given on
+# the command line is recorded immediately (fire-and-forget, same spirit as
+# `create`'s quick add); omitted, falls back to a single-line prompt (same
+# shape as workitem's wi_log_read_note). Works against active or archived
+# tasks alike -- a wrap-up note at the moment of completion is a legitimate
+# use, and resolve_task already searches both zones.
+#
+# ## Log is documented as always the last section of a task file, so a new
+# entry is simply appended to the end of the file -- no parsing back into an
+# existing section. Append-only, matching the vault's log-is-immutable
+# convention: entries are never edited or reordered after the fact.
+task_log() {
+    local name='' note_parts=() a
+    while [ $# -gt 0 ]; do
+        a=$1
+        case "$a" in
+            -*) print_error "Unknown option: $a"; return 1 ;;
+            *)
+                if [ -z "$name" ]; then name=$a
+                else note_parts+=("$a")
+                fi ;;
+        esac
+        shift
+    done
+    if [ -z "$name" ]; then
+        print_error "Usage: worktask log <name> [note...]"; return 1
+    fi
+
+    local src
+    src="$(resolve_task "$name")" || {
+        print_error "No task '$name' found."; return 1
+    }
+
+    local note=''
+    [ ${#note_parts[@]} -gt 0 ] && note="${note_parts[*]}"
+    note="$(trim "$note")"
+    if [ -z "$note" ]; then
+        read -r -p "log: " note
+        note="$(trim "$note")"
+        if [ -z "$note" ]; then
+            print_error "Empty note — nothing recorded."; return 1
+        fi
+    fi
+
+    local ts; ts=$(iso_now)
+    if grep -q '^## Log$' "$src"; then
+        printf -- '- %s: %s\n' "$ts" "$note" >> "$src"
+    else
+        printf '\n## Log\n\n- %s: %s\n' "$ts" "$note" >> "$src"
+    fi
+    print_success "Logged to ${src/#$HOME/\~}"
+}
+
+task_finish() {
     local name=$1 newstatus=$2
 
-    local root="$WORK/data/reminders"
+    local root="$WORK/data/tasks"
     if [ -f "$root/archived/$name.md" ]; then
         print_error "'$name' is already archived."; return 1
     fi
     local src="$root/$name.md"
     if [ ! -f "$src" ]; then
-        print_error "No reminder '$name' found."; return 1
+        print_error "No task '$name' found."; return 1
     fi
 
     local tmp; tmp=$(mktemp)
@@ -400,25 +460,25 @@ wr_finish() {
     mkdir -p "$root/archived"
     local dest="$root/archived/$name.md"
     if [ -e "$dest" ]; then
-        print_error "Target already exists: reminders/archived/$name.md"; return 1
+        print_error "Target already exists: tasks/archived/$name.md"; return 1
     fi
     if git -C "$WORK/data" rev-parse --git-dir >/dev/null 2>&1 \
-       && [ -n "$(git -C "$WORK/data" ls-files "reminders/$name.md")" ]; then
-        git -C "$WORK/data" mv "reminders/$name.md" "reminders/archived/$name.md" || {
-            print_error "Move to reminders/archived/$name.md failed — reminder left in place."
+       && [ -n "$(git -C "$WORK/data" ls-files "tasks/$name.md")" ]; then
+        git -C "$WORK/data" mv "tasks/$name.md" "tasks/archived/$name.md" || {
+            print_error "Move to tasks/archived/$name.md failed — task left in place."
             return 1
         }
     else
         mv "$src" "$dest" || {
-            print_error "Move to reminders/archived/$name.md failed — reminder left in place."
+            print_error "Move to tasks/archived/$name.md failed — task left in place."
             return 1
         }
     fi
 
-    print_success "Archived → reminders/archived/$name.md ($newstatus)"
+    print_success "Archived → tasks/archived/$name.md ($newstatus)"
 }
 
-wr_complete() {
+task_complete() {
     local name='' a
     for a in "$@"; do
         case "$a" in
@@ -430,12 +490,12 @@ wr_complete() {
         esac
     done
     if [ -z "$name" ]; then
-        print_error "Usage: workreminder complete <name>"; return 1
+        print_error "Usage: worktask complete <name>"; return 1
     fi
-    wr_finish "$name" completed
+    task_finish "$name" completed
 }
 
-wr_cancel() {
+task_cancel() {
     local name='' a
     for a in "$@"; do
         case "$a" in
@@ -447,9 +507,9 @@ wr_cancel() {
         esac
     done
     if [ -z "$name" ]; then
-        print_error "Usage: workreminder cancel <name>"; return 1
+        print_error "Usage: worktask cancel <name>"; return 1
     fi
-    wr_finish "$name" cancelled
+    task_finish "$name" cancelled
 }
 
 # Argument parsing here is deliberately different from every other
@@ -458,22 +518,22 @@ wr_cancel() {
 # `workitem create` with zero interpretation -- those are workitem's own
 # flags, not this command's, so this is a one-shift-then-take-the-rest
 # parse, not a case-loop rejecting `-*`.
-wr_promote() {
+task_promote() {
     if [ $# -eq 0 ]; then
-        print_error "Usage: workreminder promote <name> [workitem create args...]"; return 1
+        print_error "Usage: worktask promote <name> [workitem create args...]"; return 1
     fi
     local name=$1
     shift
     local create_args=("$@")
 
-    local root="$WORK/data/reminders"
+    local root="$WORK/data/tasks"
     if [ -f "$root/archived/$name.md" ]; then
-        print_error "'$name' is archived — promote only applies to active reminders."
+        print_error "'$name' is archived — promote only applies to active tasks."
         return 1
     fi
     local src="$root/$name.md"
     if [ ! -f "$src" ]; then
-        print_error "No reminder '$name' found."
+        print_error "No task '$name' found."
         return 1
     fi
 
@@ -495,13 +555,13 @@ wr_promote() {
         return 1
     fi
 
-    wr_finish "$name" completed || {
+    task_finish "$name" completed || {
         print_error "Work item was created, but completing '$name' failed (see above) — complete it manually."
         return 1
     }
 }
 
-wr_delete() {
+task_delete() {
     local name='' force=false a
     for a in "$@"; do
         case "$a" in
@@ -514,12 +574,12 @@ wr_delete() {
         esac
     done
     if [ -z "$name" ]; then
-        print_error "Usage: workreminder delete <name> [--force]"; return 1
+        print_error "Usage: worktask delete <name> [--force]"; return 1
     fi
 
     local src
-    src="$(resolve_reminder "$name")" || {
-        print_error "No reminder '$name' found."; return 1
+    src="$(resolve_task "$name")" || {
+        print_error "No task '$name' found."; return 1
     }
 
     # Deletion is the one path that doesn't preserve the body -- see the root
@@ -544,7 +604,7 @@ wr_delete() {
     print_success "Deleted ${src/#$HOME/\~}"
 }
 
-wr_due() {
+task_due() {
     local name='' newdate='' a
     while [ $# -gt 0 ]; do
         a=$1
@@ -559,12 +619,12 @@ wr_due() {
         shift
     done
     if [ -z "$name" ]; then
-        print_error "Usage: workreminder due <name> [date]"; return 1
+        print_error "Usage: worktask due <name> [date]"; return 1
     fi
 
     local src
-    src="$(resolve_reminder "$name")" || {
-        print_error "No reminder '$name' found."; return 1
+    src="$(resolve_task "$name")" || {
+        print_error "No task '$name' found."; return 1
     }
 
     if [ -n "$newdate" ]; then
@@ -597,11 +657,11 @@ wr_due() {
     fi
 }
 
-# Set, pick, or clear a reminder's related-item association.
+# Set, pick, or clear a task's related-item association.
 #   item <name> <slug>   -- set directly (tab-completable)
 #   item <name>          -- interactive picker (same one create uses)
 #   item <name> --clear  -- remove the association
-wr_item() {
+task_item() {
     local name='' item='' clear=false a
     for a in "$@"; do
         case "$a" in
@@ -615,15 +675,15 @@ wr_item() {
         esac
     done
     if [ -z "$name" ]; then
-        print_error "Usage: workreminder item <name> [slug|--clear]"; return 1
+        print_error "Usage: worktask item <name> [slug|--clear]"; return 1
     fi
     if [ "$clear" = true ] && [ -n "$item" ]; then
         print_error "--clear doesn't take a slug."; return 1
     fi
 
     local src
-    src="$(resolve_reminder "$name")" || {
-        print_error "No reminder '$name' found."; return 1
+    src="$(resolve_task "$name")" || {
+        print_error "No task '$name' found."; return 1
     }
 
     if [ "$clear" = true ]; then
@@ -644,10 +704,10 @@ wr_item() {
     # picker, so that's the more useful default and leaves --clear as the
     # one unambiguous way to remove.
     if [ -z "$item" ]; then
-        item=$(wr_pick_item) || return 1
+        item=$(task_pick_item) || return 1
     fi
 
-    if ! wr_item_known "$item"; then
+    if ! task_item_known "$item"; then
         print_warning "'$item' isn't an existing item; tagging anyway."
     fi
 
@@ -664,7 +724,7 @@ wr_item() {
 ###
 ### Dispatch
 ###
-# Parse global options before the subcommand so `workreminder -v list` works.
+# Parse global options before the subcommand so `worktask -v list` works.
 # -d implies -v.
 # shellcheck disable=SC2034  # VERBOSE/DEBUG are read by print_* in lib.sh
 while [ $# -gt 0 ]; do
@@ -679,15 +739,16 @@ done
 cmd="${1:-}"
 [ "$#" -gt 0 ] && shift
 case "$cmd" in
-    create)   wr_create "$@" ;;
-    list)     wr_list "$@" ;;
-    show)     wr_show "$@" ;;
-    complete) wr_complete "$@" ;;
-    cancel)   wr_cancel "$@" ;;
-    delete)   wr_delete "$@" ;;
-    due)      wr_due "$@" ;;
-    item)     wr_item "$@" ;;
-    promote)  wr_promote "$@" ;;
+    create)   task_create "$@" ;;
+    list)     task_list "$@" ;;
+    show)     task_show "$@" ;;
+    log)      task_log "$@" ;;
+    complete) task_complete "$@" ;;
+    cancel)   task_cancel "$@" ;;
+    delete)   task_delete "$@" ;;
+    due)      task_due "$@" ;;
+    item)     task_item "$@" ;;
+    promote)  task_promote "$@" ;;
     '')      printf '%s\n' "$usage" ;;
-    *)       print_error "Unknown command '$cmd' (try: workreminder help)"; exit 1 ;;
+    *)       print_error "Unknown command '$cmd' (try: worktask help)"; exit 1 ;;
 esac

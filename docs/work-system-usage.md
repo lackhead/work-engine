@@ -19,8 +19,8 @@ and "A typical day," then dip into the task sections as needed.
 - You **capture** things by running a `work*` command — nothing is scraped
   automatically, so the system only holds what you deliberately put in it.
 - Things you'll *sit down and work on* are **work items**; atomic
-  *follow-ups* you don't need a session for are **reminders**. (Did it earn a
-  session? Item. Otherwise? Reminder.)
+  *follow-ups* you don't need a session for are **tasks**. (Did it earn a
+  session? Item. Otherwise? Task.)
 - You **work** on an item by running `workon <slug>`, which drops you into a
   Claude Code session in the right directory — inside an isolated container.
 - You **see where things stand** by running the `dashboard` skill; you **recap
@@ -29,12 +29,12 @@ and "A typical day," then dip into the task sections as needed.
   however you like (this instance does it automatically; see "Backups" below).
 
 A note on *where* commands run: `sandbox` and `workon` drive Docker, so they run
-on the **host**. The capture commands (`workreminder` / `workitem`),
+on the **host**. The capture commands (`worktask` / `workitem`),
 `worktree`, and the skills just operate on vault files and work anywhere the
 vault is mounted — host or inside a session.
 
 Every command here takes `-h/--help`. The subcommand tools — `workitem`,
-`workreminder`, `workon`, `worktree`, `workinit`, `sandbox` — also take
+`worktask`, `workon`, `worktree`, `workinit`, `sandbox` — also take
 `-v/--verbose` and `-d/--debug` (`-d` implies `-v`). `work-backup` is the
 exception: `-h` only.
 
@@ -47,7 +47,7 @@ exception: `-h` only.
 3. **Quick thing outside a session?** `workitem log` — captured without
    ceremony, either into an existing item's `log/` or as a new completed
    item if there isn't one.
-4. **Something to not lose?** `workreminder create check the threshold held overnight`.
+4. **Something to not lose?** `worktask create check the threshold held overnight`.
 5. **New piece of work?** `workitem create Rework the cache host info`.
 6. **What should I be doing?** Run the `dashboard` skill — it ranks in-flight
    work and rewrites [[index]].
@@ -60,7 +60,7 @@ generated snapshot. Update the *item*, then re-run `dashboard`.
 ## Capturing things
 
 Two commands, matched to two weights of work. When in doubt: a fact about
-*what you did* is a log entry; a *follow-up* is a reminder; a *thing to work
+*what you did* is a log entry; a *follow-up* is a task; a *thing to work
 on* is an item.
 
 ### `workitem log` — record work done outside a session
@@ -78,23 +78,25 @@ workitem log                      # no context at all — asks interactively
 With `-r <repo>` (or when run from inside one of an item's worktrees) it
 offers to attach the latest commit alongside the note.
 
-### `workreminder create` — capture a follow-up
+### `worktask create` — capture a follow-up
 
-An atomic "don't lose this." Creates `reminders/<slug>.md` with
+An atomic "don't lose this." Creates `tasks/<slug>.md` with
 `status: active` (no date prefix — the date lives in `created:`).
 
 ```bash
-workreminder create Check nagios alert thresholds after the deploy
-workreminder create -i nagios Follow up with the team on the alert runbook
-workreminder create           # no description — full interactive flow instead
+worktask create Check nagios alert thresholds after the deploy
+worktask create -i nagios Follow up with the team on the alert runbook
+worktask create           # no description — full interactive flow instead
 ```
 
 `-i <slug>` attributes it to a work item. Given a description on the command
 line it fires immediately, no prompts; with none, it prompts for the
 description, whether to attach an existing item (picked interactively), and
-a slug to confirm. If a "reminder" actually needs a working session,
-`workreminder promote <name>` turns it into a work item and archives the
-reminder in one step.
+a slug to confirm. Progress along the way ("called Friday, no answer") gets
+appended with `worktask log <name> [note...]` — a timestamped bullet, no
+session needed. If a task actually needs a working session,
+`worktask promote <name>` turns it into a work item and archives the
+task in one step.
 
 ### `workitem` — create, list, and manage work items
 
@@ -205,7 +207,7 @@ when it finishes. The branch and history are always left intact on removal.
 
 Run the `dashboard` skill (no arguments). It ranks in-flight items
 (overdue → due-soon → at-risk → active → blocked), lists the backlog,
-approaching deadlines, and active reminders, suggests a focus, and regenerates
+approaching deadlines, and active tasks, suggests a focus, and regenerates
 [[index]]. It only ever reflects captured state — it doesn't invent or mutate
 anything.
 
@@ -249,13 +251,13 @@ the directory move together, so the two can't drift apart:
   deserve a closing narrative, run the `complete-item` skill instead; it
   drafts the retrospective and then calls these itself.
 
-Reminders archive as a single coupled move: `workreminder complete <name>` /
-`workreminder cancel <name>` set `status:` to `completed` or `cancelled` *and*
-move the file to `reminders/archived/` together. Documents archive by moving
+Tasks archive as a single coupled move: `worktask complete <name>` /
+`worktask cancel <name>` set `status:` to `completed` or `cancelled` *and*
+move the file to `tasks/archived/` together. Documents archive by moving
 to `docs/archived/` (no status field).
 
 You can ask Claude to do any of these ("mark nagios blocked", "complete that
-reminder, it's done") — it follows the same schema.
+task, it's done") — it follows the same schema.
 
 ## The sandbox
 
@@ -335,8 +337,9 @@ scratch (engine clone, PATH wiring, `workinit`, sandbox build), see
 |---------|------|---------|
 | `workitem log [-r\|--repo <repo>] [item-slug]` | Log ad-hoc work outside a session | vault |
 | `workitem add <slug> <path>...` | Copy files into an item's `incoming/` | vault |
-| `workreminder create [-i\|--item <slug>] [desc...]` | Capture a follow-up reminder | vault |
-| `workreminder promote <name> [workitem create args...]` | Turn a reminder into a work item | vault |
+| `worktask create [-i\|--item <slug>] [desc...]` | Capture a follow-up task | vault |
+| `worktask log <name> [note...]` | Append a timestamped note to a task | vault |
+| `worktask promote <name> [workitem create args...]` | Turn a task into a work item | vault |
 | `workitem create [title...]` | Create a work item | vault |
 | `workitem list [--backlog\|--archived\|--all] [--status <v>]` | Quick glance at items | vault |
 | `workitem complete <slug>` / `workitem cancel <slug>` | Close out an item | vault |
@@ -358,6 +361,6 @@ substitute.
 
 - **Why it's built this way:** `~/work/engine/docs/work-system-architecture.md`.
 - **The precise rules for a content type:** that area's `CLAUDE.md` under
-  `~/work/engine/schema/` (`items/`, `reminders/`, `docs/`, `retrospectives/`).
+  `~/work/engine/schema/` (`items/`, `tasks/`, `docs/`, `retrospectives/`).
 - **Setting up a new host/instance:** `~/work/engine/docs/work-system-setup.md`.
 - **This instance's backup + recovery:** `~/work/data/docs/work-data-backup.md`.
