@@ -154,6 +154,12 @@ print_debug "Work root: $root"
 itemdir=''
 item_created_this_run=false
 
+# A brand-new item gets its -r worktrees from `workitem create` itself, which
+# creates them atomically with the item (all or nothing). The loop below then
+# only does real work for items that already existed.
+create_repo_args=()
+for repo in ${repo_opts[@]+"${repo_opts[@]}"}; do create_repo_args+=(-r "$repo"); done
+
 if [ "$quick" = true ]; then
     if [ ${#title_parts[@]} -gt 0 ]; then
         # A title colliding with an existing top-level item under the exact
@@ -170,15 +176,15 @@ if [ "$quick" = true ]; then
             slug=$quick_candidate
             print_verbose "Quick item '$slug' already exists — resuming it"
         else
-            slug=$(workitem create --quick "${title_parts[@]}")
+            slug=$(workitem create --quick ${create_repo_args[@]+"${create_repo_args[@]}"} "${title_parts[@]}")
             item_created_this_run=true
         fi
     else
-        slug=$(workitem create --quick)
+        slug=$(workitem create --quick ${create_repo_args[@]+"${create_repo_args[@]}"})
         item_created_this_run=true
     fi
     if [ -z "$slug" ]; then
-        print_error "Could not create a quick item."
+        print_error "Could not create a quick item (see above)."
         exit 1
     fi
     itemdir="$root/data/items/$slug"
@@ -204,8 +210,16 @@ else
             esac
         fi
         slug=$(kebab "$slug")
-        if ! workitem create "$slug" >/dev/null; then
-            print_error "Could not create item '$slug'."
+        # With -r, leave workitem's worktree output visible; without, only
+        # the "Created" banner is noise.
+        if [ ${#repo_opts[@]} -gt 0 ]; then
+            workitem create ${create_repo_args[@]+"${create_repo_args[@]}"} "$slug"
+        else
+            workitem create "$slug" >/dev/null
+        fi
+        # shellcheck disable=SC2181
+        if [ $? -ne 0 ]; then
+            print_error "Could not create item '$slug' (see above)."
             exit 1
         fi
         itemdir="$root/data/items/$slug"
@@ -224,13 +238,13 @@ for repo in ${repo_opts[@]+"${repo_opts[@]}"}; do
     elif worktree add "$slug" "$repo"; then
         created_this_run+=("$repo")
     else
-        # Roll back everything *this invocation* created — worktrees, and the
-        # item itself if we're the ones who just created it — rather than
-        # launching into a partial/inconsistent attachment set.
+        # Roll back the worktrees *this invocation* created rather than
+        # launching into a partial attachment set. (A brand-new item never
+        # reaches here: `workitem create -r` already made its worktrees, or
+        # failed and removed the item.)
         for r in ${created_this_run[@]+"${created_this_run[@]}"}; do
             worktree rm "$slug" "$r" 2>/dev/null
         done
-        [ "$item_created_this_run" = true ] && rm -rf "$itemdir"
         print_error "Could not create a worktree in '$repo' for '$slug'."
         exit 1
     fi
