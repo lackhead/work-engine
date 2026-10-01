@@ -25,12 +25,22 @@ function __workon_item_slugs
     end
 end
 
-# Count non-option positional tokens after `workon` (skips flags like -d).
+# Count non-option positional tokens after `workon` (skips flags like -d, and
+# the value that follows -r/--repo, which isn't a positional).
 function __workon_nargs
     set -l toks (commandline -opc)
     set -l n 0
+    set -l skip 0
     if test (count $toks) -ge 2
         for tok in $toks[2..-1]
+            if test $skip -eq 1
+                set skip 0
+                continue
+            end
+            if contains -- $tok -r --repo
+                set skip 1
+                continue
+            end
             string match -q -- '-*' $tok; or set n (math $n + 1)
         end
     end
@@ -57,8 +67,9 @@ complete -c workon -s q -l quick -d 'Create a throwaway item and open it now'
 complete -c workon -s r -l repo -x -a '(__workon_repos)' \
     -d 'Ensure a worktree for this repo and attach it (repeatable)'
 
-# The only remaining positional: <slug> (non-quick) or the start of [title...]
-# (--quick). There's no second positional anymore — a repo is only ever named
-# via -r/--repo, never positionally.
-complete -c workon -n 'not __fish_seen_argument -s q -l quick; and test (__workon_nargs) -eq 0' \
+# The only remaining positional: <slug>, or the start of [title...] under
+# --quick (offered there too: a --quick title that kebabs to an existing slug
+# resumes that item). There's no second positional anymore — a repo is only
+# ever named via -r/--repo, never positionally.
+complete -c workon -n 'test (__workon_nargs) -eq 0' \
     -a '(__workon_item_slugs)' -d 'work item'
