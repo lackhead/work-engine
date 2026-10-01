@@ -116,13 +116,15 @@ complete -c workitem -n __fish_use_subcommand -a cancel   -d 'Cancel a work item
 complete -c workitem -n __fish_use_subcommand -a rename   -d "Rename an item's slug (directory + front door)"
 complete -c workitem -n __fish_use_subcommand -a delete   -d 'Delete a work item outright'
 
-# create [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [title...]
+# create [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [-r|--repo <repo>]... [title...]
 complete -c workitem -n '__fish_seen_subcommand_from create' -s q -l quick \
     -d 'Skip prompts, generate a timestamp title/slug'
 complete -c workitem -n '__fish_seen_subcommand_from create' -s b -l backlog \
     -d 'Create in items/backlog/ instead, status proposed'
 complete -c workitem -n '__fish_seen_subcommand_from create' -s s -l slug \
     -x -d 'Deliberate short slug (skip auto-truncation)'
+complete -c workitem -n '__fish_seen_subcommand_from create' -s r -l repo \
+    -x -a '(__workitem_repos)' -d 'Also create a worktree in this repo (repeatable)'
 
 # list [--backlog|--archived|--all] [--status <value>]
 complete -c workitem -n '__fish_seen_subcommand_from list' -l backlog  -d 'Show items/backlog/'

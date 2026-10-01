@@ -536,6 +536,9 @@ item links never include the zone:
 ### Adding an item
 
 `workitem create <title...>` is non-interactive: title only, no prompts.
+`-r/--repo <repo>` (repeatable, active items only) also creates a worktree
+per repo, same as `workon -r`; a bad repo or failed worktree aborts the
+whole create.
 It always creates `items/<name>/<name>.md` with `status: active`, top-level,
 `made:` today. Description, `to`, `due`, and any other optional frontmatter
 are not collected by `create` at all. When an item's frontmatter is missing

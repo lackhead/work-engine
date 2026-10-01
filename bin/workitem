@@ -22,7 +22,7 @@ workitem: create, list, show, and transition the lifecycle of work items under ~
 
 Usage:
    workitem [ -h|--help ]
-   workitem [ -v|--verbose ] [ -d|--debug ] create   [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [title...]
+   workitem [ -v|--verbose ] [ -d|--debug ] create   [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [-r|--repo <repo>]... [title...]
    workitem [ -v|--verbose ] [ -d|--debug ] list     [--backlog|--archived|--all] [--status <value>]
    workitem [ -v|--verbose ] [ -d|--debug ] show     <slug>
    workitem [ -v|--verbose ] [ -d|--debug ] log      [-r|--repo <repo>] [item-slug]
@@ -48,6 +48,9 @@ Description:
             instead, for a throwaway item you'd rather not name yet.
             -b/--backlog creates in items/backlog/<slug>/ instead, status
             proposed. -q and -b are mutually exclusive.
+            -r/--repo <repo> (repeatable) also creates a worktree in that
+            repo for the new item, as workon -r does. Not allowed with
+            -b/--backlog (worktrees are for active items).
 
    list     Display work items: slug, status, due, last update. Defaults
             to top-level (active + blocked); --backlog/--archived/--all
@@ -111,6 +114,8 @@ Examples:
    workitem create -q
    workitem create --quick Fix the Ansible lint warning
    workitem create -b Investigate the new vendor API
+   workitem create -r Ansible Rework cache host info
+   workitem create -q -r Ansible -r Internal
    workitem create -s ad-backup-crons Remove -n from the AD backup crons once...
    workitem list
    workitem list --backlog
@@ -307,7 +312,7 @@ wi_related_tasks() {
 ### Subcommands
 ###
 wi_create() {
-    local quick=false backlog=false slug_opt='' title_parts=() title made slug itemdir file a
+    local quick=false backlog=false slug_opt='' repos=() title_parts=() title made slug itemdir file a r
     while [ $# -gt 0 ]; do
         a=$1
         case "$a" in
@@ -315,6 +320,10 @@ wi_create() {
             -b|--backlog) backlog=true ;;
             -s|--slug)    shift; slug_opt=${1:-} ;;
             --slug=*)     slug_opt=${a#--slug=} ;;
+            -r|--repo)
+                [ -z "${2:-}" ] && { print_error "Option -r/--repo requires an argument"; return 1; }
+                shift; repos+=("$1") ;;
+            --repo=*)     repos+=("${a#--repo=}") ;;
             *)            title_parts+=("$a") ;;
         esac
         shift
@@ -324,6 +333,18 @@ wi_create() {
         print_error "-q/--quick and -b/--backlog are mutually exclusive (quick items are always active/top-level)."
         return 1
     fi
+
+    if [ "$backlog" = true ] && [ ${#repos[@]} -gt 0 ]; then
+        print_error "-r/--repo can't be combined with -b/--backlog (worktrees are for active items)."
+        return 1
+    fi
+    # Validate up front so a typo'd repo doesn't leave a half-made item.
+    for r in ${repos[@]+"${repos[@]}"}; do
+        if [ ! -d "$WORK/repos/$r" ]; then
+            print_error "No canonical clone at repos/$r"
+            return 1
+        fi
+    done
 
     title=''
     [ ${#title_parts[@]} -gt 0 ] && title="${title_parts[*]}"
@@ -335,7 +356,7 @@ wi_create() {
         title="Quick task — $(date '+%Y-%m-%d %H:%M:%S')"
     fi
     if [ -z "$title" ]; then
-        print_error "Usage: workitem create [-q|--quick] [-b|--backlog] [-s|--slug <slug>] <title...> — title is required."
+        print_error "Usage: workitem create [-q|--quick] [-b|--backlog] [-s|--slug <slug>] [-r|--repo <repo>]... <title...> — title is required."
         return 1
     fi
 
@@ -374,6 +395,24 @@ wi_create() {
         echo
         echo "# $title"
     } > "$file"
+
+    # Attach worktrees. `worktree add` chatters on stdout, which --quick
+    # reserves for the bare slug, so route it to stderr there. Roll back
+    # what this call made (worktrees + the item) if any repo fails.
+    local made_wts=() rc m
+    for r in ${repos[@]+"${repos[@]}"}; do
+        if [ "$quick" = true ]; then worktree add "$slug" "$r" >&2; else worktree add "$slug" "$r"; fi
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            # Worktrees and branches are all new this call (nothing to
+            # lose), so drop the branches with them.
+            for m in ${made_wts[@]+"${made_wts[@]}"}; do worktree rm "$slug" "$m" --delete-branch >/dev/null 2>&1; done
+            rm -rf "$itemdir"
+            print_error "Could not create a worktree in '$r' for '$slug' — item not created."
+            return 1
+        fi
+        made_wts+=("$r")
+    done
 
     # --quick is meant to be consumed by scripts (workon --quick captures
     # this via command substitution) — bare slug only, no banner.
